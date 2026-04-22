@@ -50,9 +50,11 @@ const sliceEncapsulation = {
               'Import slices through their public API (e.g. `@/features/auth`), not internal segments.',
           },
           {
-            group: ['../*', '../../*', '../../../*'],
+            // Allow `../*` (staying inside the same slice, e.g. ui → assets),
+            // but forbid `../../` or deeper — those always cross a slice/layer.
+            group: ['../../*', '../../../*', '../../../../*'],
             message:
-              'Use the `@/` alias instead of relative parent imports to keep layer boundaries explicit.',
+              'Use the `@/` alias for cross-slice/cross-layer imports. Only same-slice relative imports (./ and ../) are allowed.',
           },
         ],
       },
@@ -98,4 +100,13 @@ export default defineConfig([
   },
   sliceEncapsulation,
   ...LAYERS.map(forbidHigherLayers).filter(Boolean),
+  // shadcn/ui primitives in shared/ui are template code that commonly
+  // co-exports hooks/constants alongside components — relax Fast Refresh
+  // warnings there. Business code must still keep files component-only.
+  {
+    files: ['src/shared/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

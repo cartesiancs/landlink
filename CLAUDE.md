@@ -102,7 +102,7 @@ src/
 ├── entities/  # empty — populate as entities emerge
 ├── shared/
 │   ├── ui/            # shadcn components + public API index.ts
-│   ├── lib/           # cn.ts + future helpers, via index.ts
+│   ├── lib/           # utils.ts (cn helper) + future helpers, via index.ts
 │   ├── config/        # ROUTES + other app-wide constants
 │   └── api/           # (empty) HTTP clients, request primitives
 └── main.tsx           # Vite entry — renders <App />
@@ -174,7 +174,7 @@ When unsure between two layers, pick the **lower** one — it's easier to promot
 
 `components.json` is configured so `npx shadcn add <name>` drops components into `src/shared/ui/`. After generation:
 
-1. Ensure the new component imports `cn` from `@/shared/lib` (not `@/lib/utils` — that path no longer exists).
+1. The generated component may import `cn` from `@/shared/lib/utils` (shadcn default). That's fine — the public API at `@/shared/lib` also re-exports `cn`. Outside the `shared` layer always import from `@/shared/lib`.
 2. Re-export the public symbols from [src/shared/ui/index.ts](src/shared/ui/index.ts).
 3. Consumers must import from `@/shared/ui`, never `@/shared/ui/<component>`.
 

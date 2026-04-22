@@ -1,1 +1,2 @@
-export { cn } from "./cn";
+export { cn } from "./utils";
+export { hapticTick } from "./haptics";
