@@ -15,7 +15,7 @@ export function Reveal({
   threshold = 0.3,
   className,
 }: RevealProps) {
-  const [ref, inView] = useInView<HTMLDivElement>(threshold);
+  const [ref, inView] = useInView<HTMLDivElement>({ threshold, once: true });
   return (
     <div
       ref={ref}

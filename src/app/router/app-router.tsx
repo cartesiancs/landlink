@@ -1,14 +1,12 @@
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
-import { HomePage } from "@/pages/home";
 import { AboutPage } from "@/pages/about";
-import { NotFoundPage } from "@/pages/not-found";
 import { ROUTES } from "@/shared/config";
+import { AppLayout } from "@/app/layout/app-layout";
 
 const router = createBrowserRouter([
-  { path: ROUTES.home, element: <HomePage /> },
   { path: ROUTES.about, element: <AboutPage /> },
-  { path: ROUTES.notFound, element: <NotFoundPage /> },
+  { path: "*", element: <AppLayout /> },
 ]);
 
 export function AppRouter() {

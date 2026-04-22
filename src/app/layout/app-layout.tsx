@@ -1,0 +1,105 @@
+import { type ReactNode, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+
+import { Button, SlideSwitch } from "@/shared/ui";
+import { hapticTick } from "@/shared/lib";
+import { ROUTES, type RoutePath } from "@/shared/config";
+import { AppHeader } from "@/widgets/app-header";
+import { NavigationSidebar } from "@/widgets/navigation-sidebar";
+import { SupportDrawer } from "@/widgets/support-drawer";
+import { HomePage } from "@/pages/home";
+import { ConnectBluetoothPage } from "@/pages/connect-bluetooth";
+import { ConnectWifiPage } from "@/pages/connect-wifi";
+import { ConnectingPage } from "@/pages/connecting";
+import { NotFoundPage } from "@/pages/not-found";
+
+type StepPath =
+  | typeof ROUTES.home
+  | typeof ROUTES.connectBluetooth
+  | typeof ROUTES.connectWifi
+  | typeof ROUTES.connecting;
+
+type StepMeta = {
+  label: string;
+  next: RoutePath;
+};
+
+const STEP_META: Record<StepPath, StepMeta> = {
+  [ROUTES.home]: { label: "Get started", next: ROUTES.connectBluetooth },
+  [ROUTES.connectBluetooth]: { label: "Connect", next: ROUTES.connectWifi },
+  [ROUTES.connectWifi]: { label: "Connect", next: ROUTES.connecting },
+  [ROUTES.connecting]: { label: "Cancel", next: ROUTES.home },
+};
+
+const STEP_PATHS = new Set<string>([
+  ROUTES.home,
+  ROUTES.connectBluetooth,
+  ROUTES.connectWifi,
+  ROUTES.connecting,
+]);
+
+function isStepPath(pathname: string): pathname is StepPath {
+  return STEP_PATHS.has(pathname);
+}
+
+function renderStep(pathname: StepPath): ReactNode {
+  switch (pathname) {
+    case ROUTES.home:
+      return <HomePage />;
+    case ROUTES.connectBluetooth:
+      return <ConnectBluetoothPage />;
+    case ROUTES.connectWifi:
+      return <ConnectWifiPage />;
+    case ROUTES.connecting:
+      return <ConnectingPage />;
+  }
+}
+
+export function AppLayout() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+
+  if (!isStepPath(location.pathname)) {
+    return <NotFoundPage />;
+  }
+
+  const pathname = location.pathname;
+  const { label, next } = STEP_META[pathname];
+
+  const handleAdvance = () => {
+    hapticTick();
+    void navigate(next);
+  };
+
+  return (
+    <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
+      <AppHeader
+        onMenuOpen={() => {
+          setSidebarOpen(true);
+        }}
+        onSupportOpen={() => {
+          setSupportOpen(true);
+        }}
+      />
+
+      <SlideSwitch contentKey={pathname} className="min-h-0 flex-1">
+        {renderStep(pathname)}
+      </SlideSwitch>
+
+      <div className="bg-background/90 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] backdrop-blur supports-backdrop-filter:bg-background/70">
+        <Button
+          size="lg"
+          className="h-12 w-full text-base"
+          onClick={handleAdvance}
+        >
+          <SlideSwitch contentKey={label}>{label}</SlideSwitch>
+        </Button>
+      </div>
+
+      <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
+      <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />
+    </div>
+  );
+}

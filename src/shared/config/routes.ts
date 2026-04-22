@@ -1,5 +1,8 @@
 export const ROUTES = {
   home: "/",
+  connectBluetooth: "/connect/bluetooth",
+  connectWifi: "/connect/wifi",
+  connecting: "/connecting",
   about: "/about",
   notFound: "*",
 } as const;

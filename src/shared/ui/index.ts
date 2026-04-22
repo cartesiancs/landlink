@@ -1,5 +1,6 @@
 export { Button, buttonVariants, type ButtonProps } from "./button";
 export { Reveal } from "./reveal";
+export { SlideSwitch } from "./slide-switch";
 export {
   Sheet,
   SheetTrigger,
