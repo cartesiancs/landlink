@@ -9,7 +9,7 @@ type AppHeaderProps = {
 
 export function AppHeader({ onMenuOpen, onSupportOpen }: AppHeaderProps) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-background/80 px-3 backdrop-blur supports-backdrop-filter:bg-background/60">
+    <header className="flex h-14 shrink-0 items-center justify-between bg-background/80 px-3 backdrop-blur supports-backdrop-filter:bg-background/60">
       <Button
         variant="ghost"
         size="icon"

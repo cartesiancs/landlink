@@ -11,11 +11,11 @@ const LINKS: readonly LinkEntry[] = [
   {
     id: "github",
     label: "GitHub",
-    href: "https://github.com",
+    href: "https://github.com/cartesiancs",
     external: true,
   },
   { id: "hardware-setup", label: "Hardware Setup", href: "#hardware-setup" },
-  { id: "company", label: "Company", href: "#company" },
+  { id: "company", label: "Company", href: "https://cartesiancs.com" },
 ];
 
 export function HomeLinkList() {
