@@ -38,7 +38,7 @@ export function HomeHeroCarousel() {
       <CarouselContent className="ml-0">
         {SLIDES.map((slide) => (
           <CarouselItem key={slide.id} className="pl-0 basis-full">
-            <div className="relative aspect-video w-full bg-muted">
+            <div className="relative aspect-[16/10] w-full bg-muted">
               <img
                 src={slide.src}
                 alt={slide.alt}
