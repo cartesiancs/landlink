@@ -1,4 +1,5 @@
 export { Button, buttonVariants, type ButtonProps } from "./button";
+export { Reveal } from "./reveal";
 export {
   Sheet,
   SheetTrigger,
