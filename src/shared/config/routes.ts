@@ -5,6 +5,7 @@ export const ROUTES = {
   connecting: "/connecting",
   about: "/about",
   faq: "/faq",
+  purchase: "/purchase",
   notFound: "*",
 } as const;
 

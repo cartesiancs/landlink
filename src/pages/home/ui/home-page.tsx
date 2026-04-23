@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
+import { ROUTES } from "@/shared/config";
 import { cn, hapticTick, useInView } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 import { HomeHeroCarousel } from "@/widgets/home-hero-carousel";
@@ -50,6 +52,7 @@ export function HomePage() {
   });
   const mainRef = useRef<HTMLElement>(null);
   const [isIdle, setIsIdle] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const el = mainRef.current;
@@ -182,6 +185,7 @@ export function HomePage() {
           className="pointer-events-auto h-12 w-full bg-background text-base shadow-sm"
           onClick={() => {
             hapticTick();
+            void navigate(ROUTES.purchase);
           }}
           tabIndex={showPurchase ? 0 : -1}
         >
