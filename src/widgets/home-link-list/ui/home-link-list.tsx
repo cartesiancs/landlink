@@ -1,10 +1,13 @@
 import { ChevronRight } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import { ROUTES } from "@/shared/config";
 
 type LinkEntry = {
   id: string;
   label: string;
   href: string;
-  external?: boolean;
+  kind: "external" | "internal";
 };
 
 const LINKS: readonly LinkEntry[] = [
@@ -12,10 +15,20 @@ const LINKS: readonly LinkEntry[] = [
     id: "github",
     label: "GitHub",
     href: "https://github.com/cartesiancs",
-    external: true,
+    kind: "external",
   },
-  { id: "hardware-setup", label: "Hardware Setup", href: "#hardware-setup" },
-  { id: "company", label: "Company", href: "https://cartesiancs.com" },
+  {
+    id: "hardware-setup",
+    label: "Hardware Setup",
+    href: ROUTES.hardwareSetup,
+    kind: "internal",
+  },
+  {
+    id: "company",
+    label: "Company",
+    href: "https://cartesiancs.com",
+    kind: "external",
+  },
 ];
 
 export function HomeLinkList() {
@@ -25,20 +38,30 @@ export function HomeLinkList() {
       className="overflow-hidden rounded-2xl border border-border bg-card"
     >
       <ul className="divide-y divide-border">
-        {LINKS.map((link) => (
-          <li key={link.id}>
-            <a
-              href={link.href}
-              {...(link.external === true
-                ? { target: "_blank", rel: "noreferrer noopener" }
-                : {})}
-              className="flex items-center justify-between px-4 py-4 text-sm font-medium transition-colors hover:bg-muted"
-            >
-              <span>{link.label}</span>
-              <ChevronRight className="size-4 text-muted-foreground" />
-            </a>
-          </li>
-        ))}
+        {LINKS.map((link) => {
+          const rowClassName =
+            "flex items-center justify-between px-4 py-4 text-sm font-medium transition-colors hover:bg-muted";
+          return (
+            <li key={link.id}>
+              {link.kind === "internal" ? (
+                <Link to={link.href} className={rowClassName}>
+                  <span>{link.label}</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </Link>
+              ) : (
+                <a
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className={rowClassName}
+                >
+                  <span>{link.label}</span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </a>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
