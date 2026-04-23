@@ -7,6 +7,8 @@ export const ROUTES = {
   faq: "/faq",
   purchase: "/purchase",
   hardwareSetup: "/hardware-setup",
+  privacy: "/privacy",
+  terms: "/terms",
   notFound: "*",
 } as const;
 
