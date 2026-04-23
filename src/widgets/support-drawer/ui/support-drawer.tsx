@@ -23,7 +23,7 @@ export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
         </DrawerHeader>
         <div className="flex flex-col gap-3 px-4 pb-6 text-sm">
           <a
-            href="mailto:support@example.com"
+            href="mailto:jun@cartesiancs.com"
             className="rounded-md border border-border px-3 py-3 hover:bg-muted"
           >
             Email support
