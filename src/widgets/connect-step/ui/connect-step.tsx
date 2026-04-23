@@ -1,13 +1,8 @@
 export type ConnectStepProps = {
   titleLines: readonly [string, string];
-  showMedia?: boolean;
 };
 
-export function ConnectStep({
-  titleLines,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  showMedia = true,
-}: ConnectStepProps) {
+export function ConnectStep({ titleLines }: ConnectStepProps) {
   const [line1, line2] = titleLines;
 
   return (
@@ -19,10 +14,6 @@ export function ConnectStep({
       </h2>
 
       <div className="flex-1" />
-
-      {/* {showMedia ? (
-        <div className="h-20 w-full rounded-md bg-muted" />
-      ) : null} */}
     </div>
   );
 }
