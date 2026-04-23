@@ -3,7 +3,11 @@ export type ConnectStepProps = {
   showMedia?: boolean;
 };
 
-export function ConnectStep({ titleLines, showMedia = true }: ConnectStepProps) {
+export function ConnectStep({
+  titleLines,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  showMedia = true,
+}: ConnectStepProps) {
   const [line1, line2] = titleLines;
 
   return (
@@ -16,9 +20,9 @@ export function ConnectStep({ titleLines, showMedia = true }: ConnectStepProps) 
 
       <div className="flex-1" />
 
-      {showMedia ? (
+      {/* {showMedia ? (
         <div className="h-20 w-full rounded-md bg-muted" />
-      ) : null}
+      ) : null} */}
     </div>
   );
 }
