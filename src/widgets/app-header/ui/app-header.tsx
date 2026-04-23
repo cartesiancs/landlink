@@ -1,5 +1,6 @@
 import { HelpCircle, Menu } from "lucide-react";
 
+import { hapticTick } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 
 type AppHeaderProps = {
@@ -14,7 +15,10 @@ export function AppHeader({ onMenuOpen, onSupportOpen }: AppHeaderProps) {
         variant="ghost"
         size="icon"
         aria-label="Open menu"
-        onClick={onMenuOpen}
+        onClick={() => {
+          hapticTick();
+          onMenuOpen();
+        }}
       >
         <Menu />
       </Button>
@@ -22,7 +26,10 @@ export function AppHeader({ onMenuOpen, onSupportOpen }: AppHeaderProps) {
         variant="ghost"
         size="icon"
         aria-label="Open support"
-        onClick={onSupportOpen}
+        onClick={() => {
+          hapticTick();
+          onSupportOpen();
+        }}
       >
         <HelpCircle />
       </Button>
