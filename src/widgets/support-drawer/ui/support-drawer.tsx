@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import {
   Drawer,
   DrawerContent,
@@ -5,6 +7,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/shared/ui";
+import { ROUTES } from "@/shared/config";
 
 type SupportDrawerProps = {
   open: boolean;
@@ -28,12 +31,15 @@ export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
           >
             Email support
           </a>
-          <a
-            href="#"
+          <Link
+            to={ROUTES.faq}
+            onClick={() => {
+              onOpenChange(false);
+            }}
             className="rounded-md border border-border px-3 py-3 hover:bg-muted"
           >
             Read the FAQ
-          </a>
+          </Link>
         </div>
       </DrawerContent>
     </Drawer>

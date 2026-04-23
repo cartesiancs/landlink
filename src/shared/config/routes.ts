@@ -4,6 +4,7 @@ export const ROUTES = {
   connectWifi: "/connect/wifi",
   connecting: "/connecting",
   about: "/about",
+  faq: "/faq",
   notFound: "*",
 } as const;
 
