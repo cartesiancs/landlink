@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { Button, Reveal } from "@/shared/ui";
 import { hapticTick } from "@/shared/lib";
 
@@ -10,7 +12,7 @@ export type HomeStepProps = {
   step: number;
   title: string;
   description: string;
-  mediaLabel: string;
+  media: ReactNode;
   action?: HomeStepAction;
 };
 
@@ -18,7 +20,7 @@ export function HomeStep({
   step,
   title,
   description,
-  mediaLabel,
+  media,
   action,
 }: HomeStepProps) {
   return (
@@ -36,8 +38,8 @@ export function HomeStep({
       </Reveal>
 
       <Reveal className="mt-6 min-h-0 flex-1" delay={200}>
-        <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-muted">
-          <span className="text-lg text-foreground/60">{mediaLabel}</span>
+        <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-white">
+          {media}
           {action ? (
             <Button
               size="default"
