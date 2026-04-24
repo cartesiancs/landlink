@@ -61,7 +61,7 @@ export function NavigationSidebar({
                 key={item.to}
                 to={item.to}
                 onClick={handleClose}
-                className="flex items-center gap-2 rounded-md px-1 py-2 text-sm hover:bg-muted"
+                className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
               >
                 <Icon className="size-4" aria-hidden="true" />
                 {item.label}
@@ -78,7 +78,7 @@ export function NavigationSidebar({
                   key={item.to}
                   to={item.to}
                   onClick={handleClose}
-                  className="flex items-center gap-2 rounded-md px-1 py-2 text-sm hover:bg-muted"
+                  className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
                 >
                   <Icon className="size-4" aria-hidden="true" />
                   {item.label}
@@ -90,7 +90,7 @@ export function NavigationSidebar({
             href="https://cartesiancs.com"
             target="_blank"
             rel="noreferrer noopener"
-            className="flex items-center gap-2 rounded-md px-1 py-2 text-sm hover:bg-muted"
+            className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
           >
             <Building2 className="size-4" aria-hidden="true" />
             cartesiancs
