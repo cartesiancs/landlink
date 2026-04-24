@@ -1,0 +1,77 @@
+#pragma once
+
+// Managed-flooding mesh router.
+//
+// On RX:
+//   * unpack header, reject bad magic/version
+//   * dedup on (src, pkt_id); drop if seen
+//   * if dst == self or broadcast: decrypt payload, dispatch to consumers
+//   * if hop_count < hop_limit: decrement budget, forward via tx_q
+//
+// On TX (originate):
+//   * assign monotonic pkt_id per-src
+//   * set counter, random nonce, encrypt
+//   * hand to lora_tx queue
+
+#include <cstddef>
+#include <cstdint>
+
+#include "mesh/frame/frame.h"
+#include "mesh/router/dedup.h"
+
+namespace landlink::mesh {
+
+// Consumer hook — router calls this when a decrypted frame is addressed to us.
+// Implementations live in features/ (mesh_chat, mesh_location, mesh_sensor).
+using PayloadSink = void (*)(const Header& h,
+                             const uint8_t* payload,
+                             size_t         payload_len);
+
+struct RouterConfig {
+    uint16_t mesh_id           = 0;
+    uint32_t self_id           = 0;
+    uint8_t  default_hop_limit = 5;
+};
+
+class Router {
+public:
+    void init(const RouterConfig& cfg, const uint8_t network_key[32]);
+    void set_sink(PayloadSink sink) { sink_ = sink; }
+
+    // Encode + encrypt an outbound frame. Writes the complete OTA-ready bytes
+    // into `out` and returns the byte count, or 0 on failure.
+    size_t originate(uint32_t dst,
+                     uint8_t  flags,
+                     const uint8_t* payload,
+                     size_t         payload_len,
+                     uint8_t* out,
+                     size_t   out_cap);
+
+    // Handle a raw RX frame. If the frame is a unicast for us or a broadcast,
+    // calls the registered sink. If it should be forwarded, re-encodes into
+    // `forward_out` and sets `forward_len` > 0. Non-zero `forward_len` means
+    // the caller must enqueue the buffer to the LoRa TX task.
+    void on_rx(const uint8_t* frame, size_t frame_len,
+               uint8_t* forward_out, size_t forward_cap,
+               size_t& forward_len);
+
+    // Fill a CSPRNG-backed nonce.
+    static void random_nonce(uint8_t out[7]);
+
+private:
+    bool encode_frame(Header& h,
+                      const uint8_t* plaintext, size_t plaintext_len,
+                      uint8_t* out, size_t out_cap, size_t& out_len);
+
+    bool decode_frame(const uint8_t* in, size_t in_len,
+                      Header& h, uint8_t* plain_out, size_t& plain_len);
+
+    RouterConfig cfg_;
+    uint8_t      session_key_[16] = { 0 };
+    uint32_t     next_pkt_id_     = 1;
+    uint32_t     tx_counter_      = 0;
+    DedupCache   dedup_;
+    PayloadSink  sink_            = nullptr;
+};
+
+} // namespace landlink::mesh

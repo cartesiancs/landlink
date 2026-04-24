@@ -1,0 +1,13 @@
+.pio/
+.vscode/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+.gcc-flags.json
+build/
+*.bin
+*.elf
+*.map
+!keys/ota_pubkey.bin
+keys/*_priv.*
+keys/*.pem

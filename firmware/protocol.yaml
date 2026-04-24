@@ -1,0 +1,195 @@
+# Landlink protocol — single source of truth.
+# Consumed by:
+#   firmware/tools/gen_protocol.py  -> src/shared/protocol/opcodes.h, tlv_tags.h
+#                                   -> ../src/shared/protocol/landlink.ts, uuids.ts
+# Never hand-edit the generated files. Edit this spec and re-run codegen.
+
+version: 1
+firmware_name: "landlink"
+proto_version: 1
+
+ble:
+  # 128-bit custom UUIDs (8-4-4-4-12). Base encodes "LL-landlink-1" in ASCII
+  # across the trailing groups; the last 2 bytes discriminate the service
+  # and its characteristics.
+  service_uuid: "4c4c0001-6c61-6e64-6c69-6e6b2d310001"
+  characteristics:
+    CMD:   { uuid: "4c4c0002-6c61-6e64-6c69-6e6b2d310001", props: [write] }
+    EVT:   { uuid: "4c4c0003-6c61-6e64-6c69-6e6b2d310001", props: [notify] }
+    STATE: { uuid: "4c4c0004-6c61-6e64-6c69-6e6b2d310001", props: [read, notify] }
+    INFO:  { uuid: "4c4c0005-6c61-6e64-6c69-6e6b2d310001", props: [read] }
+    OTA:   { uuid: "4c4c0006-6c61-6e64-6c69-6e6b2d310001", props: [write_no_response] }
+    LOG:   { uuid: "4c4c0007-6c61-6e64-6c69-6e6b2d310001", props: [notify] }
+  device_name_prefix: "Landlink-"
+
+# FSM states surfaced through STATE characteristic.
+fsm_states:
+  BOOT:                0x00
+  SELF_TEST:           0x01
+  UNPROVISIONED:       0x02
+  PAIRING:             0x03
+  WIFI_PROVISIONING:   0x04
+  LORA_PAIRING:        0x05
+  READY:               0x06
+  OTA:                 0x07
+  FACTORY_RESET:       0x08
+  FAULT:               0xFF
+
+# BLE opcodes (C = Client/Web, F = Firmware)
+opcodes:
+  # WiFi onboarding
+  WIFI_SCAN:             { code: 0x01, dir: C_TO_F }
+  WIFI_SCAN_RESULT:      { code: 0x02, dir: F_TO_C }
+  WIFI_CONNECT:          { code: 0x03, dir: C_TO_F }
+  WIFI_STATUS:           { code: 0x04, dir: F_TO_C }
+
+  # Radio region
+  RADIO_GET_REGION:      { code: 0x10, dir: C_TO_F }
+  RADIO_SET_REGION:      { code: 0x11, dir: C_TO_F }
+  RADIO_REGION_RESULT:   { code: 0x12, dir: F_TO_C }
+
+  # LoRa peer discovery + pairing
+  LORA_DISCOVER:         { code: 0x20, dir: C_TO_F }
+  LORA_PEER_FOUND:       { code: 0x21, dir: F_TO_C }
+  LORA_PAIR:             { code: 0x22, dir: C_TO_F }
+  LORA_PAIR_RESULT:      { code: 0x23, dir: F_TO_C }
+
+  # Mesh membership + messaging
+  MESH_JOIN:             { code: 0x30, dir: C_TO_F }
+  MESH_LEAVE:            { code: 0x31, dir: C_TO_F }
+  MESH_SEND:             { code: 0x32, dir: C_TO_F }
+  MESH_RECV:             { code: 0x33, dir: F_TO_C }
+
+  # Key management
+  KEY_ROTATE:            { code: 0x40, dir: C_TO_F }
+  KEY_EXPORT:            { code: 0x41, dir: C_TO_F, requires: pairing_state }
+
+  # BLE-level pairing handshake (X25519 + fingerprint confirm)
+  PAIR_BEGIN:            { code: 0x48, dir: C_TO_F }
+  PAIR_CHALLENGE:        { code: 0x49, dir: F_TO_C }
+  PAIR_CONFIRM:          { code: 0x4A, dir: C_TO_F }
+  PAIR_RESULT:           { code: 0x4B, dir: F_TO_C }
+
+  # Factory reset (requires pinned session)
+  FACTORY_RESET:         { code: 0x50, dir: C_TO_F, requires: authed }
+
+  # OTA
+  OTA_BEGIN:             { code: 0x60, dir: C_TO_F, requires: authed }
+  OTA_CHUNK:             { code: 0x61, dir: C_TO_F, note: "via OTA characteristic" }
+  OTA_COMMIT:            { code: 0x62, dir: C_TO_F, requires: authed }
+  OTA_STATUS:            { code: 0x63, dir: F_TO_C }
+
+  # Generic error
+  ERROR:                 { code: 0x7F, dir: F_TO_C }
+
+# TLV tag registry — shared between BLE payloads and mesh payloads.
+# Tag ranges:
+#   0x01-0x0F : kind discriminators + shared meta
+#   0x10-0x1F : chat
+#   0x20-0x2F : location
+#   0x30-0x3F : sensor
+#   0x40-0x4F : ack / routing
+#   0x50-0x5F : beacon / peer meta
+#   0x60-0x6F : ping / traceroute
+#   0x70-0x7F : pairing (X25519)
+#   0x80-0x8F : BLE WiFi TLVs
+#   0x90-0x9F : BLE OTA TLVs
+#   0xA0-0xAF : BLE region TLVs
+#   0xB0-0xBF : BLE mesh-membership TLVs
+#   0xF0-0xFF : error/diagnostics
+tlv_tags:
+  # Meta
+  KIND:                  { tag: 0x01, type: u8,   desc: "Payload kind discriminator" }
+  NODE_ID:               { tag: 0x02, type: u32,  desc: "32-bit node id" }
+  MESH_ID:               { tag: 0x03, type: u16,  desc: "Mesh group id" }
+  TIMESTAMP_MS:          { tag: 0x04, type: u64,  desc: "Unix time ms (best-effort)" }
+
+  # Chat
+  CHAT_TEXT:             { tag: 0x10, type: utf8, desc: "UTF-8 chat text, <=200 B" }
+  CHAT_REPLY_TO:         { tag: 0x11, type: u32,  desc: "pkt_id being replied to" }
+
+  # Location
+  LAT_E7:                { tag: 0x20, type: i32,  desc: "Latitude * 1e7" }
+  LON_E7:                { tag: 0x21, type: i32,  desc: "Longitude * 1e7" }
+  ALT_M:                 { tag: 0x22, type: i16,  desc: "Altitude meters" }
+  HDOP:                  { tag: 0x23, type: u8,   desc: "HDOP * 10" }
+  SPEED_KMH:             { tag: 0x24, type: u16,  desc: "Speed km/h * 10" }
+
+  # Sensor
+  BATTERY_MV:            { tag: 0x30, type: u16,  desc: "Battery voltage mV" }
+  BATTERY_PCT:           { tag: 0x31, type: u8,   desc: "Battery %" }
+  TEMP_C_E1:             { tag: 0x32, type: i16,  desc: "Temp C * 10" }
+  RSSI_DBM:              { tag: 0x33, type: i8,   desc: "Last RX RSSI dBm" }
+  SNR_DB_E1:             { tag: 0x34, type: i8,   desc: "Last RX SNR dB * 10" }
+
+  # Routing / ack
+  ACK_PKT_ID:            { tag: 0x40, type: u32 }
+  HOP_LIMIT:             { tag: 0x41, type: u8 }
+
+  # Beacon / peer meta
+  NODE_NAME:             { tag: 0x50, type: utf8, desc: "Human-friendly peer name <=32 B" }
+  CAP_FLAGS:             { tag: 0x51, type: u16,  desc: "Capability bitfield" }
+
+  # Pairing (X25519)
+  PUBKEY_X25519:         { tag: 0x70, type: bytes32 }
+  NONCE16:               { tag: 0x71, type: bytes16 }
+  FINGERPRINT4:          { tag: 0x72, type: bytes4 }
+
+  # BLE WiFi
+  WIFI_SSID:             { tag: 0x80, type: utf8 }
+  WIFI_PSK:              { tag: 0x81, type: utf8 }
+  WIFI_RSSI:             { tag: 0x82, type: i8 }
+  WIFI_AUTH:             { tag: 0x83, type: u8 }
+  WIFI_IP:               { tag: 0x84, type: bytes4 }
+  WIFI_STATE:            { tag: 0x85, type: u8 }
+
+  # BLE OTA
+  OTA_SIZE:              { tag: 0x90, type: u32 }
+  OTA_SHA256:            { tag: 0x91, type: bytes32 }
+  OTA_SIG_ED25519:       { tag: 0x92, type: bytes64 }
+  OTA_CHUNK_SEQ:         { tag: 0x93, type: u32 }
+  OTA_CHUNK_CRC32:       { tag: 0x94, type: u32 }
+  OTA_PROGRESS_PCT:      { tag: 0x95, type: u8 }
+
+  # BLE region
+  REGION:                { tag: 0xA0, type: u8 }
+
+  # BLE mesh membership
+  MESH_KEY:              { tag: 0xB0, type: bytes32 }
+  MESH_SALT:             { tag: 0xB1, type: bytes8 }
+
+  # Errors
+  ERR_CODE:              { tag: 0xF0, type: u8 }
+  ERR_CONTEXT:           { tag: 0xF1, type: utf8 }
+
+# Mesh payload kinds (values of the KIND TLV).
+mesh_kinds:
+  CHAT_TEXT:             0x01
+  LOC_PING:              0x02
+  SENSOR_SAMPLE:         0x03
+  ACK:                   0x04
+  BEACON:                0x05
+  PAIR_REQ:              0x06
+  PAIR_RESP:             0x07
+  PAIR_CONFIRM:          0x08
+  PING:                  0x09
+  TRACEROUTE:            0x0A
+
+# Radio regions (values of the REGION TLV / persisted in NVS).
+regions:
+  KR923:                 0x00
+  EU868:                 0x01
+  US915:                 0x02
+
+# Generic error codes (value of ERR_CODE TLV)
+errors:
+  OK:                    0x00
+  BAD_ARG:               0x01
+  BAD_STATE:             0x02
+  UNAUTHED:              0x03
+  NOT_FOUND:             0x04
+  BUSY:                  0x05
+  TIMEOUT:               0x06
+  CRYPTO_FAIL:           0x07
+  STORAGE_FAIL:          0x08
+  INTERNAL:              0xFF
