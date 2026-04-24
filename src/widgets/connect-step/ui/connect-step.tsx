@@ -1,8 +1,11 @@
+import { type ReactNode } from "react";
+
 export type ConnectStepProps = {
   titleLines: readonly [string, string];
+  children?: ReactNode;
 };
 
-export function ConnectStep({ titleLines }: ConnectStepProps) {
+export function ConnectStep({ titleLines, children }: ConnectStepProps) {
   const [line1, line2] = titleLines;
 
   return (
@@ -13,7 +16,7 @@ export function ConnectStep({ titleLines }: ConnectStepProps) {
         {line2}
       </h2>
 
-      <div className="flex-1" />
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>
   );
 }
