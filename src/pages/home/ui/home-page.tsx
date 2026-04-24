@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ROUTES } from "@/shared/config";
 import { cn, hapticTick, useInView } from "@/shared/lib";
 import { Button } from "@/shared/ui";
+import { HomeCommunity } from "@/widgets/home-community";
 import { HomeHeroCarousel } from "@/widgets/home-hero-carousel";
 import { HomeLinkList } from "@/widgets/home-link-list";
 import { HomeStep } from "@/widgets/home-step";
@@ -168,6 +169,10 @@ export function HomePage() {
             description="Build a Mesh network with simple, plug-and-play modules. Get started right away with a ground station that comes with a camera, microphone, speaker, and communication module built in."
             media={<GroundStationMedia />}
           />
+        </section>
+
+        <section className="h-full shrink-0 snap-start snap-always overflow-hidden">
+          <HomeCommunity />
         </section>
       </main>
 
