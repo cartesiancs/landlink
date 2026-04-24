@@ -19,8 +19,9 @@ function toAction(
 ): StepAction {
   switch (status) {
     case "idle":
-    case "error":
       return { label: "Connect", onAction: start };
+    case "error":
+      return { label: "Retry", onAction: start };
     case "scanning":
       return { label: "Scanning…", pending: true, disabled: true };
     case "connecting":
@@ -34,7 +35,7 @@ function toAction(
 
 export function ConnectBluetoothPage() {
   const navigate = useNavigate();
-  const { status, device, start } = useBluetoothPairing();
+  const { status, start } = useBluetoothPairing();
 
   useEffect(() => {
     if (status !== "connected") return;
@@ -59,7 +60,7 @@ export function ConnectBluetoothPage() {
 
   return (
     <ConnectStep titleLines={["Connect", "the device via Bluetooth"]}>
-      <BluetoothPairingBody status={status} device={device} />
+      <BluetoothPairingBody status={status} />
     </ConnectStep>
   );
 }

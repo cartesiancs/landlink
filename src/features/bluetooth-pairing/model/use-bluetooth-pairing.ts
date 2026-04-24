@@ -78,6 +78,9 @@ export function useBluetoothPairing() {
       return;
     }
 
+    // WHY: hold the connecting state briefly so the transition to "connected" is perceivable even on fast connects.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     setState({
       status: "connected",
       device: { id: device.id, name: device.name ?? "Unknown device" },

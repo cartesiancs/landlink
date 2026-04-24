@@ -1,43 +1,17 @@
 import { Bluetooth, BluetoothConnected } from "lucide-react";
 
 import { cn } from "@/shared/lib";
-import { Reveal, SlideSwitch } from "@/shared/ui";
+import { Reveal } from "@/shared/ui";
 
-import type {
-  BluetoothPairingStatus,
-  PairedDevice,
-} from "../model/use-bluetooth-pairing";
+import type { BluetoothPairingStatus } from "../model/use-bluetooth-pairing";
 
 type BluetoothPairingBodyProps = {
   status: BluetoothPairingStatus;
-  device: PairedDevice | null;
 };
 
-function caption(
-  status: BluetoothPairingStatus,
-  device: PairedDevice | null,
-): string {
-  switch (status) {
-    case "idle":
-      return "Ready to pair";
-    case "scanning":
-      return "Scanning for devices…";
-    case "connecting":
-      return `Connecting to ${device?.name ?? "device"}…`;
-    case "connected":
-      return `Paired with ${device?.name ?? "device"}`;
-    case "error":
-      return "Couldn't connect — try again.";
-    case "unsupported":
-      return "Web Bluetooth isn't available in this browser. Try Chrome, Edge, or Brave.";
-  }
-}
-
-export function BluetoothPairingBody({
-  status,
-  device,
-}: BluetoothPairingBodyProps) {
+export function BluetoothPairingBody({ status }: BluetoothPairingBodyProps) {
   const isConnected = status === "connected";
+  const isError = status === "error";
   const isBusy = status === "scanning" || status === "connecting";
   const showPulse = status === "idle";
 
@@ -48,7 +22,8 @@ export function BluetoothPairingBody({
           aria-hidden
           className={cn(
             "absolute inset-0 rounded-full transition-colors duration-500 ease-out",
-            isConnected && "border-emerald-500/40 bg-emerald-500/5",
+            isConnected && "bg-emerald-500/5",
+            isError && "bg-red-500/5",
           )}
         />
         {showPulse && (
@@ -69,50 +44,23 @@ export function BluetoothPairingBody({
           />
         )}
 
-        <SlideSwitch
-          contentKey={isConnected ? "connected" : "default"}
-          className="relative flex size-10 items-center justify-center"
-          duration={320}
-          gap={80}
-        >
-          {isConnected ? (
-            <BluetoothConnected
-              className="size-10 text-emerald-600 dark:text-emerald-400"
-              aria-hidden="true"
-              strokeWidth={1.5}
-            />
-          ) : (
-            <Bluetooth
-              className={cn(
-                "size-10 transition-colors duration-300 ease-out",
-                status === "error"
-                  ? "text-muted-foreground"
-                  : "text-foreground",
-              )}
-              aria-hidden="true"
-              strokeWidth={1.5}
-            />
-          )}
-        </SlideSwitch>
+        {isConnected ? (
+          <BluetoothConnected
+            className="size-10 text-emerald-600 dark:text-emerald-400"
+            aria-hidden="true"
+            strokeWidth={1.5}
+          />
+        ) : (
+          <Bluetooth
+            className={cn(
+              "size-10 transition-colors duration-300 ease-out",
+              isError ? "text-red-500 dark:text-red-400" : "text-foreground",
+            )}
+            aria-hidden="true"
+            strokeWidth={1.5}
+          />
+        )}
       </div>
-
-      <SlideSwitch
-        contentKey={status}
-        className="mt-8 h-6 w-full text-center"
-        duration={320}
-        gap={80}
-      >
-        <p
-          className={cn(
-            "text-sm",
-            status === "connected"
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-muted-foreground",
-          )}
-        >
-          {caption(status, device)}
-        </p>
-      </SlideSwitch>
     </Reveal>
   );
 }
