@@ -182,14 +182,7 @@ export function HardwareSetupPage() {
 
       <section aria-label="Privacy" className="px-4 pb-8">
         <div className="rounded-2xl border border-border bg-card p-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck
-              className="size-4 text-foreground"
-              aria-hidden="true"
-            />
-            <h3 className="text-sm font-medium">Privacy by default</h3>
-          </div>
-          <ul className="mt-4 flex flex-col gap-4">
+          <ul className="flex flex-col gap-4">
             {PRIVACY_POINTS.map((point) => {
               const Icon = point.icon;
               return (
@@ -279,10 +272,10 @@ export function HardwareSetupPage() {
 
       <section aria-label="Pairing" className="px-4 pb-8">
         <div className="mb-3 flex items-center gap-2">
-          <Bluetooth className="size-4 text-foreground" aria-hidden="true" />
           <h3 className="font-display text-2xl leading-tight tracking-tight">
             Pair over Web Bluetooth
           </h3>
+          <Bluetooth className="size-4 text-foreground" aria-hidden="true" />
         </div>
         <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
           Landlink uses the{" "}
