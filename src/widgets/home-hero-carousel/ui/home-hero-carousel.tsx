@@ -1,8 +1,17 @@
-import { Carousel, CarouselContent, CarouselItem } from "@/shared/ui";
+import { useEffect, useState } from "react";
+
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  type CarouselApi,
+} from "@/shared/ui";
 
 import starlinkDishSrc from "../assets/starlink-dish.webp";
 import groundStationSrc from "../assets/ground-station.webp";
 import constellationSrc from "../assets/constellation.webp";
+
+const AUTOPLAY_INTERVAL_MS = 5000;
 
 type Slide = {
   id: string;
@@ -29,8 +38,21 @@ const SLIDES: readonly Slide[] = [
 ];
 
 export function HomeHeroCarousel() {
+  const [api, setApi] = useState<CarouselApi>();
+
+  useEffect(() => {
+    if (!api) return;
+    const id = window.setInterval(() => {
+      api.scrollNext();
+    }, AUTOPLAY_INTERVAL_MS);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [api]);
+
   return (
     <Carousel
+      setApi={setApi}
       opts={{ loop: true, align: "start" }}
       className="w-full overflow-hidden rounded-2xl"
       aria-label="Featured alternatives"
