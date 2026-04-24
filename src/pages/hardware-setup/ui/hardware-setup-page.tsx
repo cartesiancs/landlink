@@ -2,12 +2,12 @@ import {
   Bluetooth,
   Check,
   ChevronLeft,
+  ChevronRight,
   Cpu,
   HardDrive,
   KeyRound,
   Plane,
   Radio,
-  ShieldCheck,
   UserCheck,
   Wifi,
   Zap,
@@ -15,6 +15,14 @@ import {
 import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/shared/ui";
 
 type Spec = {
   label: string;
@@ -136,22 +144,22 @@ const PRIVACY_POINTS: readonly PrivacyPoint[] = [
   },
 ];
 
-function StatusBadge({ status }: { status: Hardware["status"] }) {
-  if (status === "available") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
-        Available
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden />
-      Coming soon
-    </span>
-  );
-}
+// function StatusBadge({ status }: { status: Hardware["status"] }) {
+//   if (status === "available") {
+//     return (
+//       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+//         <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+//         Available
+//       </span>
+//     );
+//   }
+//   return (
+//     <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+//       <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden />
+//       Coming soon
+//     </span>
+//   );
+// }
 
 export function HardwareSetupPage() {
   return (
@@ -211,12 +219,10 @@ export function HardwareSetupPage() {
           <h3 className="font-display text-2xl leading-tight tracking-tight">
             Hardware
           </h3>
-          <span className="text-xs text-muted-foreground">2 devices</span>
         </div>
 
         <div className="flex flex-col gap-4">
           {HARDWARE.map((item) => {
-            const Icon = item.icon;
             return (
               <article
                 key={item.id}
@@ -232,12 +238,6 @@ export function HardwareSetupPage() {
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <div className="flex size-8 items-center justify-center rounded-md bg-muted">
-                        <Icon
-                          className="size-4 text-foreground"
-                          aria-hidden="true"
-                        />
-                      </div>
                       <div className="flex flex-col">
                         <h4 className="text-sm font-medium">{item.name}</h4>
                         <p className="text-xs text-muted-foreground">
@@ -245,24 +245,43 @@ export function HardwareSetupPage() {
                         </p>
                       </div>
                     </div>
-                    <StatusBadge status={item.status} />
                   </div>
 
-                  <dl className="mt-4 grid grid-cols-1 gap-x-4 gap-y-2 border-t border-border pt-4 text-sm">
-                    {item.specs.map((spec) => (
-                      <div
-                        key={spec.label}
-                        className="flex items-baseline justify-between gap-3"
+                  <Drawer>
+                    <DrawerTrigger asChild>
+                      <button
+                        type="button"
+                        className="mt-4 cursor-pointer flex w-full items-center justify-between gap-3 border-t border-border pt-4 text-left text-xs font-medium text-foreground transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:text-muted-foreground"
                       >
-                        <dt className="text-xs text-muted-foreground">
-                          {spec.label}
-                        </dt>
-                        <dd className="text-right text-xs font-medium">
-                          {spec.value}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
+                        <span>View specs</span>
+                        <ChevronRight
+                          className="size-4 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </DrawerTrigger>
+                    <DrawerContent>
+                      <DrawerHeader>
+                        <DrawerTitle>{item.name}</DrawerTitle>
+                        <DrawerDescription>{item.tagline}</DrawerDescription>
+                      </DrawerHeader>
+                      <dl className="grid grid-cols-1 gap-x-4 gap-y-3 px-4 pb-6 text-sm">
+                        {item.specs.map((spec) => (
+                          <div
+                            key={spec.label}
+                            className="flex items-baseline justify-between gap-3 border-b border-border/60 pb-2 last:border-b-0 last:pb-0"
+                          >
+                            <dt className="text-xs text-muted-foreground">
+                              {spec.label}
+                            </dt>
+                            <dd className="text-right text-xs font-medium">
+                              {spec.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </DrawerContent>
+                  </Drawer>
                 </div>
               </article>
             );
