@@ -21,8 +21,12 @@ type State = {
 
 const INITIAL: State = { status: "idle", device: null, error: null };
 
+export function isWebBluetoothSupported(): boolean {
+  return typeof navigator !== "undefined" && Boolean(navigator.bluetooth);
+}
+
 function detectInitial(): State {
-  if (typeof navigator === "undefined" || !navigator.bluetooth) {
+  if (!isWebBluetoothSupported()) {
     return { status: "unsupported", device: null, error: null };
   }
   return INITIAL;

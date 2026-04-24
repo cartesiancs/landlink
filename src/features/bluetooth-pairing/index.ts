@@ -1,4 +1,5 @@
 export {
+  isWebBluetoothSupported,
   useBluetoothPairing,
   type BluetoothPairingStatus,
   type PairedDevice,

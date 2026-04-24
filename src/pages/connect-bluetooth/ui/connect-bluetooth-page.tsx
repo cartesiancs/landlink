@@ -38,6 +38,10 @@ export function ConnectBluetoothPage() {
   const { status, start } = useBluetoothPairing();
 
   useEffect(() => {
+    if (status === "unsupported") {
+      void navigate(ROUTES.connectUnsupported, { replace: true });
+      return;
+    }
     if (status !== "connected") return;
     hapticTick();
     const timer = window.setTimeout(() => {

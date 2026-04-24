@@ -1,6 +1,7 @@
 export const ROUTES = {
   home: "/",
   connectBluetooth: "/connect/bluetooth",
+  connectUnsupported: "/connect/unsupported",
   connectWifi: "/connect/wifi",
   connecting: "/connecting",
   about: "/about",
