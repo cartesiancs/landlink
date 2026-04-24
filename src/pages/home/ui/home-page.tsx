@@ -182,7 +182,7 @@ export function HomePage() {
       >
         <Button
           variant="outline"
-          className="pointer-events-auto h-12 w-full bg-background text-base shadow-sm"
+          className="pointer-events-auto h-12 w-full bg-background text-base"
           onClick={() => {
             hapticTick();
             void navigate(ROUTES.purchase);
