@@ -11,7 +11,7 @@ import { ROUTES, type RoutePath } from "@/shared/config";
 import { AppHeader } from "@/widgets/app-header";
 import { NavigationSidebar } from "@/widgets/navigation-sidebar";
 import { SupportDrawer } from "@/widgets/support-drawer";
-import { isWebBluetoothSupported } from "@/features/bluetooth-pairing";
+import { isBlePairingSupported } from "@/features/bluetooth-pairing";
 import { HomePage } from "@/pages/home";
 import { ConnectBluetoothPage } from "@/pages/connect-bluetooth";
 import { ConnectWifiPage } from "@/pages/connect-wifi";
@@ -117,7 +117,7 @@ export function AppLayout() {
     // WHY: Home → Bluetooth is the only gating transition; when the browser
     // can't do Web Bluetooth, skip the pairing step entirely so the user never
     // sees it flash.
-    if (pathname === ROUTES.home && !isWebBluetoothSupported()) {
+    if (pathname === ROUTES.home && !isBlePairingSupported()) {
       void navigate(ROUTES.connectUnsupported);
       return;
     }
