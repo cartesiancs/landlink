@@ -7,6 +7,7 @@ export const ROUTES = {
   about: "/about",
   faq: "/faq",
   purchase: "/purchase",
+  landlinkModuleI: "/purchase/landlink-module-i",
   hardwareSetup: "/hardware-setup",
   privacy: "/privacy",
   terms: "/terms",
