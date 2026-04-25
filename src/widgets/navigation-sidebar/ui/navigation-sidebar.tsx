@@ -49,7 +49,7 @@ export function NavigationSidebar({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-72">
-        <SheetHeader>
+        <SheetHeader className="pt-[max(env(safe-area-inset-top),1rem)]">
           <SheetTitle>Menu</SheetTitle>
           <SheetDescription></SheetDescription>
         </SheetHeader>
@@ -69,7 +69,7 @@ export function NavigationSidebar({
             );
           })}
         </nav>
-        <div className="mt-auto flex flex-col gap-1 p-4">
+        <div className="mt-auto flex flex-col gap-1 px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
           <nav className="flex flex-col gap-1 border-t border-border pt-3">
             {LEGAL_ITEMS.map((item) => {
               const Icon = item.icon;

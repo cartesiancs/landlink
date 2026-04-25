@@ -24,7 +24,7 @@ export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
             Need help? Browse FAQs or contact us.
           </DrawerDescription>
         </DrawerHeader>
-        <div className="flex flex-col gap-3 px-4 pb-6 text-sm">
+        <div className="flex flex-col gap-3 px-4 pb-[max(env(safe-area-inset-bottom),1.5rem)] text-sm">
           <a
             href="mailto:jun@cartesiancs.com"
             className="rounded-md border border-border px-3 py-3 hover:bg-muted"

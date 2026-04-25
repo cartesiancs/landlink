@@ -54,7 +54,7 @@ const FAQS: readonly FaqItem[] = [
 export function FaqPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 py-3 backdrop-blur supports-backdrop-filter:bg-background/70">
+      <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur supports-backdrop-filter:bg-background/70">
         <Link
           to={ROUTES.home}
           className="flex size-9 items-center justify-center rounded-md hover:bg-muted"
@@ -93,7 +93,7 @@ export function FaqPage() {
         ))}
       </section>
 
-      <footer className="mt-auto border-t border-border px-4 py-6 text-xs text-muted-foreground">
+      <footer className="mt-auto border-t border-border px-4 pt-6 pb-[max(env(safe-area-inset-bottom),1.5rem)] text-xs text-muted-foreground">
         Still have questions?{" "}
         <a
           href="mailto:jun@cartesiancs.com"
