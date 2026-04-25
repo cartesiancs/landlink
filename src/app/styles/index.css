@@ -153,10 +153,58 @@
   * {
     @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
-    }
   html {
     @apply font-sans;
+    /* Native-app feel: kill iOS rubber-band on the page itself, smooth fonts. */
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     }
+  body {
+    @apply bg-background text-foreground;
+    /* No blue tap flash, no long-press callout, no accidental text selection on chrome. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+    }
+  /* Restore selection where text is the content, not chrome. */
+  p, h1, h2, h3, h4, h5, h6, li, blockquote, code, pre,
+  [contenteditable], input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+    }
+  /* Skip the 300ms tap delay and the double-tap-zoom hesitation. */
+  a, button, [role="button"], summary, label {
+    touch-action: manipulation;
+    }
+}
+
+/* iOS-like cross-fade-with-slide between top-level routes.
+   Triggered by React Router's `viewTransition` prop on Link / navigate. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+}
+::view-transition-old(root) {
+  animation-name: route-fade-out;
+}
+::view-transition-new(root) {
+  animation-name: route-fade-in;
+}
+@keyframes route-fade-out {
+  to { opacity: 0; transform: translate3d(-12px, 0, 0); }
+}
+@keyframes route-fade-in {
+  from { opacity: 0; transform: translate3d(12px, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 1ms;
+  }
 }

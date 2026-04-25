@@ -44,7 +44,7 @@ export function HomeLinkList() {
           return (
             <li key={link.id}>
               {link.kind === "internal" ? (
-                <Link to={link.href} className={rowClassName}>
+                <Link to={link.href} viewTransition className={rowClassName}>
                   <span>{link.label}</span>
                   <ChevronRight className="size-4 text-muted-foreground" />
                 </Link>

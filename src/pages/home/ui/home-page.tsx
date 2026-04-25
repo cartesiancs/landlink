@@ -190,7 +190,7 @@ export function HomePage() {
           className="pointer-events-auto h-12 w-full bg-background text-base"
           onClick={() => {
             hapticTick();
-            void navigate(ROUTES.purchase);
+            void navigate(ROUTES.purchase, { viewTransition: true });
           }}
           tabIndex={showPurchase ? 0 : -1}
         >

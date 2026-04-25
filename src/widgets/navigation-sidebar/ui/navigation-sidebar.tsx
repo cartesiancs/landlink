@@ -60,6 +60,7 @@ export function NavigationSidebar({
               <Link
                 key={item.to}
                 to={item.to}
+                viewTransition
                 onClick={handleClose}
                 className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
               >

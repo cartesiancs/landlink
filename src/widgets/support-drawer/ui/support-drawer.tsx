@@ -33,6 +33,7 @@ export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
           </a>
           <Link
             to={ROUTES.faq}
+            viewTransition
             onClick={() => {
               onOpenChange(false);
             }}

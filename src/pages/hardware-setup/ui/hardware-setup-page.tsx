@@ -167,6 +167,7 @@ export function HardwareSetupPage() {
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur supports-backdrop-filter:bg-background/70">
         <Link
           to={ROUTES.home}
+          viewTransition
           className="flex size-9 items-center justify-center rounded-md hover:bg-muted"
           aria-label="Back to Home"
         >
