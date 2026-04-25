@@ -1,3 +1,4 @@
+import { type MouseEvent } from "react";
 import {
   Building2,
   FileText,
@@ -6,7 +7,7 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import {
   Sheet,
@@ -42,8 +43,16 @@ export function NavigationSidebar({
   open,
   onOpenChange,
 }: NavigationSidebarProps) {
+  const location = useLocation();
   const handleClose = () => {
     onOpenChange(false);
+  };
+
+  const handleNavClick = (to: string) => (event: MouseEvent) => {
+    if (location.pathname === to) {
+      event.preventDefault();
+    }
+    handleClose();
   };
 
   return (
@@ -61,7 +70,7 @@ export function NavigationSidebar({
                 key={item.to}
                 to={item.to}
                 viewTransition
-                onClick={handleClose}
+                onClick={handleNavClick(item.to)}
                 className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
               >
                 <Icon className="size-4" aria-hidden="true" />
@@ -78,7 +87,7 @@ export function NavigationSidebar({
                 <Link
                   key={item.to}
                   to={item.to}
-                  onClick={handleClose}
+                  onClick={handleNavClick(item.to)}
                   className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
                 >
                   <Icon className="size-4" aria-hidden="true" />
