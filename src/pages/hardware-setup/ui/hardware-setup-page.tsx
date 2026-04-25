@@ -16,12 +16,12 @@ import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
 } from "@/shared/ui";
 
 type Spec = {
@@ -248,8 +248,8 @@ export function HardwareSetupPage() {
                     </div>
                   </div>
 
-                  <Drawer>
-                    <DrawerTrigger asChild>
+                  <Sheet>
+                    <SheetTrigger asChild>
                       <button
                         type="button"
                         className="mt-4 cursor-pointer flex w-full items-center justify-between gap-3 border-t border-border pt-4 text-left text-xs font-medium text-foreground transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:text-muted-foreground"
@@ -260,12 +260,16 @@ export function HardwareSetupPage() {
                           aria-hidden="true"
                         />
                       </button>
-                    </DrawerTrigger>
-                    <DrawerContent>
-                      <DrawerHeader>
-                        <DrawerTitle>{item.name}</DrawerTitle>
-                        <DrawerDescription>{item.tagline}</DrawerDescription>
-                      </DrawerHeader>
+                    </SheetTrigger>
+                    <SheetContent
+                      side="bottom"
+                      showCloseButton={false}
+                      className="rounded-t-xl pb-[max(env(safe-area-inset-bottom),1rem)]"
+                    >
+                      <SheetHeader>
+                        <SheetTitle>{item.name}</SheetTitle>
+                        <SheetDescription>{item.tagline}</SheetDescription>
+                      </SheetHeader>
                       <dl className="grid grid-cols-1 gap-x-4 gap-y-3 px-4 pb-6 text-sm">
                         {item.specs.map((spec) => (
                           <div
@@ -281,8 +285,8 @@ export function HardwareSetupPage() {
                           </div>
                         ))}
                       </dl>
-                    </DrawerContent>
-                  </Drawer>
+                    </SheetContent>
+                  </Sheet>
                 </div>
               </article>
             );
