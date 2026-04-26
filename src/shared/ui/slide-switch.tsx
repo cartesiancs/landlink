@@ -1,8 +1,4 @@
-import {
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { cn } from "@/shared/lib";
 
@@ -50,8 +46,8 @@ export function SlideSwitch({
   contentKey,
   children,
   className,
-  duration = 400,
-  gap = 200,
+  duration = 500,
+  gap = 150,
 }: SlideSwitchProps) {
   const reduced = useReducedMotion();
   const [entries, setEntries] = useState<Entry[]>(() => [
@@ -106,11 +102,11 @@ export function SlideSwitch({
         const style = isExiting
           ? { animationDuration: `${String(phaseMs)}ms` }
           : isLive && shouldAnimateIn
-            ? {
-                animationDuration: `${String(phaseMs)}ms`,
-                animationDelay: `${String(phaseMs + gap)}ms`,
-              }
-            : undefined;
+          ? {
+              animationDuration: `${String(phaseMs)}ms`,
+              animationDelay: `${String(phaseMs + gap)}ms`,
+            }
+          : undefined;
 
         return (
           <div
