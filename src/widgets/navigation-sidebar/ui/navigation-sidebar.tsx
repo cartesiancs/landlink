@@ -63,7 +63,7 @@ export function NavigationSidebar({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-72">
         <SheetHeader className="pt-[max(env(safe-area-inset-top),1rem)]">
-          <SheetTitle>Menu</SheetTitle>
+          <SheetTitle>Landlink</SheetTitle>
           <SheetDescription></SheetDescription>
         </SheetHeader>
         <nav className="mt-4 flex flex-col gap-1 px-4">

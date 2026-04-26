@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Carousel,
@@ -6,6 +6,7 @@ import {
   CarouselItem,
   type CarouselApi,
 } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 
 import starlinkDishSrc from "../assets/starlink-dish.webp";
 import groundStationSrc from "../assets/ground-station.webp";
@@ -37,6 +38,59 @@ const SLIDES: readonly Slide[] = [
   },
 ];
 
+const loadedSources = new Set<string>();
+
+if (typeof window !== "undefined") {
+  for (const slide of SLIDES) {
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => {
+      loadedSources.add(slide.src);
+    };
+    img.src = slide.src;
+  }
+}
+
+type CarouselSlideProps = {
+  slide: Slide;
+  eager: boolean;
+};
+
+function CarouselSlide({ slide, eager }: CarouselSlideProps) {
+  const [loaded, setLoaded] = useState(() => loadedSources.has(slide.src));
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    if (loaded) return;
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      loadedSources.add(slide.src);
+      setLoaded(true);
+    }
+  }, [loaded, slide.src]);
+
+  return (
+    <div className="relative aspect-16/10 w-full bg-muted">
+      <img
+        ref={imgRef}
+        src={slide.src}
+        alt={slide.alt}
+        className={cn(
+          "h-full w-full object-cover transition-opacity duration-500 ease-out",
+          loaded ? "opacity-100" : "opacity-0",
+        )}
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+        fetchPriority={eager ? "high" : "auto"}
+        onLoad={() => {
+          loadedSources.add(slide.src);
+          setLoaded(true);
+        }}
+      />
+    </div>
+  );
+}
+
 export function HomeHeroCarousel() {
   const [api, setApi] = useState<CarouselApi>();
 
@@ -58,16 +112,9 @@ export function HomeHeroCarousel() {
       aria-label="Featured alternatives"
     >
       <CarouselContent className="ml-0">
-        {SLIDES.map((slide) => (
+        {SLIDES.map((slide, index) => (
           <CarouselItem key={slide.id} className="pl-0 basis-full">
-            <div className="relative aspect-[16/10] w-full bg-muted">
-              <img
-                src={slide.src}
-                alt={slide.alt}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-            </div>
+            <CarouselSlide slide={slide} eager={index === 0} />
           </CarouselItem>
         ))}
       </CarouselContent>
