@@ -207,7 +207,7 @@ export function HomePage() {
             )}
             onClick={() => {
               hapticTick();
-              void navigate(ROUTES.purchase, { viewTransition: true });
+              void navigate(ROUTES.landlinkOne, { viewTransition: true });
             }}
             tabIndex={showPurchase ? 0 : -1}
           >

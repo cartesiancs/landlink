@@ -10,8 +10,8 @@ import { AboutPage } from "@/pages/about";
 import { FaqPage } from "@/pages/faq";
 import { HardwareSetupPage } from "@/pages/hardware-setup";
 import { LandlinkModuleIPage } from "@/pages/landlink-module-i";
+import { LandlinkOnePage } from "@/pages/landlink-one";
 import { PrivacyPage } from "@/pages/privacy";
-import { PurchasePage } from "@/pages/purchase";
 import { TermsPage } from "@/pages/terms";
 import { ROUTES } from "@/shared/config";
 import { AppLayout } from "@/app/layout/app-layout";
@@ -19,7 +19,7 @@ import { AppLayout } from "@/app/layout/app-layout";
 const routes: RouteObject[] = [
   { path: ROUTES.about, element: <AboutPage /> },
   { path: ROUTES.faq, element: <FaqPage /> },
-  { path: ROUTES.purchase, element: <PurchasePage /> },
+  { path: ROUTES.landlinkOne, element: <LandlinkOnePage /> },
   { path: ROUTES.landlinkModuleI, element: <LandlinkModuleIPage /> },
   { path: ROUTES.hardwareSetup, element: <HardwareSetupPage /> },
   { path: ROUTES.privacy, element: <PrivacyPage /> },

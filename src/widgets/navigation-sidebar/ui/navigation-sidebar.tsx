@@ -5,6 +5,7 @@ import {
   House,
   Info,
   Package,
+  Plane,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ type NavItem = {
 
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Home", to: ROUTES.home, icon: House },
+  { label: "Landlink I", to: ROUTES.landlinkOne, icon: Plane },
   { label: "Landlink Module I", to: ROUTES.landlinkModuleI, icon: Package },
   { label: "About", to: ROUTES.about, icon: Info },
 ];
