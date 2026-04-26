@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
+import { cn } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 
 type Spec = {
@@ -19,6 +21,27 @@ const SPECS: readonly Spec[] = [
 ];
 
 export function LandlinkModuleIPage() {
+  const [isFooterVisible, setIsFooterVisible] = useState(true);
+
+  useEffect(() => {
+    let lastY = window.scrollY;
+    const handleScroll = () => {
+      const currentY = window.scrollY;
+      const delta = currentY - lastY;
+      if (Math.abs(delta) < 4) return;
+      if (delta > 0 && currentY > 32) {
+        setIsFooterVisible(false);
+      } else if (delta < 0) {
+        setIsFooterVisible(true);
+      }
+      lastY = currentY;
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur supports-backdrop-filter:bg-background/70">
@@ -54,7 +77,7 @@ export function LandlinkModuleIPage() {
         </div>
       </section>
 
-      <section className="px-4 pb-8">
+      <section className="px-4 pb-[calc(env(safe-area-inset-bottom,12px)+220px)]">
         <dl className="overflow-hidden rounded-2xl border border-border bg-card">
           <div className="divide-y divide-border">
             {SPECS.map((spec) => (
@@ -63,14 +86,20 @@ export function LandlinkModuleIPage() {
                 className="flex items-center justify-between px-4 py-3 text-sm"
               >
                 <dt className="text-muted-foreground">{spec.label}</dt>
-                <dd className="font-mono tabular-nums">{spec.value}</dd>
+                <dd className="tabular-nums">{spec.value}</dd>
               </div>
             ))}
           </div>
         </dl>
       </section>
 
-      <section className="px-4 pb-10">
+      <section
+        aria-hidden={!isFooterVisible}
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[430px] bg-background/90 px-4 pt-4 pb-[calc(max(env(safe-area-inset-bottom),0.75rem)+0.75rem)] backdrop-blur transition-transform duration-300 ease-out supports-backdrop-filter:bg-background/70",
+          isFooterVisible ? "translate-y-0" : "translate-y-full",
+        )}
+      >
         <div className="flex items-baseline justify-between">
           <p className="font-display text-2xl leading-none tracking-tight">
             $199
@@ -87,10 +116,6 @@ export function LandlinkModuleIPage() {
         >
           Coming soon
         </Button>
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          Pre-orders open later this year. Join the waitlist from the support
-          drawer to be notified.
-        </p>
       </section>
     </main>
   );
