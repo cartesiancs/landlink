@@ -54,7 +54,9 @@ export function NavigationSidebar({
     if (location.pathname === to) {
       event.preventDefault();
     }
-    handleClose();
+    if (to === ROUTES.home) {
+      handleClose();
+    }
   };
 
   return (
