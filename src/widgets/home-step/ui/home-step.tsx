@@ -38,7 +38,7 @@ export function HomeStep({
       </Reveal>
 
       <Reveal className="mt-6 min-h-0 flex-1" delay={200}>
-        <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-white">
+        <div className="relative flex h-full items-center justify-center overflow-hidden rounded-2xl bg-background">
           {media}
           {action ? (
             <Button

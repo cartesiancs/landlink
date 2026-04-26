@@ -21,6 +21,7 @@ import {
 } from "@/shared/ui";
 import { cn } from "@/shared/lib";
 import { ROUTES } from "@/shared/config";
+import { ThemeToggle } from "@/features/toggle-theme";
 
 const IS_NATIVE_APP = Capacitor.isNativePlatform();
 
@@ -96,6 +97,12 @@ export function NavigationSidebar({
           })}
         </nav>
         <div className="mt-auto flex flex-col gap-1 px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+          <div className="flex items-center justify-between gap-3 px-1 pb-3">
+            <span className="text-xs font-medium text-muted-foreground">
+              Theme
+            </span>
+            <ThemeToggle />
+          </div>
           <nav className="flex flex-col gap-1 border-t border-border pt-3">
             {LEGAL_ITEMS.map((item) => {
               const Icon = item.icon;

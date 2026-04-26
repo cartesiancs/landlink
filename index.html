@@ -3,8 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#ffffff" />
     <link rel="icon" href="/favicon.ico" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('vision-theme');
+          var resolved = stored === 'dark' ? 'dark' : 'light';
+          var root = document.documentElement;
+          if (resolved === 'dark') root.classList.add('dark');
+          root.style.colorScheme = resolved;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', resolved === 'dark' ? '#000000' : '#ffffff');
+        } catch (e) {}
+      })();
+    </script>
     <link rel="canonical" href="http://landlink.sh/" />
 
     <title>Landlink | A drone-powered alternative to Starlink</title>
