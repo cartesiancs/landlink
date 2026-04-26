@@ -2,10 +2,13 @@
 
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "radix-ui"
+import { Capacitor } from "@capacitor/core"
 
 import { cn } from "@/shared/lib/utils"
 import { Button } from "@/shared/ui/button"
 import { XIcon } from "lucide-react"
+
+const IS_NATIVE_APP = Capacitor.isNativePlatform()
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -72,7 +75,12 @@ function SheetContent({
           <SheetPrimitive.Close data-slot="sheet-close" asChild>
             <Button
               variant="ghost"
-              className="absolute top-[max(env(safe-area-inset-top),0.75rem)] right-3"
+              className={cn(
+                "absolute right-3",
+                IS_NATIVE_APP
+                  ? "top-[calc(max(env(safe-area-inset-top),0.75rem)+14px)]"
+                  : "top-[max(env(safe-area-inset-top),0.75rem)]",
+              )}
               size="icon-sm"
             >
               <XIcon

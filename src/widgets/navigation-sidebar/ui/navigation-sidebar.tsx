@@ -9,6 +9,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 
 import {
   Sheet,
@@ -17,7 +18,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import { ROUTES } from "@/shared/config";
+
+const IS_NATIVE_APP = Capacitor.isNativePlatform();
 
 type NavigationSidebarProps = {
   open: boolean;
@@ -62,11 +66,17 @@ export function NavigationSidebar({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-72">
-        <SheetHeader className="pt-[max(env(safe-area-inset-top),1rem)]">
+        <SheetHeader
+          className={cn(
+            IS_NATIVE_APP
+              ? "pt-[calc(max(env(safe-area-inset-top),1rem)+18px)]"
+              : "pt-[max(env(safe-area-inset-top),1rem)]",
+          )}
+        >
           <SheetTitle>Landlink</SheetTitle>
           <SheetDescription></SheetDescription>
         </SheetHeader>
-        <nav className="mt-4 flex flex-col gap-1 px-4">
+        <nav className="mt-2 flex flex-col gap-1 px-4">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             return (

@@ -1,8 +1,10 @@
 import { type ReactNode, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 
 import { Button, SlideSwitch } from "@/shared/ui";
 import {
+  cn,
   hapticTick,
   StepActionProvider,
   useStepAction,
@@ -66,6 +68,8 @@ function renderStep(pathname: StepPath): ReactNode {
   }
 }
 
+const IS_NATIVE_APP = Capacitor.isNativePlatform();
+
 type StepCtaProps = {
   defaultLabel: string;
   defaultOnAction: () => void;
@@ -85,7 +89,14 @@ function StepCta({ defaultLabel, defaultOnAction }: StepCtaProps) {
   };
 
   return (
-    <div className="bg-background/90 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] backdrop-blur supports-backdrop-filter:bg-background/70">
+    <div
+      className={cn(
+        "bg-background/90 px-4 pt-3 backdrop-blur supports-backdrop-filter:bg-background/70",
+        IS_NATIVE_APP
+          ? "pb-[calc(max(env(safe-area-inset-bottom),12px)+12px)]"
+          : "pb-[max(env(safe-area-inset-bottom),12px)]",
+      )}
+    >
       <Button
         size="lg"
         disabled={disabled}
