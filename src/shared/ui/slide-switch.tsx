@@ -120,10 +120,10 @@ export function SlideSwitch({
             className={cn(
               "col-start-1 row-start-1 min-h-0",
               isExiting &&
-                "ease-out animate-out fade-out slide-out-to-left-8 fill-mode-forwards",
+                "ease-[cubic-bezier(0.32,0.72,0,1)] animate-out fade-out slide-out-to-left-8 fill-mode-forwards",
               isLive &&
                 shouldAnimateIn &&
-                "ease-out animate-in fade-in slide-in-from-right-8 fill-mode-both",
+                "ease-[cubic-bezier(0.32,0.72,0,1)] animate-in fade-in slide-in-from-right-8 fill-mode-both",
             )}
             onAnimationEnd={
               isExiting
