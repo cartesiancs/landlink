@@ -3,14 +3,15 @@ import { useEffect, useRef, useState } from "react";
 type UseInViewOptions = {
   threshold?: number;
   once?: boolean;
+  initialInView?: boolean;
 };
 
 export function useInView<T extends Element = HTMLElement>(
   options: UseInViewOptions = {},
 ) {
-  const { threshold = 0.3, once = false } = options;
+  const { threshold = 0.3, once = false, initialInView = false } = options;
   const ref = useRef<T | null>(null);
-  const [inView, setInView] = useState(false);
+  const [inView, setInView] = useState(initialInView);
 
   useEffect(() => {
     const el = ref.current;

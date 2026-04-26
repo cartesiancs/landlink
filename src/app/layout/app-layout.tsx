@@ -91,7 +91,7 @@ function StepCta({ defaultLabel, defaultOnAction }: StepCtaProps) {
   return (
     <div
       className={cn(
-        "bg-background/90 px-4 pt-3 backdrop-blur supports-backdrop-filter:bg-background/70",
+        "relative z-30 bg-background/90 px-4 pt-3 backdrop-blur supports-backdrop-filter:bg-background/70",
         IS_NATIVE_APP
           ? "pb-[calc(max(env(safe-area-inset-bottom),12px)+12px)]"
           : "pb-[max(env(safe-area-inset-bottom),12px)]",

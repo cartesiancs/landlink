@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
-import { cn, hapticTick, useInView } from "@/shared/lib";
+import { cn, hapticTick, useInView, useScrollRestoration } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 import { HomeCommunity } from "@/widgets/home-community";
 import { HomeHeroCarousel } from "@/widgets/home-hero-carousel";
@@ -46,14 +47,21 @@ function GroundStationMedia() {
   );
 }
 
+let lastVisibleIntent = false;
+
 export function HomePage() {
   const [buyStepRef, buyStepInView] = useInView<HTMLElement>({
     threshold: 0.5,
     once: false,
+    initialInView: lastVisibleIntent,
   });
   const mainRef = useRef<HTMLElement>(null);
-  const [isIdle, setIsIdle] = useState(false);
+  const [isIdle, setIsIdle] = useState(lastVisibleIntent);
   const navigate = useNavigate();
+  const location = useLocation();
+  const isLeaving = location.pathname !== ROUTES.home;
+
+  useScrollRestoration("home", mainRef);
 
   useEffect(() => {
     const el = mainRef.current;
@@ -95,7 +103,12 @@ export function HomePage() {
     };
   }, []);
 
-  const showPurchase = isIdle && buyStepInView;
+  const showPurchase = isIdle && buyStepInView && !isLeaving;
+  const visibleIntent = isIdle && buyStepInView;
+
+  useEffect(() => {
+    lastVisibleIntent = visibleIntent;
+  }, [visibleIntent]);
 
   return (
     <>
@@ -176,27 +189,33 @@ export function HomePage() {
         </section>
       </main>
 
-      <div
-        className={cn(
-          "pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,12px)+72px)] z-20 mx-auto max-w-[430px] px-4 transition-all duration-500 ease-out",
-          showPurchase
-            ? "translate-y-0 opacity-100"
-            : "translate-y-[120%] opacity-0",
-        )}
-        aria-hidden={!showPurchase}
-      >
-        <Button
-          variant="outline"
-          className="pointer-events-auto h-12 w-full bg-background text-base"
-          onClick={() => {
-            hapticTick();
-            void navigate(ROUTES.purchase, { viewTransition: true });
-          }}
-          tabIndex={showPurchase ? 0 : -1}
+      {createPortal(
+        <div
+          className={cn(
+            "pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,12px)+72px)] z-20 mx-auto max-w-[430px] px-4 transition-all duration-300 ease-out",
+            showPurchase
+              ? "translate-y-0 opacity-100"
+              : "translate-y-[120%] opacity-0",
+          )}
+          aria-hidden={!showPurchase}
         >
-          Purchase
-        </Button>
-      </div>
+          <Button
+            variant="outline"
+            className={cn(
+              "h-12 w-full bg-background text-base",
+              showPurchase ? "pointer-events-auto" : "pointer-events-none",
+            )}
+            onClick={() => {
+              hapticTick();
+              void navigate(ROUTES.purchase, { viewTransition: true });
+            }}
+            tabIndex={showPurchase ? 0 : -1}
+          >
+            Purchase
+          </Button>
+        </div>,
+        document.body,
+      )}
     </>
   );
 }
