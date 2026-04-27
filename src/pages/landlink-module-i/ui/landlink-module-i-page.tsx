@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
 import { cn } from "@/shared/lib";
-import { Button } from "@/shared/ui";
+import { Button, toast } from "@/shared/ui";
 
 type Spec = {
   label: string;
@@ -104,17 +104,19 @@ export function LandlinkModuleIPage() {
           <p className="font-display text-2xl leading-none tracking-tight">
             $199
           </p>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            USD
-          </p>
+          <p className="text-[11px] text-muted-foreground">One time</p>
         </div>
         <Button
           size="lg"
-          disabled
           className="mt-4 h-12 w-full text-base"
-          aria-label="Buy Landlink Module I, coming soon"
+          aria-label="Pre order Landlink Module I"
+          onClick={() => {
+            toast.info("Pre orders are not yet supported.", {
+              description: "We will open them soon. Thanks for your patience.",
+            });
+          }}
         >
-          Coming soon
+          Pre order
         </Button>
       </section>
     </main>

@@ -32,3 +32,4 @@ export {
   useCarousel,
   type CarouselApi,
 } from "./carousel";
+export { Toaster, toast } from "./sonner";
