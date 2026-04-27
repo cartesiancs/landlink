@@ -12,37 +12,37 @@ const FAQS: readonly FaqItem[] = [
   {
     question: "What is Landlink?",
     answer:
-      "Landlink is a drone-powered connectivity platform that provides high-speed internet access in areas where traditional infrastructure is unavailable or unreliable. It serves as a practical alternative to satellite services like Starlink.",
+      "Landlink is a long-range text communication platform built on small radio modules and drones. Think of it like Meshtastic, but with airborne relays you can fly wherever coverage is needed. Every node ships ready to send and receive text payloads out of the box.",
   },
   {
     question: "How does Landlink work?",
     answer:
-      "Landlink combines autonomous drones with a ground station to build a mesh network. Drones act as airborne relays that extend coverage up to 50km, while the ground station aggregates the signal and distributes it to your devices.",
+      "Landlink Modules form a low-power mesh with the modules around them. When you add a Landlink drone, it joins the same mesh as a flying node and stretches coverage up to 50km from the ground. The link is two-way, so the network that carries your messages can also keep the drones in formation.",
+  },
+  {
+    question: "Can I control the drones from my phone?",
+    answer:
+      "Yes. Because the mesh is bidirectional, the same browser tab that pairs with your module can reposition any drone, set a new patrol path, or recall the fleet. There is no separate ground controller to carry around.",
   },
   {
     question: "What do I need to get started?",
     answer:
-      "You need a Landlink-compatible drone and a ground station kit. Both come with a camera, microphone, speaker, and communication module preinstalled. Setup takes less than a minute through the Landlink app.",
+      "A Landlink Module I is enough to start a small mesh on its own. Add a Landlink I drone whenever you need to push coverage further. Each kit ships with the radio module pre-configured for text payloads, and camera, microphone, and speaker modules are sold separately for when you need richer media.",
   },
   {
-    question: "What is the coverage range?",
+    question: "How far can I reach with my own ground station?",
     answer:
-      "A single drone reaches up to 50km from the ground station. Multiple drones can be chained in a mesh network to extend coverage further across your property, campsite, or remote worksite.",
+      "A single drone reaches up to 50km from a ground node. You can stand up your own ground stations or chain additional drones to push the mesh further across a campsite, ridge line, or remote worksite.",
   },
   {
     question: "Do I need an internet connection to set up Landlink?",
     answer:
-      "You need a one-time internet connection to pair your drone and complete the initial setup. After pairing, Landlink operates independently over its own mesh network.",
+      "Only for the very first visit, so the browser can load the web app. Pairing happens locally over Web Bluetooth between your tab and the hardware, and the mesh itself runs entirely offline once it is up.",
   },
   {
     question: "How long does the drone stay in the air?",
     answer:
-      "Flight time varies by model and weather conditions. Ground stations are designed to swap drones automatically so your network stays up while batteries are cycled.",
-  },
-  {
-    question: "Is Landlink available in my region?",
-    answer:
-      "Landlink is rolling out region by region, subject to local aviation regulations. Contact our support team to check availability and compliance requirements in your area.",
+      "Flight time depends on the model and weather. Flight batteries are hot-swappable, so you can rotate fresh packs through the ground node without dropping the mesh.",
   },
   {
     question: "How do I get support?",

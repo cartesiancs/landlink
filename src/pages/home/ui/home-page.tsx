@@ -179,7 +179,7 @@ export function HomePage() {
           <HomeStep
             step={3}
             title="Ground Station Setup"
-            description="Build a Mesh network with simple, plug-and-play modules. Get started right away with a ground station that comes with a camera, microphone, speaker, and communication module built in."
+            description="Build a mesh network with simple, plug-and-play modules. The ground station ships ready to relay text payloads, and you can add camera, microphone, or speaker modules whenever you need richer media."
             media={<GroundStationMedia />}
           />
         </section>

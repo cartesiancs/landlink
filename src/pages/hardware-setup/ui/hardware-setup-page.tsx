@@ -87,33 +87,21 @@ type PairingStep = {
 const PAIRING_STEPS: readonly PairingStep[] = [
   {
     index: 1,
-    title: "Power on the module",
+    title: "Power on",
     description:
-      "Plug Landlink Module I into USB-C or insert the battery. The status LED pulses blue once it's ready to pair.",
+      "Plug Landlink Module I into USB-C or slot in a battery. The status LED pulses blue once the module is ready to pair.",
   },
   {
     index: 2,
-    title: "Open the web pairing page",
+    title: "Pair over Bluetooth",
     description:
-      "From any Chromium-based browser on desktop or Android, open the Landlink web app — no install, no account.",
+      "Open the Landlink web app in any Chromium-based browser and pick your module from the native device picker. The link runs peer-to-peer between the tab and the hardware.",
   },
   {
     index: 3,
-    title: "Grant Web Bluetooth access",
+    title: "Take control",
     description:
-      "The browser shows a native device picker. Select your module. The permission scope is limited to this tab.",
-  },
-  {
-    index: 4,
-    title: "Flash or update firmware",
-    description:
-      "The web app streams signed firmware over GATT. You can inspect the release notes and verify the checksum before applying.",
-  },
-  {
-    index: 5,
-    title: "Configure and go",
-    description:
-      "Set a network key, pick a radio band, and save. The configuration is written to the module and stays there — nothing is uploaded.",
+      "Once paired, send messages, reposition drones, and manage the fleet from the same tab. Nothing leaves the browser unless you choose to relay it over the mesh.",
   },
 ];
 
@@ -127,7 +115,7 @@ const PRIVACY_POINTS: readonly PrivacyPoint[] = [
   {
     title: "Local-only storage",
     description:
-      "Configuration, logs, and keys live on your device and the hardware. Nothing is sent to our servers — because there are none to send to.",
+      "Configuration, logs, and keys live on your device and the hardware. Nothing is sent to our servers, because we do not run any.",
     icon: HardDrive,
   },
   {
@@ -139,7 +127,7 @@ const PRIVACY_POINTS: readonly PrivacyPoint[] = [
   {
     title: "You hold the keys",
     description:
-      "Network keys are generated on-device. You can rotate, export, or wipe them at any time. We cannot recover them for you — and that's the point.",
+      "Network keys are generated on-device. You can rotate, export, or wipe them whenever you want. We cannot recover them for you, and that is exactly the point.",
     icon: KeyRound,
   },
 ];
@@ -347,7 +335,7 @@ export function HardwareSetupPage() {
                 aria-hidden="true"
               />
               <span className="text-muted-foreground">
-                Internet only for the first visit — offline afterwards
+                Internet only for the first visit, then fully offline
               </span>
             </li>
             <li className="flex items-center gap-2">
@@ -393,8 +381,8 @@ export function HardwareSetupPage() {
         </p>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           If you walk away from this tab, the pairing ends. If you wipe the
-          module, your keys are gone. You're in full control — including of the
-          failure modes.
+          module, your keys are gone. You stay in full control, including of
+          how things fail.
         </p>
       </section>
 

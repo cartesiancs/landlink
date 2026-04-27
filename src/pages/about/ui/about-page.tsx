@@ -3,34 +3,6 @@ import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
 
-type Highlight = {
-  title: string;
-  description: string;
-};
-
-const HIGHLIGHTS: readonly Highlight[] = [
-  {
-    title: "Drone-powered mesh",
-    description:
-      "Autonomous drones extend a self-healing mesh network up to 50km from a single ground station.",
-  },
-  {
-    title: "Starlink alternative",
-    description:
-      "Stay online in places where satellite terminals struggle — forests, canyons, coastal fog, and dense foliage.",
-  },
-  {
-    title: "Plug-and-play hardware",
-    description:
-      "Each kit ships with camera, microphone, speaker, and radio module pre-configured. Connect once and you're live.",
-  },
-  {
-    title: "Built for the field",
-    description:
-      "Ruggedized for outdoor operations with encrypted links, rotating battery swaps, and zero-config failover.",
-  },
-];
-
 export function AboutPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -59,15 +31,58 @@ export function AboutPage() {
         </p>
       </section>
 
-      <section className="flex flex-col gap-5 px-4 pb-8">
-        {HIGHLIGHTS.map((item) => (
-          <article key={item.title} className="flex flex-col gap-1">
-            <h3 className="text-sm font-medium">{item.title}</h3>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              {item.description}
-            </p>
-          </article>
-        ))}
+      <section className="px-4 pb-8">
+        <h3 className="font-display text-2xl leading-tight tracking-tight">
+          Drone-powered mesh
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Autonomous drones extend a self-healing mesh network up to 50km from a
+          single ground station.
+        </p>
+      </section>
+
+      <section className="px-4 pb-8">
+        <h3 className="font-display text-2xl leading-tight tracking-tight">
+          Fly from your phone
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          The mesh is a two-way link, so the same network that carries your
+          messages also steers the drones above it. Reposition any node, set a
+          new patrol path, or recall the fleet straight from your smartphone,
+          with no ground controller required.
+        </p>
+      </section>
+
+      <section className="px-4 pb-8">
+        <h3 className="font-display text-2xl leading-tight tracking-tight">
+          Starlink alternative
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Stay online in places where satellite terminals struggle, like
+          forests, canyons, coastal fog, and dense foliage.
+        </p>
+      </section>
+
+      <section className="px-4 pb-8">
+        <h3 className="font-display text-2xl leading-tight tracking-tight">
+          Plug-and-play hardware
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Every kit ships with the radio module pre-configured and is ready to
+          relay text payloads out of the box. Camera, microphone, and speaker
+          modules are sold separately and can be added whenever you need richer
+          media.
+        </p>
+      </section>
+
+      <section className="px-4 pb-8">
+        <h3 className="font-display text-2xl leading-tight tracking-tight">
+          Built for the field
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Ruggedized for outdoor operations with encrypted links, rotating
+          battery swaps, and zero-config failover.
+        </p>
       </section>
 
       <section className="px-4 pb-10">
