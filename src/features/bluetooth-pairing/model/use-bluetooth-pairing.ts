@@ -1,6 +1,10 @@
 import { useCallback, useState } from "react";
 
 import {
+  attachLandlinkClient,
+  detachLandlinkClient,
+} from "@/entities/landlink-device";
+import {
   connectLandlinkDevice,
   isBlePairingSupported,
   PairingCancelledError,
@@ -70,6 +74,14 @@ export function useBluetoothPairing() {
     try {
       await connectLandlinkDevice(paired.id);
     } catch (err) {
+      setState({ status: "error", device: null, error: describe(err) });
+      return;
+    }
+
+    try {
+      await attachLandlinkClient(paired.id, paired.name);
+    } catch (err) {
+      await detachLandlinkClient(paired.id).catch(() => undefined);
       setState({ status: "error", device: null, error: describe(err) });
       return;
     }
