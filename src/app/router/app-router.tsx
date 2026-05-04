@@ -14,6 +14,9 @@ import { LandlinkOnePage } from "@/pages/landlink-one";
 import { ListsPage } from "@/pages/lists";
 import { PrivacyPage } from "@/pages/privacy";
 import { SettingsPage } from "@/pages/settings";
+import { SettingsDebugPage } from "@/pages/settings-debug";
+import { SettingsResetPage } from "@/pages/settings-reset";
+import { SettingsThemePage } from "@/pages/settings-theme";
 import { TermsPage } from "@/pages/terms";
 import { ROUTES } from "@/shared/config";
 import { AppLayout } from "@/app/layout/app-layout";
@@ -28,6 +31,9 @@ const routes: RouteObject[] = [
   { path: ROUTES.terms, element: <TermsPage /> },
   { path: ROUTES.lists, element: <ListsPage /> },
   { path: ROUTES.settings, element: <SettingsPage /> },
+  { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
+  { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },
+  { path: ROUTES.settingsReset, element: <SettingsResetPage /> },
   { path: "*", element: <AppLayout /> },
 ];
 

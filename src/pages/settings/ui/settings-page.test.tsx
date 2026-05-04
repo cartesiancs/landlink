@@ -1,94 +1,62 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import {
-  _resetRegisteredDevicesStore,
-  getRegisteredDevices,
-  registerDevice,
-} from "@/entities/registered-device";
-import {
-  _resetDebugModeStore,
-  getDebugMode,
-  setDebugMode,
-} from "@/entities/debug-mode";
-
-vi.mock("@/entities/landlink-device", () => ({
-  detachLandlinkClient: vi.fn(() => Promise.resolve()),
-  useLandlinkDevice: () => null,
-}));
-
-vi.mock("@/features/toggle-theme", () => ({
-  ThemeToggle: () => <div data-testid="theme-toggle" />,
-}));
+import { ROUTES } from "@/shared/config";
 
 import { SettingsPage } from "./settings-page";
 
-function renderSettings() {
+function renderWithRoutes() {
   return render(
-    <MemoryRouter>
-      <SettingsPage />
+    <MemoryRouter initialEntries={[ROUTES.settings]}>
+      <Routes>
+        <Route path={ROUTES.settings} element={<SettingsPage />} />
+        <Route
+          path={ROUTES.settingsTheme}
+          element={<div data-testid="theme-page" />}
+        />
+        <Route
+          path={ROUTES.settingsDebug}
+          element={<div data-testid="debug-page" />}
+        />
+        <Route
+          path={ROUTES.settingsReset}
+          element={<div data-testid="reset-page" />}
+        />
+      </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("SettingsPage", () => {
-  beforeEach(() => {
-    _resetRegisteredDevicesStore();
-    _resetDebugModeStore();
-  });
-
-  it("hides 'Register mock device' when debug mode is off", () => {
-    renderSettings();
+describe("SettingsPage (list view)", () => {
+  it("renders one row per settings entry", () => {
+    renderWithRoutes();
+    expect(screen.getByRole("link", { name: /theme/i })).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /register mock device/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows 'Register mock device' when debug mode is on", async () => {
-    renderSettings();
-    const debugSwitch = screen.getByRole("switch", { name: /debug mode/i });
-    await userEvent.click(debugSwitch);
-    expect(getDebugMode()).toBe(true);
+      screen.getByRole("link", { name: /debug mode/i }),
+    ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /register mock device/i }),
+      screen.getByRole("link", { name: /reset all data/i }),
     ).toBeInTheDocument();
   });
 
-  it("clicking 'Register mock device' adds a disabled mock device to the registry", async () => {
-    setDebugMode(true);
-    renderSettings();
-    const button = screen.getByRole("button", { name: /register mock device/i });
-    await userEvent.click(button);
-    const list = getRegisteredDevices();
-    expect(list).toHaveLength(1);
-    expect(list[0]?.source).toBe("mock");
-    expect(list[0]?.enabled).toBe(false);
+  it("Theme row navigates to /settings/theme", async () => {
+    renderWithRoutes();
+    await userEvent.click(screen.getByRole("link", { name: /theme/i }));
+    expect(screen.getByTestId("theme-page")).toBeInTheDocument();
   });
 
-  it("'Reset all data' opens confirm and clears registry + debug flag on confirm", async () => {
-    setDebugMode(true);
-    registerDevice({ id: "a", name: "A", source: "ble" });
-    renderSettings();
-    const reset = screen.getByRole("button", { name: /reset all data/i });
-    await userEvent.click(reset);
-    const confirm = await screen.findByRole("button", {
-      name: /reset everything/i,
-    });
-    await userEvent.click(confirm);
-    expect(getRegisteredDevices()).toEqual([]);
-    expect(getDebugMode()).toBe(false);
+  it("Debug mode row navigates to /settings/debug", async () => {
+    renderWithRoutes();
+    await userEvent.click(screen.getByRole("link", { name: /debug mode/i }));
+    expect(screen.getByTestId("debug-page")).toBeInTheDocument();
   });
 
-  it("'Reset all data' cancel preserves state", async () => {
-    setDebugMode(true);
-    registerDevice({ id: "a", name: "A", source: "ble" });
-    renderSettings();
-    const reset = screen.getByRole("button", { name: /reset all data/i });
-    await userEvent.click(reset);
-    const cancel = await screen.findByRole("button", { name: /cancel/i });
-    await userEvent.click(cancel);
-    expect(getRegisteredDevices()).toHaveLength(1);
-    expect(getDebugMode()).toBe(true);
+  it("Reset all data row navigates to /settings/reset", async () => {
+    renderWithRoutes();
+    await userEvent.click(
+      screen.getByRole("link", { name: /reset all data/i }),
+    );
+    expect(screen.getByTestId("reset-page")).toBeInTheDocument();
   });
 });

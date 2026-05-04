@@ -13,6 +13,9 @@ export const ROUTES = {
   terms: "/terms",
   lists: "/lists",
   settings: "/settings",
+  settingsTheme: "/settings/theme",
+  settingsDebug: "/settings/debug",
+  settingsReset: "/settings/reset",
   notFound: "*",
 } as const;
 

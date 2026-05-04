@@ -29,9 +29,10 @@ export function ListsPage() {
         <h1 className="text-base font-medium">Devices</h1>
       </div>
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+        <DeviceList />
         <Button
           variant="outline"
-          className="mb-4 w-full justify-start gap-2"
+          className="mt-4 w-full justify-start gap-2"
           onClick={() => {
             hapticTick();
             void navigate(ROUTES.connectBluetooth, { viewTransition: true });
@@ -40,7 +41,6 @@ export function ListsPage() {
           <Plus className="size-4" aria-hidden="true" />
           Connect new device
         </Button>
-        <DeviceList />
       </main>
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />
