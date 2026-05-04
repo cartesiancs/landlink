@@ -89,24 +89,30 @@ function StepCta({ defaultLabel, defaultOnAction }: StepCtaProps) {
   };
 
   return (
-    <div
-      className={cn(
-        "relative z-30 bg-background/90 px-4 pt-3 backdrop-blur supports-backdrop-filter:bg-background/70",
-        IS_NATIVE_APP
-          ? "pb-[calc(max(env(safe-area-inset-bottom),12px)+12px)]"
-          : "pb-[max(env(safe-area-inset-bottom),12px)]",
-      )}
-    >
-      <Button
-        size="lg"
-        disabled={disabled}
-        aria-busy={pending || undefined}
-        className="h-12 w-full text-base transition-opacity duration-300 ease-out data-[busy=true]:opacity-80"
-        data-busy={pending || undefined}
-        onClick={handleClick}
+    <div className="relative z-30">
+      <div
+        className={cn(
+          "bg-background/90 px-4 pt-3 backdrop-blur supports-backdrop-filter:bg-background/70",
+          IS_NATIVE_APP ? "pb-3" : "pb-0",
+        )}
       >
-        <SlideSwitch contentKey={label}>{label}</SlideSwitch>
-      </Button>
+        <Button
+          size="lg"
+          disabled={disabled}
+          aria-busy={pending || undefined}
+          className="h-12 w-full text-base transition-opacity duration-300 ease-out data-[busy=true]:opacity-80"
+          data-busy={pending || undefined}
+          onClick={handleClick}
+        >
+          <SlideSwitch contentKey={label}>{label}</SlideSwitch>
+        </Button>
+      </div>
+      {/* Solid strip covering the iOS safe-area-inset-bottom so Safari's URL bar
+          tint can never sample the translucent layer or the dark CTA button. */}
+      <div
+        aria-hidden
+        className="h-[max(env(safe-area-inset-bottom),12px)] bg-background"
+      />
     </div>
   );
 }

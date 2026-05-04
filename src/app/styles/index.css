@@ -154,8 +154,11 @@
     @apply border-border outline-ring/50;
     }
   html {
-    @apply font-sans;
+    @apply bg-background font-sans;
     /* Native-app feel: kill iOS rubber-band on the page itself, smooth fonts. */
+    /* Solid background on <html> so iOS Safari's safe-area / overscroll regions
+       always paint the theme color and never leak the UA dark fallback. */
+    background-color: var(--background);
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

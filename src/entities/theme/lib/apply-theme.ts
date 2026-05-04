@@ -14,10 +14,11 @@ export function applyTheme(theme: Theme): void {
   }
   root.style.colorScheme = theme;
 
-  const meta = document.querySelector<HTMLMetaElement>(
+  const color = theme === "dark" ? THEME_COLOR_DARK : THEME_COLOR_LIGHT;
+  const metas = document.querySelectorAll<HTMLMetaElement>(
     'meta[name="theme-color"]',
   );
-  if (meta) {
-    meta.content = theme === "dark" ? THEME_COLOR_DARK : THEME_COLOR_LIGHT;
-  }
+  metas.forEach((meta) => {
+    meta.content = color;
+  });
 }
