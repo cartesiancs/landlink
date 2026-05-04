@@ -23,6 +23,7 @@ import {
 } from "@/shared/ui";
 import { cn } from "@/shared/lib";
 import { ROUTES } from "@/shared/config";
+import { useRegisteredDevices } from "@/entities/registered-device";
 import { ThemeToggle } from "@/features/toggle-theme";
 
 const IS_NATIVE_APP = Capacitor.isNativePlatform();
@@ -57,6 +58,10 @@ export function NavigationSidebar({
   onOpenChange,
 }: NavigationSidebarProps) {
   const location = useLocation();
+  const devices = useRegisteredDevices();
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => item.to !== ROUTES.lists || devices.length > 0,
+  );
   const handleClose = () => {
     onOpenChange(false);
   };
@@ -84,7 +89,7 @@ export function NavigationSidebar({
           <SheetDescription></SheetDescription>
         </SheetHeader>
         <nav className="mt-2 flex flex-col gap-1 px-4">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return (
               <Link
