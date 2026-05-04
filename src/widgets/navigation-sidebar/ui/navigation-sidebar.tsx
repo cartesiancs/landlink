@@ -4,8 +4,10 @@ import {
   FileText,
   House,
   Info,
+  List,
   Package,
   Plane,
+  Settings,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
@@ -38,8 +40,10 @@ type NavItem = {
 
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Home", to: ROUTES.home, icon: House },
+  { label: "Lists", to: ROUTES.lists, icon: List },
   { label: "Landlink I", to: ROUTES.landlinkOne, icon: Plane },
   { label: "Landlink Module I", to: ROUTES.landlinkModuleI, icon: Package },
+  { label: "Settings", to: ROUTES.settings, icon: Settings },
   { label: "About", to: ROUTES.about, icon: Info },
 ];
 
@@ -86,6 +90,7 @@ export function NavigationSidebar({
               <Link
                 key={item.to}
                 to={item.to}
+                state={item.to === ROUTES.home ? { fromNav: true } : undefined}
                 viewTransition
                 onClick={handleNavClick(item.to)}
                 className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"

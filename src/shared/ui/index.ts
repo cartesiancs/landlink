@@ -33,3 +33,4 @@ export {
   type CarouselApi,
 } from "./carousel";
 export { Toaster, toast } from "./sonner";
+export { Switch } from "./switch";

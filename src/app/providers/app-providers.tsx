@@ -1,6 +1,7 @@
 import { StrictMode, type ReactNode } from "react";
 
 import { ThemeProvider, useTheme } from "@/entities/theme";
+import { useLiveDeviceSync } from "@/features/register-device";
 import { Toaster } from "@/shared/ui";
 
 type AppProvidersProps = {
@@ -12,10 +13,16 @@ function ThemedToaster() {
   return <Toaster theme={theme} position="top-center" />;
 }
 
+function LiveDeviceSyncBridge() {
+  useLiveDeviceSync();
+  return null;
+}
+
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <StrictMode>
       <ThemeProvider>
+        <LiveDeviceSyncBridge />
         {children}
         <ThemedToaster />
       </ThemeProvider>

@@ -11,6 +11,8 @@ export const ROUTES = {
   hardwareSetup: "/hardware-setup",
   privacy: "/privacy",
   terms: "/terms",
+  lists: "/lists",
+  settings: "/settings",
   notFound: "*",
 } as const;
 

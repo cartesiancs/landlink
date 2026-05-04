@@ -14,12 +14,13 @@ import { AppHeader } from "@/widgets/app-header";
 import { NavigationSidebar } from "@/widgets/navigation-sidebar";
 import { SupportDrawer } from "@/widgets/support-drawer";
 import { isBlePairingSupported } from "@/features/bluetooth-pairing";
-import { HomePage } from "@/pages/home";
 import { ConnectBluetoothPage } from "@/pages/connect-bluetooth";
 import { ConnectWifiPage } from "@/pages/connect-wifi";
 import { ConnectingPage } from "@/pages/connecting";
 import { NotFoundPage } from "@/pages/not-found";
 import { UnsupportedDevicePage } from "@/pages/unsupported-device";
+
+import { HomeOrListsRedirect } from "./home-redirect-guard";
 
 type StepPath =
   | typeof ROUTES.home
@@ -56,7 +57,7 @@ function isStepPath(pathname: string): pathname is StepPath {
 function renderStep(pathname: StepPath): ReactNode {
   switch (pathname) {
     case ROUTES.home:
-      return <HomePage />;
+      return <HomeOrListsRedirect />;
     case ROUTES.connectBluetooth:
       return <ConnectBluetoothPage />;
     case ROUTES.connectUnsupported:

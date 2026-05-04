@@ -4,6 +4,7 @@ import {
   attachLandlinkClient,
   detachLandlinkClient,
 } from "@/entities/landlink-device";
+import { registerDevice } from "@/entities/registered-device";
 import {
   connectLandlinkDevice,
   isBlePairingSupported,
@@ -85,6 +86,8 @@ export function useBluetoothPairing() {
       setState({ status: "error", device: null, error: describe(err) });
       return;
     }
+
+    registerDevice({ id: paired.id, name: paired.name, source: "ble" });
 
     // WHY: hold the connecting state briefly so the transition to "connected" is perceivable even on fast connects.
     await new Promise((resolve) => setTimeout(resolve, 500));

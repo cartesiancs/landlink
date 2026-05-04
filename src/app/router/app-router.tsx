@@ -11,7 +11,9 @@ import { FaqPage } from "@/pages/faq";
 import { HardwareSetupPage } from "@/pages/hardware-setup";
 import { LandlinkModuleIPage } from "@/pages/landlink-module-i";
 import { LandlinkOnePage } from "@/pages/landlink-one";
+import { ListsPage } from "@/pages/lists";
 import { PrivacyPage } from "@/pages/privacy";
+import { SettingsPage } from "@/pages/settings";
 import { TermsPage } from "@/pages/terms";
 import { ROUTES } from "@/shared/config";
 import { AppLayout } from "@/app/layout/app-layout";
@@ -24,6 +26,8 @@ const routes: RouteObject[] = [
   { path: ROUTES.hardwareSetup, element: <HardwareSetupPage /> },
   { path: ROUTES.privacy, element: <PrivacyPage /> },
   { path: ROUTES.terms, element: <TermsPage /> },
+  { path: ROUTES.lists, element: <ListsPage /> },
+  { path: ROUTES.settings, element: <SettingsPage /> },
   { path: "*", element: <AppLayout /> },
 ];
 
