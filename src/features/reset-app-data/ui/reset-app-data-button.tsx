@@ -28,7 +28,7 @@ export function ResetAppDataButton() {
     resetAppData();
     setOpen(false);
     toast.success("All app data has been reset.");
-    void navigate(ROUTES.home);
+    void navigate(ROUTES.home, { viewTransition: true });
   };
 
   return (

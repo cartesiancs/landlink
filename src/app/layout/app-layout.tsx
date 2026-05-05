@@ -10,6 +10,7 @@ import {
   useStepAction,
 } from "@/shared/lib";
 import { ROUTES, type RoutePath } from "@/shared/config";
+import { useRegisteredDevices } from "@/entities/registered-device";
 import { AppHeader } from "@/widgets/app-header";
 import { NavigationSidebar } from "@/widgets/navigation-sidebar";
 import { SupportDrawer } from "@/widgets/support-drawer";
@@ -121,6 +122,7 @@ function StepCta({ defaultLabel, defaultOnAction }: StepCtaProps) {
 export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const devices = useRegisteredDevices();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
 
@@ -132,12 +134,22 @@ export function AppLayout() {
   const { label, next } = STEP_META[pathname];
 
   const handleAdvance = () => {
-    // WHY: Home → Bluetooth is the only gating transition; when the browser
-    // can't do Web Bluetooth, skip the pairing step entirely so the user never
-    // sees it flash.
-    if (pathname === ROUTES.home && !isBlePairingSupported()) {
-      void navigate(ROUTES.connectUnsupported);
-      return;
+    if (pathname === ROUTES.home) {
+      // WHY: skip the connect flow entirely when the user already has devices —
+      // pairing again from home is not the intended path; sending them to the
+      // list avoids a brief connect-bluetooth flash before HomeOrListsRedirect
+      // would otherwise bounce them back.
+      if (devices.length > 0) {
+        void navigate(ROUTES.lists, { viewTransition: true });
+        return;
+      }
+      // WHY: Home → Bluetooth is the only gating transition; when the browser
+      // can't do Web Bluetooth, skip the pairing step so the user never sees
+      // it flash.
+      if (!isBlePairingSupported()) {
+        void navigate(ROUTES.connectUnsupported);
+        return;
+      }
     }
     void navigate(next);
   };
