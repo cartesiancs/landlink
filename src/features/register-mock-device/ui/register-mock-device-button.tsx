@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 
 import { registerDevice } from "@/entities/registered-device";
 import { hapticTick } from "@/shared/lib";
-import { Button } from "@/shared/ui";
+import { Button, toast } from "@/shared/ui";
 
 import { createMockDevice } from "../model/create-mock-device";
 
@@ -21,6 +21,7 @@ export function RegisterMockDeviceButton() {
           pingMs: draft.pingMs,
           signalDbm: draft.signalDbm,
         });
+        toast.success(`Mock device "${draft.name}" added.`);
       }}
     >
       <Plus className="size-4" aria-hidden="true" />
