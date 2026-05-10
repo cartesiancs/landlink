@@ -15,5 +15,11 @@ void     enable_gps(bool on);
 uint16_t battery_mv();
 uint8_t  battery_pct();      // rough 3.3-4.2 V linear estimate
 bool     is_charging();
+bool     is_vbus_present();  // USB plugged in (with or without active charging)
+bool     is_battery_present();
+
+// Bitfield: bit0 VBUS_PRESENT, bit1 CHARGING, bit2 FULL, bit3 BATT_PRESENT.
+// FULL is heuristic: !charging && vbus_present && battery_mv >= 4180.
+uint8_t  charge_state_byte();
 
 } // namespace landlink::hal::pmu

@@ -1,9 +1,16 @@
 #include "mesh_chat.h"
 
+#include "mesh/frame/frame.h"
+#include "mesh/router/router.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
+#include "transport/lora/sx1262_driver.h"
+
+namespace landlink::app::services {
+extern landlink::mesh::Router g_router;  // defined in main.cpp
+}
 
 namespace landlink::features::mesh_chat {
 
@@ -22,6 +29,24 @@ size_t build_chat(uint32_t reply_to_pkt_id,
     if (!b.put(TlvTag::CHAT_TEXT,
                reinterpret_cast<const uint8_t*>(utf8), len)) return 0;
     return b.size();
+}
+
+bool send_chat(uint32_t dst,
+               const char* utf8, size_t utf8_len,
+               uint32_t reply_to_pkt_id) {
+    if (utf8 == nullptr || utf8_len == 0 || utf8_len > 200) return false;
+
+    uint8_t tlv[landlink::mesh::kMaxPayload];
+    const size_t tlv_len = build_chat(reply_to_pkt_id, utf8, utf8_len,
+                                      tlv, sizeof(tlv));
+    if (tlv_len == 0) return false;
+
+    uint8_t frame[landlink::mesh::kMaxFrame];
+    const size_t frame_len = landlink::app::services::g_router.originate(
+        dst, 0, tlv, tlv_len, frame, sizeof(frame));
+    if (frame_len == 0) return false;
+
+    return landlink::transport::lora::queue_tx(frame, frame_len);
 }
 
 void on_chat(uint32_t src, uint32_t pkt_id,

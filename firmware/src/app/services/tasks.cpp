@@ -5,6 +5,7 @@
 #include <freertos/task.h>
 
 #include "app/fsm/fsm.h"
+#include "features/telemetry/telemetry.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
@@ -52,10 +53,10 @@ constexpr const char* kTag = "tasks";
     }
 }
 
-[[noreturn]] void pmu_monitor_task(void*) {
+[[noreturn]] void telemetry_task(void*) {
     for (;;) {
-        (void)hal::pmu::battery_mv();
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        (void)features::telemetry::push();
+        vTaskDelay(pdMS_TO_TICKS(3000));
     }
 }
 
@@ -95,7 +96,7 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(app_fsm_task,    "app_fsm",     8192, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(led_tick_task,   "led_tick",    2048, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(button_task,     "button",      2048, nullptr, 4, nullptr, 0);
-    xTaskCreatePinnedToCore(pmu_monitor_task,"pmu",         3072, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(telemetry_task,  "telemetry",   4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);

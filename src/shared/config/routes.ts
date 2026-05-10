@@ -12,6 +12,7 @@ export const ROUTES = {
   privacy: "/privacy",
   terms: "/terms",
   lists: "/lists",
+  deviceDashboard: "/device",
   settings: "/settings",
   settingsTheme: "/settings/theme",
   settingsDebug: "/settings/debug",

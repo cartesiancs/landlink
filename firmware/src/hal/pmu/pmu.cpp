@@ -138,4 +138,38 @@ bool is_charging() {
     return false;
 }
 
+bool is_vbus_present() {
+    if (!s_ready) return false;
+    if (s_axp2101) return s_axp2101->isVbusIn();
+    if (s_axp192)  return s_axp192->isVbusIn();
+    return false;
+}
+
+bool is_battery_present() {
+    if (!s_ready) return false;
+    if (s_axp2101) return s_axp2101->isBatteryConnect();
+    // AXP192 lacks a uniform battery-detect API; assume connected if voltage
+    // reads in a plausible range.
+    if (s_axp192) {
+        const uint16_t mv = s_axp192->getBattVoltage();
+        return mv >= 2500 && mv <= 4500;
+    }
+    return false;
+}
+
+uint8_t charge_state_byte() {
+    if (!s_ready) return 0;
+    const bool     vbus      = is_vbus_present();
+    const bool     charging  = is_charging();
+    const bool     batt      = is_battery_present();
+    const uint16_t mv        = battery_mv();
+    const bool     full      = !charging && vbus && mv >= 4180;
+    uint8_t b = 0;
+    if (vbus)     b |= 0x01;
+    if (charging) b |= 0x02;
+    if (full)     b |= 0x04;
+    if (batt)     b |= 0x08;
+    return b;
+}
+
 } // namespace landlink::hal::pmu

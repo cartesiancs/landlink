@@ -60,6 +60,9 @@ opcodes:
   MESH_SEND:             { code: 0x32, dir: C_TO_F }
   MESH_RECV:             { code: 0x33, dir: F_TO_C }
 
+  # Device telemetry (battery + GPS), pushed periodically while BLE is connected
+  DEVICE_TELEMETRY:      { code: 0x70, dir: F_TO_C }
+
   # Key management
   KEY_ROTATE:            { code: 0x40, dir: C_TO_F }
   KEY_EXPORT:            { code: 0x41, dir: C_TO_F, requires: pairing_state }
@@ -121,6 +124,7 @@ tlv_tags:
   TEMP_C_E1:             { tag: 0x32, type: i16,  desc: "Temp C * 10" }
   RSSI_DBM:              { tag: 0x33, type: i8,   desc: "Last RX RSSI dBm" }
   SNR_DB_E1:             { tag: 0x34, type: i8,   desc: "Last RX SNR dB * 10" }
+  CHARGE_STATE:          { tag: 0x35, type: u8,   desc: "bit0 VBUS, bit1 CHARGING, bit2 FULL, bit3 BATT_PRESENT" }
 
   # Routing / ack
   ACK_PKT_ID:            { tag: 0x40, type: u32 }

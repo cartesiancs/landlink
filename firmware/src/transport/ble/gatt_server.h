@@ -49,4 +49,9 @@ void set_ota_chunk_handler(OtaChunkHandler h);
 
 bool is_connected();
 
+// True when at least one central has subscribed to the EVT characteristic
+// (CCCD write seen). Use this to gate periodic notifications so they aren't
+// queued before the client is ready and subsequently dropped.
+bool evt_subscribed();
+
 } // namespace landlink::transport::ble

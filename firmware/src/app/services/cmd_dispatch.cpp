@@ -4,9 +4,12 @@
 
 #include "app/fsm/fsm.h"
 #include "features/lora_pairing/lora_pairing.h"
+#include "features/mesh_chat/mesh_chat.h"
 #include "features/ota/ota.h"
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/storage/storage.h"
+#include "mesh/frame/frame.h"
+#include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
@@ -31,6 +34,18 @@ bool get_tlv_str(landlink::TlvReader& r, TlvTag tag, char* out, size_t cap) {
 
 bool authed() {
     return (app::fsm::flags() & app::fsm::bits::kProvisioned) != 0;
+}
+
+bool has_mesh_key() {
+    uint8_t k[32];
+    size_t  n = sizeof(k);
+    return hal::storage::get_wrapped("ll.net", "key", k, n) && n == 32;
+}
+
+void send_error(uint8_t seq, uint8_t err_code) {
+    const uint8_t payload[3] = { 0xF0, 0x01, err_code };
+    transport::ble::notify_evt(landlink::proto::Opcode::ERROR, seq,
+                               payload, sizeof(payload));
 }
 
 } // namespace
@@ -103,6 +118,37 @@ bool handle_cmd(Opcode op, uint8_t seq,
     case Opcode::MESH_LEAVE:
         hal::storage::erase_namespace("ll.net");
         return true;
+
+    case Opcode::MESH_SEND: {
+        landlink::Tlv kind, text, dst_tlv;
+        if (!r.find(TlvTag::KIND, kind) || kind.len != 1 ||
+            kind.data[0] != 0x01 /* MeshKind::CHAT_TEXT */) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        if (!r.find(TlvTag::CHAT_TEXT, text) ||
+            text.len < 1 || text.len > 200) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        if (!has_mesh_key()) {
+            send_error(seq, 0x02 /* BAD_STATE */);
+            return true;
+        }
+        uint32_t dst = mesh::kBroadcastAddr;
+        if (r.find(TlvTag::NODE_ID, dst_tlv) && dst_tlv.len == 4) {
+            dst = static_cast<uint32_t>(dst_tlv.data[0]) |
+                  (static_cast<uint32_t>(dst_tlv.data[1]) << 8) |
+                  (static_cast<uint32_t>(dst_tlv.data[2]) << 16) |
+                  (static_cast<uint32_t>(dst_tlv.data[3]) << 24);
+        }
+        const bool ok = features::mesh_chat::send_chat(
+            dst, reinterpret_cast<const char*>(text.data), text.len, 0);
+        if (!ok) {
+            send_error(seq, 0x05 /* BUSY */);
+        }
+        return true;
+    }
 
     case Opcode::FACTORY_RESET:
         if (!authed()) return false;

@@ -203,4 +203,8 @@ void set_ota_chunk_handler(OtaChunkHandler h) { s_ota_handler = h; }
 
 bool is_connected() { return s_connected; }
 
+bool evt_subscribed() {
+    return s_evt_chr != nullptr && s_evt_chr->getSubscribedCount() > 0;
+}
+
 } // namespace landlink::transport::ble

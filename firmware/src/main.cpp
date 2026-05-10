@@ -16,15 +16,19 @@
 #include "app/fsm/fsm.h"
 #include "app/services/cmd_dispatch.h"
 #include "app/services/tasks.h"
+#include "features/mesh_chat/mesh_chat.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
 #include "hal/pmu/pmu.h"
 #include "hal/storage/storage.h"
+#include "mesh/frame/frame.h"
 #include "mesh/router/router.h"
 #include "shared/config/build_info.h"
 #include "shared/protocol/opcodes.h"
+#include "shared/protocol/tlv_tags.h"
 #include "shared/util/log.h"
+#include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
 #include "transport/lora/sx1262_driver.h"
 
@@ -57,6 +61,23 @@ void load_network_key(uint8_t out[32]) {
         // accept frames from peers until a real key is installed via MESH_JOIN
         // or LoRa pairing, because CCM tag won't match.
         for (int i = 0; i < 32; ++i) out[i] = 0;
+    }
+}
+
+// Mesh router decrypted-payload sink: read the KIND TLV and dispatch to the
+// matching feature handler. Without this hook, MESH_RECV BLE events never fire.
+void landlink_payload_sink(const landlink::mesh::Header& h,
+                           const uint8_t* payload, size_t payload_len) {
+    landlink::TlvReader r(payload, payload_len);
+    landlink::Tlv kind;
+    if (!r.find(landlink::proto::TlvTag::KIND, kind) || kind.len != 1) return;
+    switch (kind.data[0]) {
+    case 0x01:  // MeshKind::CHAT_TEXT
+        landlink::features::mesh_chat::on_chat(h.src, h.pkt_id,
+                                               payload, payload_len);
+        break;
+    default:
+        break;
     }
 }
 }
@@ -118,6 +139,7 @@ void setup() {
     cfg.self_id           = node_id;
     cfg.default_hop_limit = 5;
     landlink::app::services::g_router.init(cfg, net_key);
+    landlink::app::services::g_router.set_sink(&landlink_payload_sink);
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

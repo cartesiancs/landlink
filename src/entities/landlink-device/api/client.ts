@@ -11,13 +11,17 @@ import {
   encodeTlvs,
   LANDLINK_CHARACTERISTIC,
   LANDLINK_SERVICE_UUID,
+  Opcode,
   type FsmStateValue,
   type OpcodeValue,
   type Tlv,
 } from "@/shared/protocol";
 
 import { parseLandlinkInfo } from "../lib/parse-info";
+import { parseMeshRecv } from "../lib/parse-mesh-recv";
+import { parseTelemetry } from "../lib/parse-telemetry";
 import {
+  appendIncomingMessage,
   getState,
   setConnected,
   setConnecting,
@@ -25,6 +29,7 @@ import {
   setFsmState,
   setInfo,
   setLastEvtFrame,
+  setTelemetry,
 } from "../model/store";
 
 let seqCounter = 0;
@@ -94,7 +99,16 @@ export async function attachLandlinkClient(
       LANDLINK_CHARACTERISTIC.EVT,
       (data) => {
         const frame = decodeFrame(data);
-        if (frame) setLastEvtFrame(frame);
+        if (!frame) return;
+        const op = frame.opcode as number;
+        if (op === Opcode.DEVICE_TELEMETRY) {
+          setTelemetry(parseTelemetry(frame.payload));
+        } else if (op === Opcode.MESH_RECV) {
+          const msg = parseMeshRecv(frame.payload);
+          if (msg) appendIncomingMessage(msg);
+        } else {
+          setLastEvtFrame(frame);
+        }
       },
     );
     activeStoppers.push(stopEvt);

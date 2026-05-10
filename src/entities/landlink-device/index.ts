@@ -6,6 +6,10 @@ export {
 export { parseLandlinkInfo } from "./lib/parse-info";
 export { useLandlinkDevice } from "./model/use-landlink-device";
 export type {
+  ChargeState,
+  DeviceTelemetry,
+  GpsFix,
+  IncomingMeshMessage,
   LandlinkDevice,
   LandlinkStatus,
   ParsedInfo,

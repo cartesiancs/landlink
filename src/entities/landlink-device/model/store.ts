@@ -9,6 +9,35 @@ export type ParsedInfo = {
   region: number | null;
 };
 
+export type GpsFix = {
+  latE7: number;
+  lonE7: number;
+  altM: number;
+  hdopX10: number;
+  speedKmhX10: number;
+};
+
+export type ChargeState = {
+  vbus: boolean;
+  charging: boolean;
+  full: boolean;
+  battPresent: boolean;
+};
+
+export type DeviceTelemetry = {
+  batteryMv: number;
+  batteryPct: number;
+  chargeState: ChargeState;
+  gps: GpsFix | null;
+  receivedAt: number;
+};
+
+export type IncomingMeshMessage = {
+  senderNodeId: string;
+  text: string;
+  receivedAt: number;
+};
+
 export type LandlinkDevice = {
   deviceId: string;
   name: string;
@@ -16,7 +45,11 @@ export type LandlinkDevice = {
   info: ParsedInfo | null;
   fsmState: FsmStateValue | null;
   lastEvtFrame: BleFrame | null;
+  telemetry: DeviceTelemetry | null;
+  incomingMessages: readonly IncomingMeshMessage[];
 };
+
+const MAX_MESSAGES = 50;
 
 let state: LandlinkDevice | null = null;
 const listeners = new Set<() => void>();
@@ -44,6 +77,8 @@ export function setConnecting(d: { deviceId: string; name: string }): void {
     info: null,
     fsmState: null,
     lastEvtFrame: null,
+    telemetry: null,
+    incomingMessages: [],
   };
   emit();
 }
@@ -75,5 +110,20 @@ export function setFsmState(fsmState: FsmStateValue): void {
 export function setLastEvtFrame(frame: BleFrame): void {
   if (!state) return;
   state = { ...state, lastEvtFrame: frame };
+  emit();
+}
+
+export function setTelemetry(telemetry: DeviceTelemetry): void {
+  if (!state) return;
+  state = { ...state, telemetry };
+  emit();
+}
+
+export function appendIncomingMessage(message: IncomingMeshMessage): void {
+  if (!state) return;
+  const next = state.incomingMessages.length >= MAX_MESSAGES
+    ? [...state.incomingMessages.slice(1), message]
+    : [...state.incomingMessages, message];
+  state = { ...state, incomingMessages: next };
   emit();
 }

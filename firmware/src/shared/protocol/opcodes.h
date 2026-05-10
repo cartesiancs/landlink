@@ -27,6 +27,7 @@ enum class Opcode : uint8_t {
     MESH_LEAVE = 0x31,
     MESH_SEND = 0x32,
     MESH_RECV = 0x33,
+    DEVICE_TELEMETRY = 0x70,
     KEY_ROTATE = 0x40,
     KEY_EXPORT = 0x41,
     PAIR_BEGIN = 0x48,

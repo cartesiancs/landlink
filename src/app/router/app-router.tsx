@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 
 import { AboutPage } from "@/pages/about";
+import { DeviceDashboardPage } from "@/pages/device-dashboard";
 import { FaqPage } from "@/pages/faq";
 import { HardwareSetupPage } from "@/pages/hardware-setup";
 import { LandlinkModuleIPage } from "@/pages/landlink-module-i";
@@ -30,6 +31,7 @@ const routes: RouteObject[] = [
   { path: ROUTES.privacy, element: <PrivacyPage /> },
   { path: ROUTES.terms, element: <TermsPage /> },
   { path: ROUTES.lists, element: <ListsPage /> },
+  { path: ROUTES.deviceDashboard, element: <DeviceDashboardPage /> },
   { path: ROUTES.settings, element: <SettingsPage /> },
   { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
   { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },

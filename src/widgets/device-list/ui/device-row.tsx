@@ -1,11 +1,14 @@
 import { Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
+import { useLandlinkDevice } from "@/entities/landlink-device";
 import {
   formatLastConnected,
   formatPing,
   removeRegisteredDevice,
   type RegisteredDevice,
 } from "@/entities/registered-device";
+import { ROUTES } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
 
 import { SignalBars } from "./signal-bars";
@@ -15,17 +18,31 @@ type DeviceRowProps = {
 };
 
 export function DeviceRow({ device }: DeviceRowProps) {
+  const navigate = useNavigate();
+  const liveDevice = useLandlinkDevice();
   const isMock = device.source === "mock";
   const isConnected = device.status === "connected" && device.enabled;
+  const isLive =
+    isConnected &&
+    liveDevice?.deviceId === device.id &&
+    liveDevice.status === "connected";
+
+  const goToDashboard = () => {
+    if (!isLive) return;
+    hapticTick();
+    void navigate(ROUTES.deviceDashboard);
+  };
 
   return (
     <li
       className={cn(
         "flex items-center gap-3 rounded-md border border-border px-3 py-3",
         !device.enabled && "opacity-60",
+        isLive && "cursor-pointer hover:bg-muted/40",
       )}
       data-source={device.source}
       data-status={device.status}
+      onClick={isLive ? goToDashboard : undefined}
     >
       <span
         className={cn(
@@ -52,7 +69,8 @@ export function DeviceRow({ device }: DeviceRowProps) {
         type="button"
         aria-label={`Remove ${device.name}`}
         className="ms-1 flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           hapticTick();
           removeRegisteredDevice(device.id);
         }}

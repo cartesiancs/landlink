@@ -25,6 +25,7 @@ enum class TlvTag : uint8_t {
     TEMP_C_E1 = 0x32,  // Temp C * 10
     RSSI_DBM = 0x33,  // Last RX RSSI dBm
     SNR_DB_E1 = 0x34,  // Last RX SNR dB * 10
+    CHARGE_STATE = 0x35,  // bit0 VBUS, bit1 CHARGING, bit2 FULL, bit3 BATT_PRESENT
     ACK_PKT_ID = 0x40,
     HOP_LIMIT = 0x41,
     NODE_NAME = 0x50,  // Human-friendly peer name <=32 B
