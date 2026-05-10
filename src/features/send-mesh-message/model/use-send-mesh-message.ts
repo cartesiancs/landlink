@@ -1,6 +1,9 @@
 import { useCallback, useState } from "react";
 
-import { sendLandlinkCommand } from "@/entities/landlink-device";
+import {
+  appendOutgoingMessage,
+  sendLandlinkCommand,
+} from "@/entities/landlink-device";
 import { MeshKind, Opcode, TlvTag, type Tlv } from "@/shared/protocol";
 
 export type SendMeshMessageStatus = "idle" | "sending" | "sent" | "error";
@@ -35,6 +38,7 @@ export function useSendMeshMessage() {
     setError(null);
     try {
       await sendLandlinkCommand(Opcode.MESH_SEND, tlvs);
+      appendOutgoingMessage(trimmed);
       setStatus("sent");
       return true;
     } catch (err) {

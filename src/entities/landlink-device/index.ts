@@ -1,4 +1,5 @@
 export {
+  appendOutgoingMessage,
   attachLandlinkClient,
   detachLandlinkClient,
   sendLandlinkCommand,
@@ -9,8 +10,9 @@ export type {
   ChargeState,
   DeviceTelemetry,
   GpsFix,
-  IncomingMeshMessage,
   LandlinkDevice,
   LandlinkStatus,
+  MeshMessage,
+  MeshMessageDirection,
   ParsedInfo,
 } from "./model/store";

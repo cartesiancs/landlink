@@ -21,7 +21,7 @@ import { parseLandlinkInfo } from "../lib/parse-info";
 import { parseMeshRecv } from "../lib/parse-mesh-recv";
 import { parseTelemetry } from "../lib/parse-telemetry";
 import {
-  appendIncomingMessage,
+  appendMessage,
   getState,
   setConnected,
   setConnecting,
@@ -105,7 +105,7 @@ export async function attachLandlinkClient(
           setTelemetry(parseTelemetry(frame.payload));
         } else if (op === Opcode.MESH_RECV) {
           const msg = parseMeshRecv(frame.payload);
-          if (msg) appendIncomingMessage(msg);
+          if (msg) appendMessage(msg);
         } else {
           setLastEvtFrame(frame);
         }
@@ -166,4 +166,14 @@ export async function sendLandlinkCommand(
     frame,
   );
   return seq;
+}
+
+export function appendOutgoingMessage(text: string): void {
+  const dev = getState();
+  appendMessage({
+    senderNodeId: dev?.info?.nodeId ?? "self",
+    text,
+    direction: "outgoing",
+    receivedAt: Date.now(),
+  });
 }

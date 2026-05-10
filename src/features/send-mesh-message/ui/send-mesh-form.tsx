@@ -33,7 +33,7 @@ export function SendMeshForm() {
           }}
           placeholder="Broadcast to mesh peers"
           rows={2}
-          className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           disabled={sending}
         />
         <Button

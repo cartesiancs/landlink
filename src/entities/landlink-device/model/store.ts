@@ -32,9 +32,12 @@ export type DeviceTelemetry = {
   receivedAt: number;
 };
 
-export type IncomingMeshMessage = {
+export type MeshMessageDirection = "incoming" | "outgoing";
+
+export type MeshMessage = {
   senderNodeId: string;
   text: string;
+  direction: MeshMessageDirection;
   receivedAt: number;
 };
 
@@ -46,7 +49,7 @@ export type LandlinkDevice = {
   fsmState: FsmStateValue | null;
   lastEvtFrame: BleFrame | null;
   telemetry: DeviceTelemetry | null;
-  incomingMessages: readonly IncomingMeshMessage[];
+  messages: readonly MeshMessage[];
 };
 
 const MAX_MESSAGES = 50;
@@ -78,7 +81,7 @@ export function setConnecting(d: { deviceId: string; name: string }): void {
     fsmState: null,
     lastEvtFrame: null,
     telemetry: null,
-    incomingMessages: [],
+    messages: [],
   };
   emit();
 }
@@ -119,11 +122,11 @@ export function setTelemetry(telemetry: DeviceTelemetry): void {
   emit();
 }
 
-export function appendIncomingMessage(message: IncomingMeshMessage): void {
+export function appendMessage(message: MeshMessage): void {
   if (!state) return;
-  const next = state.incomingMessages.length >= MAX_MESSAGES
-    ? [...state.incomingMessages.slice(1), message]
-    : [...state.incomingMessages, message];
-  state = { ...state, incomingMessages: next };
+  const next = state.messages.length >= MAX_MESSAGES
+    ? [...state.messages.slice(1), message]
+    : [...state.messages, message];
+  state = { ...state, messages: next };
   emit();
 }

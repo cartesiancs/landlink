@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   useLandlinkDevice,
-  type IncomingMeshMessage,
+  type MeshMessage,
 } from "@/entities/landlink-device";
+import { cn } from "@/shared/lib";
 
 function formatRelativeTime(deltaMs: number): string {
   if (deltaMs < 5_000) return "just now";
@@ -12,27 +13,33 @@ function formatRelativeTime(deltaMs: number): string {
   return `${Math.floor(deltaMs / 3_600_000)}h ago`;
 }
 
-function MessageRow({
-  message,
-  now,
-}: {
-  message: IncomingMeshMessage;
-  now: number;
-}) {
+function MessageRow({ message, now }: { message: MeshMessage; now: number }) {
+  const outgoing = message.direction === "outgoing";
   return (
-    <li className="flex flex-col gap-0.5 rounded-md border border-border bg-card px-3 py-2">
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
-        <span className="font-mono">{message.senderNodeId}</span>
-        <span>{formatRelativeTime(now - message.receivedAt)}</span>
+    <li className={cn("flex", outgoing ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "flex max-w-[80%] flex-col gap-0.5 rounded-md border px-3 py-2",
+          outgoing
+            ? "border-primary/20 bg-primary/10"
+            : "border-border bg-card",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span className="font-mono">
+            {outgoing ? "me" : message.senderNodeId}
+          </span>
+          <span>{formatRelativeTime(now - message.receivedAt)}</span>
+        </div>
+        <p className="text-sm wrap-break-word">{message.text}</p>
       </div>
-      <p className="text-sm wrap-break-word">{message.text}</p>
     </li>
   );
 }
 
 export function MeshMessageFeed() {
   const device = useLandlinkDevice();
-  const messages = device?.incomingMessages ?? [];
+  const messages = device?.messages ?? [];
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastCount = useRef(0);
   const [now, setNow] = useState(() => Date.now());
@@ -55,7 +62,7 @@ export function MeshMessageFeed() {
 
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-semibold tracking-tight">Incoming</h2>
+      <h2 className="text-sm font-semibold tracking-tight">Chat</h2>
       {messages.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
           No messages yet.

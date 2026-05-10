@@ -4,6 +4,7 @@
 #include "mesh/router/router.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
+#include "shared/util/log.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
 #include "transport/lora/sx1262_driver.h"
@@ -13,6 +14,10 @@ extern landlink::mesh::Router g_router;  // defined in main.cpp
 }
 
 namespace landlink::features::mesh_chat {
+
+namespace {
+constexpr const char* kTag = "mesh_chat";
+}
 
 using landlink::proto::Opcode;
 using landlink::proto::TlvTag;
@@ -34,23 +39,42 @@ size_t build_chat(uint32_t reply_to_pkt_id,
 bool send_chat(uint32_t dst,
                const char* utf8, size_t utf8_len,
                uint32_t reply_to_pkt_id) {
-    if (utf8 == nullptr || utf8_len == 0 || utf8_len > 200) return false;
+    if (utf8 == nullptr || utf8_len == 0 || utf8_len > 200) {
+        LL_LOG_W(kTag, "send_chat reject len=%u", utf8_len);
+        return false;
+    }
 
     uint8_t tlv[landlink::mesh::kMaxPayload];
     const size_t tlv_len = build_chat(reply_to_pkt_id, utf8, utf8_len,
                                       tlv, sizeof(tlv));
-    if (tlv_len == 0) return false;
+    if (tlv_len == 0) {
+        LL_LOG_W(kTag, "send_chat build_chat overflow");
+        return false;
+    }
 
     uint8_t frame[landlink::mesh::kMaxFrame];
     const size_t frame_len = landlink::app::services::g_router.originate(
         dst, 0, tlv, tlv_len, frame, sizeof(frame));
-    if (frame_len == 0) return false;
+    if (frame_len == 0) {
+        LL_LOG_W(kTag, "send_chat originate failed");
+        return false;
+    }
 
-    return landlink::transport::lora::queue_tx(frame, frame_len);
+    const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
+    LL_LOG_I(kTag, "send_chat dst=%08x tlv=%u frame=%u tx=%d",
+             static_cast<unsigned>(dst),
+             static_cast<unsigned>(tlv_len),
+             static_cast<unsigned>(frame_len),
+             ok ? 1 : 0);
+    return ok;
 }
 
 void on_chat(uint32_t src, uint32_t pkt_id,
              const uint8_t* tlv_payload, size_t tlv_len) {
+    LL_LOG_I(kTag, "on_chat src=%08x pkt_id=%u tlv_len=%u",
+             static_cast<unsigned>(src),
+             static_cast<unsigned>(pkt_id),
+             static_cast<unsigned>(tlv_len));
     // Echo to BLE as MESH_RECV. Keep the TLV payload intact; the client
     // re-uses the shared TLV parser.
     uint8_t buf[240];

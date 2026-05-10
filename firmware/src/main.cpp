@@ -70,7 +70,15 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
                            const uint8_t* payload, size_t payload_len) {
     landlink::TlvReader r(payload, payload_len);
     landlink::Tlv kind;
-    if (!r.find(landlink::proto::TlvTag::KIND, kind) || kind.len != 1) return;
+    if (!r.find(landlink::proto::TlvTag::KIND, kind) || kind.len != 1) {
+        LL_LOG_W(kTag, "rx sink: missing KIND src=%08x",
+                 static_cast<unsigned>(h.src));
+        return;
+    }
+    LL_LOG_I(kTag, "rx sink: src=%08x kind=0x%02x len=%u",
+             static_cast<unsigned>(h.src),
+             static_cast<unsigned>(kind.data[0]),
+             static_cast<unsigned>(payload_len));
     switch (kind.data[0]) {
     case 0x01:  // MeshKind::CHAT_TEXT
         landlink::features::mesh_chat::on_chat(h.src, h.pkt_id,

@@ -36,12 +36,6 @@ bool authed() {
     return (app::fsm::flags() & app::fsm::bits::kProvisioned) != 0;
 }
 
-bool has_mesh_key() {
-    uint8_t k[32];
-    size_t  n = sizeof(k);
-    return hal::storage::get_wrapped("ll.net", "key", k, n) && n == 32;
-}
-
 void send_error(uint8_t seq, uint8_t err_code) {
     const uint8_t payload[3] = { 0xF0, 0x01, err_code };
     transport::ble::notify_evt(landlink::proto::Opcode::ERROR, seq,
@@ -123,16 +117,14 @@ bool handle_cmd(Opcode op, uint8_t seq,
         landlink::Tlv kind, text, dst_tlv;
         if (!r.find(TlvTag::KIND, kind) || kind.len != 1 ||
             kind.data[0] != 0x01 /* MeshKind::CHAT_TEXT */) {
+            LL_LOG_W(kTag, "MESH_SEND bad KIND");
             send_error(seq, 0x01 /* BAD_ARG */);
             return true;
         }
         if (!r.find(TlvTag::CHAT_TEXT, text) ||
             text.len < 1 || text.len > 200) {
+            LL_LOG_W(kTag, "MESH_SEND bad CHAT_TEXT len=%u", text.len);
             send_error(seq, 0x01 /* BAD_ARG */);
-            return true;
-        }
-        if (!has_mesh_key()) {
-            send_error(seq, 0x02 /* BAD_STATE */);
             return true;
         }
         uint32_t dst = mesh::kBroadcastAddr;
@@ -142,9 +134,12 @@ bool handle_cmd(Opcode op, uint8_t seq,
                   (static_cast<uint32_t>(dst_tlv.data[2]) << 16) |
                   (static_cast<uint32_t>(dst_tlv.data[3]) << 24);
         }
+        LL_LOG_I(kTag, "MESH_SEND dst=%08x len=%u",
+                 static_cast<unsigned>(dst), text.len);
         const bool ok = features::mesh_chat::send_chat(
             dst, reinterpret_cast<const char*>(text.data), text.len, 0);
         if (!ok) {
+            LL_LOG_W(kTag, "MESH_SEND send_chat failed");
             send_error(seq, 0x05 /* BUSY */);
         }
         return true;

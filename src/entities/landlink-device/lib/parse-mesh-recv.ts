@@ -1,6 +1,6 @@
 import { decodeTlvs, TlvTag } from "@/shared/protocol";
 
-import type { IncomingMeshMessage } from "../model/store";
+import type { MeshMessage } from "../model/store";
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = "";
@@ -11,7 +11,7 @@ function bytesToHex(bytes: Uint8Array): string {
   return out;
 }
 
-export function parseMeshRecv(payload: Uint8Array): IncomingMeshMessage | null {
+export function parseMeshRecv(payload: Uint8Array): MeshMessage | null {
   let senderNodeId: string | null = null;
   let text: string | null = null;
   const decoder = new TextDecoder();
@@ -23,5 +23,10 @@ export function parseMeshRecv(payload: Uint8Array): IncomingMeshMessage | null {
     }
   }
   if (senderNodeId === null || text === null) return null;
-  return { senderNodeId, text, receivedAt: Date.now() };
+  return {
+    senderNodeId,
+    text,
+    direction: "incoming",
+    receivedAt: Date.now(),
+  };
 }
