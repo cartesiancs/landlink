@@ -1,10 +1,12 @@
 # Landlink Module I partition table
 # A/B OTA layout with dedicated key namespace.
+# Offsets must match espressif32 PIO upload defaults:
+#   bootloader=0x1000, partition table=0x8000, otadata=0xE000, app=0x10000.
 # Name,   Type, SubType,  Offset,   Size,     Flags
-nvs,      data, nvs,      0x9000,   0x6000,
-otadata,  data, ota,      0xF000,   0x2000,
-phy_init, data, phy,      0x11000,  0x1000,
-keys_nvs, data, nvs,      0x12000,  0x4000,
-app0,     app,  ota_0,    0x20000,  0x180000,
-app1,     app,  ota_1,    0x1A0000, 0x180000,
-storage,  data, spiffs,   0x320000, 0xE0000,
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xE000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x180000,
+app1,     app,  ota_1,    0x190000, 0x180000,
+phy_init, data, phy,      0x310000, 0x1000,
+keys_nvs, data, nvs,      0x311000, 0x4000,
+storage,  data, spiffs,   0x315000, 0xEB000,

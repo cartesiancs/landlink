@@ -16,7 +16,7 @@ inline constexpr uint8_t kLoraBusy  = 32;
 inline constexpr uint8_t kLoraDio1  = 33;
 inline constexpr uint8_t kLoraRst   = 23;
 
-// --- AXP192 (PMU) ------------------------------------------------------------
+// --- PMU (AXP192 on older lots, AXP2101 on current lots) --------------------
 inline constexpr uint8_t kPmuSda    = 21;
 inline constexpr uint8_t kPmuScl    = 22;
 inline constexpr uint8_t kPmuIrq    = 35;
