@@ -4,7 +4,11 @@ import {
   attachLandlinkClient,
   detachLandlinkClient,
 } from "@/entities/landlink-device";
-import { registerDevice } from "@/entities/registered-device";
+import {
+  getPrimaryDeviceId,
+  registerDevice,
+  setPrimaryDeviceId,
+} from "@/entities/registered-device";
 import {
   connectLandlinkDevice,
   isBlePairingSupported,
@@ -79,9 +83,15 @@ export function useBluetoothPairing() {
       return;
     }
 
+    // WHY: claim the primary slot BEFORE attach so the live-sync guard in
+    // useLiveDeviceSync doesn't see a non-primary live device and detach it.
+    const previousPrimary = getPrimaryDeviceId();
+    setPrimaryDeviceId(paired.id);
+
     try {
       await attachLandlinkClient(paired.id, paired.name);
     } catch (err) {
+      setPrimaryDeviceId(previousPrimary);
       await detachLandlinkClient(paired.id).catch(() => undefined);
       setState({ status: "error", device: null, error: describe(err) });
       return;

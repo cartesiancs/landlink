@@ -16,6 +16,7 @@
 #include "app/fsm/fsm.h"
 #include "app/services/cmd_dispatch.h"
 #include "app/services/tasks.h"
+#include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
@@ -84,6 +85,10 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
         landlink::features::mesh_chat::on_chat(h.src, h.pkt_id,
                                                payload, payload_len);
         break;
+    case 0x05:  // MeshKind::BEACON
+        landlink::features::lora_pair::on_beacon_rx(h.src,
+                                                    payload, payload_len);
+        break;
     default:
         break;
     }
@@ -148,6 +153,8 @@ void setup() {
     cfg.default_hop_limit = 5;
     landlink::app::services::g_router.init(cfg, net_key);
     landlink::app::services::g_router.set_sink(&landlink_payload_sink);
+
+    landlink::features::lora_pair::init(node_id);
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

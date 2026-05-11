@@ -13,6 +13,7 @@ export type RegisterDeviceInput = {
   pingMs?: number | null;
   signalDbm?: number | null;
   lastConnectedAt?: number | null;
+  nodeId?: string | null;
 };
 
 export function registerDevice(input: RegisterDeviceInput): RegisteredDevice {
@@ -31,6 +32,7 @@ export function registerDevice(input: RegisterDeviceInput): RegisteredDevice {
     signalDbm: input.signalDbm ?? null,
     lastConnectedAt,
     registeredAt: Date.now(),
+    nodeId: input.nodeId ?? null,
   };
   addRegisteredDevice(device);
   return device;

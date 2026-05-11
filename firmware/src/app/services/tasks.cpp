@@ -5,6 +5,7 @@
 #include <freertos/task.h>
 
 #include "app/fsm/fsm.h"
+#include "features/lora_pairing/lora_pairing.h"
 #include "features/telemetry/telemetry.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
@@ -60,6 +61,15 @@ constexpr const char* kTag = "tasks";
     }
 }
 
+[[noreturn]] void beacon_task(void*) {
+    // WHY: 30s strikes a balance between freshness for the discovery UI and
+    // airtime budget on shared LoRa channels.
+    for (;;) {
+        features::lora_pair::send_beacon();
+        vTaskDelay(pdMS_TO_TICKS(30000));
+    }
+}
+
 [[noreturn]] void gps_task(void*) {
     for (;;) {
         hal::gps::pump();
@@ -97,6 +107,7 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(led_tick_task,   "led_tick",    2048, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(button_task,     "button",      2048, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(telemetry_task,  "telemetry",   4096, nullptr, 3, nullptr, 0);
+    xTaskCreatePinnedToCore(beacon_task,     "beacon",      4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);

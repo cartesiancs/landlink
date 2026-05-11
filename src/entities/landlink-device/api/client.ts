@@ -1,4 +1,9 @@
 import {
+  findDevice,
+  getRegisteredDevices,
+  updateRegisteredDevice,
+} from "@/entities/registered-device";
+import {
   disconnectLandlinkDevice,
   onLandlinkDisconnect,
   readCharacteristic,
@@ -42,6 +47,17 @@ let activeDeviceId: string | null = null;
 let activeStoppers: (() => Promise<void>)[] = [];
 let activeUnsubDisconnect: (() => void) | null = null;
 
+export type PeerFoundFrame = { seq: number; payload: Uint8Array };
+type PeerFoundHandler = (frame: PeerFoundFrame) => void;
+const peerFoundHandlers = new Set<PeerFoundHandler>();
+
+export function onLandlinkPeerFound(handler: PeerFoundHandler): () => void {
+  peerFoundHandlers.add(handler);
+  return () => {
+    peerFoundHandlers.delete(handler);
+  };
+}
+
 async function runStoppers(): Promise<void> {
   const stoppers = activeStoppers;
   activeStoppers = [];
@@ -65,6 +81,12 @@ export async function attachLandlinkClient(
   deviceId: string,
   name: string,
 ): Promise<void> {
+  // WHY: an in-flight retry can race with an active connection. If we're
+  // already attached to this exact device, leaving the existing notifications
+  // alone is safe and avoids a brief "connecting" flicker.
+  if (activeDeviceId === deviceId && getState()?.status === "connected") {
+    return;
+  }
   if (activeDeviceId && activeDeviceId !== deviceId) {
     await detachLandlinkClient(activeDeviceId);
   }
@@ -106,6 +128,14 @@ export async function attachLandlinkClient(
         } else if (op === Opcode.MESH_RECV) {
           const msg = parseMeshRecv(frame.payload);
           if (msg) appendMessage(msg);
+        } else if (op === Opcode.LORA_PEER_FOUND) {
+          for (const handler of peerFoundHandlers) {
+            try {
+              handler({ seq: frame.seq, payload: frame.payload });
+            } catch {
+              // handlers must not break the EVT stream
+            }
+          }
         } else {
           setLastEvtFrame(frame);
         }
@@ -119,8 +149,29 @@ export async function attachLandlinkClient(
         LANDLINK_SERVICE_UUID,
         LANDLINK_CHARACTERISTIC.INFO,
       );
+      const hex = Array.from(infoBytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(" ");
+      console.log("[landlink] INFO read", {
+        deviceId,
+        bytes: infoBytes.byteLength,
+        hex,
+      });
       if (infoBytes.byteLength > 0) {
-        setInfo(parseLandlinkInfo(infoBytes));
+        const info = parseLandlinkInfo(infoBytes);
+        console.log("[landlink] INFO parsed", info);
+        setInfo(info);
+        if (info.nodeId) {
+          const registered = findDevice(getRegisteredDevices(), deviceId);
+          console.log("[landlink] INFO matched registered", {
+            registeredNodeId: registered?.nodeId ?? null,
+            newNodeId: info.nodeId,
+            willUpdate: registered !== null && registered.nodeId !== info.nodeId,
+          });
+          if (registered && registered.nodeId !== info.nodeId) {
+            updateRegisteredDevice(deviceId, { nodeId: info.nodeId });
+          }
+        }
       } else {
         console.warn("[landlink] INFO read returned 0 bytes");
       }

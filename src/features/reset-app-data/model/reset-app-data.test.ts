@@ -30,6 +30,7 @@ describe("resetAppData", () => {
       signalDbm: null,
       lastConnectedAt: null,
       registeredAt: 1,
+      nodeId: null,
     });
     expect(window.localStorage.getItem(REGISTERED_DEVICES_STORAGE_KEY)).not.toBeNull();
     resetAppData();
@@ -72,6 +73,7 @@ describe("resetAppData", () => {
       signalDbm: null,
       lastConnectedAt: null,
       registeredAt: 1,
+      nodeId: null,
     });
     setDebugMode(true);
     window.localStorage.setItem("vision.extra.v1", "x");

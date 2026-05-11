@@ -12,6 +12,14 @@ export {
   updateRegisteredDevice,
   _resetRegisteredDevicesStore,
 } from "./model/store";
+export {
+  PRIMARY_DEVICE_STORAGE_KEY,
+  getPrimaryDeviceId,
+  setPrimaryDeviceId,
+  subscribePrimaryDevice,
+  usePrimaryDeviceId,
+  _resetPrimaryDeviceStore,
+} from "./model/primary-store";
 export { useRegisteredDevices } from "./model/use-registered-devices";
 export {
   registerDevice,

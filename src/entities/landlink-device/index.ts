@@ -2,7 +2,9 @@ export {
   appendOutgoingMessage,
   attachLandlinkClient,
   detachLandlinkClient,
+  onLandlinkPeerFound,
   sendLandlinkCommand,
+  type PeerFoundFrame,
 } from "./api/client";
 export { parseLandlinkInfo } from "./lib/parse-info";
 export { useLandlinkDevice } from "./model/use-landlink-device";

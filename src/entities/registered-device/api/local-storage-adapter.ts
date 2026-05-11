@@ -1,7 +1,8 @@
 import type { RegisteredDevice } from "../model/types";
 
-export const STORAGE_KEY = "vision.registered-devices.v1";
-const SCHEMA_VERSION = 1;
+export const STORAGE_KEY = "vision.registered-devices.v2";
+const LEGACY_STORAGE_KEY_V1 = "vision.registered-devices.v1";
+const SCHEMA_VERSION = 2;
 
 type Envelope = {
   version: number;
@@ -21,7 +22,8 @@ function isRegisteredDevice(value: unknown): value is RegisteredDevice {
     (v["signalDbm"] === null || typeof v["signalDbm"] === "number") &&
     (v["lastConnectedAt"] === null ||
       typeof v["lastConnectedAt"] === "number") &&
-    typeof v["registeredAt"] === "number"
+    typeof v["registeredAt"] === "number" &&
+    (v["nodeId"] === null || typeof v["nodeId"] === "string")
   );
 }
 
@@ -33,11 +35,50 @@ function getStorage(): Storage | null {
   }
 }
 
+function migrateLegacyV1(storage: Storage): RegisteredDevice[] {
+  const raw = storage.getItem(LEGACY_STORAGE_KEY_V1);
+  if (raw === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    storage.removeItem(LEGACY_STORAGE_KEY_V1);
+    return [];
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    storage.removeItem(LEGACY_STORAGE_KEY_V1);
+    return [];
+  }
+  const env = parsed as { version?: unknown; devices?: unknown };
+  if (env.version !== 1 || !Array.isArray(env.devices)) {
+    storage.removeItem(LEGACY_STORAGE_KEY_V1);
+    return [];
+  }
+  const upgraded: RegisteredDevice[] = [];
+  for (const entry of env.devices) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const candidate = { ...(entry as Record<string, unknown>), nodeId: null };
+    if (isRegisteredDevice(candidate)) {
+      upgraded.push(candidate);
+    }
+  }
+  const next: Envelope = { version: SCHEMA_VERSION, devices: upgraded };
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(next));
+    storage.removeItem(LEGACY_STORAGE_KEY_V1);
+  } catch (err) {
+    console.warn("[registered-device] v1->v2 migration failed", err);
+  }
+  return upgraded;
+}
+
 export function loadDevices(): RegisteredDevice[] {
   const storage = getStorage();
   if (!storage) return [];
   const raw = storage.getItem(STORAGE_KEY);
-  if (raw === null) return [];
+  if (raw === null) {
+    return migrateLegacyV1(storage);
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -67,4 +108,5 @@ export function clearStoredDevices(): void {
   const storage = getStorage();
   if (!storage) return;
   storage.removeItem(STORAGE_KEY);
+  storage.removeItem(LEGACY_STORAGE_KEY_V1);
 }

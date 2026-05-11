@@ -1,6 +1,7 @@
 import { StrictMode, type ReactNode } from "react";
 
 import { ThemeProvider, useTheme } from "@/entities/theme";
+import { useLoraDiscovery } from "@/features/lora-discovery";
 import { useLiveDeviceSync } from "@/features/register-device";
 import { Toaster } from "@/shared/ui";
 
@@ -18,11 +19,17 @@ function LiveDeviceSyncBridge() {
   return null;
 }
 
+function LoraDiscoveryBridge() {
+  useLoraDiscovery();
+  return null;
+}
+
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <StrictMode>
       <ThemeProvider>
         <LiveDeviceSyncBridge />
+        <LoraDiscoveryBridge />
         {children}
         <ThemedToaster />
       </ThemeProvider>

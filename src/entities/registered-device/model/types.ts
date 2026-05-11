@@ -12,4 +12,8 @@ export type RegisteredDevice = {
   signalDbm: number | null;
   lastConnectedAt: number | null;
   registeredAt: number;
+  // WHY: firmware-side 4-byte node id, captured from INFO on first BLE attach.
+  // Needed to match LoRa peers (which only know node_id) back to a registered
+  // device whose primary `id` is the OS-assigned BLE handle.
+  nodeId: string | null;
 };

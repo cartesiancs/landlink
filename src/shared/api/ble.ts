@@ -123,6 +123,43 @@ export function requestLandlinkDevice(): Promise<PairedDeviceInfo> {
   return requestViaWeb();
 }
 
+// WHY: Web Bluetooth lets us re-acquire previously-permitted devices without a
+// user gesture via getDevices(). Native is permission-by-id, so we just signal
+// "the OS knows about this id" by returning empty (callers use stored ids).
+export async function listPermittedDevices(): Promise<PairedDeviceInfo[]> {
+  if (Capacitor.isNativePlatform()) return [];
+  if (typeof navigator === "undefined" || !navigator.bluetooth) return [];
+  const bt = navigator.bluetooth as Bluetooth & {
+    getDevices?: () => Promise<BluetoothDevice[]>;
+  };
+  if (typeof bt.getDevices !== "function") return [];
+  try {
+    const devices = await bt.getDevices();
+    const out: PairedDeviceInfo[] = [];
+    for (const device of devices) {
+      webDeviceCache.set(device.id, device);
+      out.push({ id: device.id, name: device.name ?? "Unknown device" });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export async function reconnectLandlinkDevice(deviceId: string): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    await connectLandlinkDevice(deviceId);
+    return;
+  }
+  if (!webDeviceCache.has(deviceId)) {
+    await listPermittedDevices();
+  }
+  if (!webDeviceCache.has(deviceId)) {
+    throw new Error("Device permission lost. Pair again.");
+  }
+  await connectLandlinkDevice(deviceId);
+}
+
 export async function connectLandlinkDevice(deviceId: string): Promise<void> {
   if (Capacitor.isNativePlatform()) {
     await BleClient.connect(deviceId, () => {

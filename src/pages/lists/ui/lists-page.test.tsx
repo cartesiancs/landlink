@@ -61,6 +61,7 @@ describe("ListsPage", () => {
       signalDbm: null,
       lastConnectedAt: null,
       registeredAt: 1,
+      nodeId: null,
     });
     renderListsPage();
     expect(screen.getByText(/— · Never/)).toBeInTheDocument();

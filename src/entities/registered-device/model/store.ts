@@ -4,6 +4,11 @@ import {
   saveDevices,
 } from "../api/local-storage-adapter";
 import {
+  _resetPrimaryDeviceStore,
+  getPrimaryDeviceId,
+  setPrimaryDeviceId,
+} from "./primary-store";
+import {
   patchDevice,
   removeDevice as removeFromList,
   upsertDevice,
@@ -55,6 +60,7 @@ export function removeRegisteredDevice(id: string): void {
   const current = ensureHydrated();
   const next = removeFromList(current, id);
   if (next.length === current.length) return;
+  if (getPrimaryDeviceId() === id) setPrimaryDeviceId(null);
   commit(next);
 }
 
@@ -62,6 +68,7 @@ export function clearRegisteredDevices(): void {
   ensureHydrated();
   state = [];
   clearStoredDevices();
+  _resetPrimaryDeviceStore();
   for (const l of listeners) l();
 }
 
