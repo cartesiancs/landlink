@@ -1,4 +1,4 @@
-import { BatteryMedium, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { useLandlinkDevice } from "@/entities/landlink-device";

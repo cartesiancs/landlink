@@ -8,6 +8,7 @@ import {
 
 import { AboutPage } from "@/pages/about";
 import { DeviceDashboardPage } from "@/pages/device-dashboard";
+import { ErrorPage } from "@/pages/error";
 import { FaqPage } from "@/pages/faq";
 import { HardwareSetupPage } from "@/pages/hardware-setup";
 import { LandlinkModuleIPage } from "@/pages/landlink-module-i";
@@ -22,21 +23,31 @@ import { TermsPage } from "@/pages/terms";
 import { ROUTES } from "@/shared/config";
 import { AppLayout } from "@/app/layout/app-layout";
 
+// WHY: a parent route with errorElement (and no element of its own) lets the
+// custom ErrorPage handle thrown errors from any child route without altering
+// their layout. Default behavior renders react-router's plain "Unexpected
+// Application Error!" message which we don't want users to see.
 const routes: RouteObject[] = [
-  { path: ROUTES.about, element: <AboutPage /> },
-  { path: ROUTES.faq, element: <FaqPage /> },
-  { path: ROUTES.landlinkOne, element: <LandlinkOnePage /> },
-  { path: ROUTES.landlinkModuleI, element: <LandlinkModuleIPage /> },
-  { path: ROUTES.hardwareSetup, element: <HardwareSetupPage /> },
-  { path: ROUTES.privacy, element: <PrivacyPage /> },
-  { path: ROUTES.terms, element: <TermsPage /> },
-  { path: ROUTES.lists, element: <ListsPage /> },
-  { path: ROUTES.deviceDashboard, element: <DeviceDashboardPage /> },
-  { path: ROUTES.settings, element: <SettingsPage /> },
-  { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
-  { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },
-  { path: ROUTES.settingsReset, element: <SettingsResetPage /> },
-  { path: "*", element: <AppLayout /> },
+  {
+    errorElement: <ErrorPage />,
+    children: [
+      { path: ROUTES.about, element: <AboutPage /> },
+      { path: ROUTES.faq, element: <FaqPage /> },
+      { path: ROUTES.landlinkOne, element: <LandlinkOnePage /> },
+      { path: ROUTES.landlinkModuleI, element: <LandlinkModuleIPage /> },
+      { path: ROUTES.hardwareSetup, element: <HardwareSetupPage /> },
+      { path: ROUTES.privacy, element: <PrivacyPage /> },
+      { path: ROUTES.terms, element: <TermsPage /> },
+      { path: ROUTES.lists, element: <ListsPage /> },
+      { path: ROUTES.deviceDashboard, element: <DeviceDashboardPage /> },
+      { path: ROUTES.settings, element: <SettingsPage /> },
+      { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
+      { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },
+      { path: ROUTES.settingsReset, element: <SettingsResetPage /> },
+      { path: ROUTES.error, element: <ErrorPage /> },
+      { path: "*", element: <AppLayout /> },
+    ],
+  },
 ];
 
 // WHY: on Capacitor iOS the app is served from capacitor://localhost with no

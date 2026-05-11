@@ -17,6 +17,7 @@ export const ROUTES = {
   settingsTheme: "/settings/theme",
   settingsDebug: "/settings/debug",
   settingsReset: "/settings/reset",
+  error: "/error",
   notFound: "*",
 } as const;
 
