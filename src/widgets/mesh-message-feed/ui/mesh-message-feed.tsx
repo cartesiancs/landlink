@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   useLandlinkDevice,
@@ -6,32 +6,59 @@ import {
 } from "@/entities/landlink-device";
 import { cn } from "@/shared/lib";
 
-function formatRelativeTime(deltaMs: number): string {
-  if (deltaMs < 5_000) return "just now";
-  if (deltaMs < 60_000) return `${Math.floor(deltaMs / 1000)}s ago`;
-  if (deltaMs < 3_600_000) return `${Math.floor(deltaMs / 60_000)}m ago`;
-  return `${Math.floor(deltaMs / 3_600_000)}h ago`;
+type GroupedMessage = {
+  message: MeshMessage;
+  isFirstInGroup: boolean;
+  isLastInGroup: boolean;
+};
+
+function groupKey(m: MeshMessage): string {
+  return m.direction === "outgoing" ? "__me__" : m.senderNodeId;
 }
 
-function MessageRow({ message, now }: { message: MeshMessage; now: number }) {
+function groupMessages(messages: readonly MeshMessage[]): GroupedMessage[] {
+  return messages.map((m, i) => {
+    const prev = messages[i - 1];
+    const next = messages[i + 1];
+    const key = groupKey(m);
+    const isFirstInGroup = !prev || groupKey(prev) !== key;
+    const isLastInGroup = !next || groupKey(next) !== key;
+    return { message: m, isFirstInGroup, isLastInGroup };
+  });
+}
+
+function MessageRow({
+  message,
+  isFirstInGroup,
+  isLastInGroup,
+}: GroupedMessage) {
   const outgoing = message.direction === "outgoing";
   return (
-    <li className={cn("flex", outgoing ? "justify-end" : "justify-start")}>
+    <li
+      className={cn(
+        "flex flex-col",
+        outgoing ? "items-end" : "items-start",
+        isFirstInGroup ? "mt-3 first:mt-0" : "mt-0.5",
+      )}
+    >
+      {isFirstInGroup && !outgoing ? (
+        <span className="mb-1 px-3 font-mono text-[10px] text-muted-foreground">
+          {message.senderNodeId}
+        </span>
+      ) : null}
       <div
         className={cn(
-          "flex max-w-[80%] flex-col gap-0.5 rounded-md border px-3 py-2",
+          "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm wrap-break-word",
           outgoing
-            ? "border-primary/20 bg-primary/10"
-            : "border-border bg-card",
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-foreground",
+          outgoing && !isFirstInGroup && "rounded-tr-md",
+          outgoing && !isLastInGroup && "rounded-br-md",
+          !outgoing && !isFirstInGroup && "rounded-tl-md",
+          !outgoing && !isLastInGroup && "rounded-bl-md",
         )}
       >
-        <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          <span className="font-mono">
-            {outgoing ? "me" : message.senderNodeId}
-          </span>
-          <span>{formatRelativeTime(now - message.receivedAt)}</span>
-        </div>
-        <p className="text-sm wrap-break-word">{message.text}</p>
+        {message.text}
       </div>
     </li>
   );
@@ -42,16 +69,6 @@ export function MeshMessageFeed() {
   const messages = device?.messages ?? [];
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastCount = useRef(0);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setNow(Date.now());
-    }, 15_000);
-    return () => {
-      window.clearInterval(id);
-    };
-  }, []);
 
   useEffect(() => {
     if (messages.length > lastCount.current && scrollRef.current) {
@@ -59,6 +76,8 @@ export function MeshMessageFeed() {
     }
     lastCount.current = messages.length;
   }, [messages.length]);
+
+  const grouped = groupMessages(messages);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2">
@@ -70,14 +89,15 @@ export function MeshMessageFeed() {
       ) : (
         <div
           ref={scrollRef}
-          className="flex min-h-0 flex-1 flex-col-reverse gap-2 overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto"
         >
-          <ul className="flex flex-col gap-2">
-            {messages.map((m, i) => (
+          <ul className="flex flex-col">
+            {grouped.map((g, i) => (
               <MessageRow
-                key={`${m.senderNodeId}-${m.receivedAt}-${i}`}
-                message={m}
-                now={now}
+                key={`${g.message.senderNodeId}-${g.message.receivedAt}-${i}`}
+                message={g.message}
+                isFirstInGroup={g.isFirstInGroup}
+                isLastInGroup={g.isLastInGroup}
               />
             ))}
           </ul>

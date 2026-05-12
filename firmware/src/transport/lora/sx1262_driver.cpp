@@ -19,13 +19,26 @@ constexpr const char* kTag = "lora";
 SX1262 s_radio = new Module(pins::kLoraNss, pins::kLoraDio1,
                             pins::kLoraRst, pins::kLoraBusy);
 
-struct TxSlot {
+struct TxFrame {
     uint8_t buf[mesh::kMaxFrame];
-    size_t  len     = 0;
-    bool    pending = false;
+    size_t  len = 0;
 };
 
-TxSlot            s_tx;
+// WHY: a single-slot queue silently dropped chat frames during sustained
+// back-and-forth traffic. One transmit cycle (backoff + CAD + SF9 air time)
+// runs ~200..500 ms, well within the cadence of an active chat. 8 slots
+// absorbs a few seconds of burst at ~2 KB SRAM, leaving the BUSY error path
+// for the pathological case only.
+constexpr size_t kTxQueueDepth = 8;
+
+TxFrame s_tx_queue[kTxQueueDepth];
+size_t  s_tx_head  = 0;
+size_t  s_tx_tail  = 0;
+size_t  s_tx_count = 0;
+
+TxFrame s_tx_current;
+bool    s_tx_current_pending = false;
+
 SemaphoreHandle_t s_tx_mtx = nullptr;
 
 struct RxSlot {
@@ -141,8 +154,11 @@ bool init(Region r) {
 
 bool reconfigure(const LoraPreset& p) {
     if (xSemaphoreTake(s_tx_mtx, pdMS_TO_TICKS(200)) == pdTRUE) {
-        s_tx.pending = false;
-        s_tx.len     = 0;
+        s_tx_head            = 0;
+        s_tx_tail            = 0;
+        s_tx_count           = 0;
+        s_tx_current_pending = false;
+        s_tx_current.len     = 0;
         xSemaphoreGive(s_tx_mtx);
     }
     s_rx.ready     = false;
@@ -157,13 +173,14 @@ bool set_region(Region r) {
 }
 
 bool queue_tx(const uint8_t* frame, size_t frame_len) {
-    if (frame_len == 0 || frame_len > sizeof(s_tx.buf)) return false;
+    if (frame_len == 0 || frame_len > sizeof(s_tx_queue[0].buf)) return false;
     if (xSemaphoreTake(s_tx_mtx, pdMS_TO_TICKS(50)) != pdTRUE) return false;
     bool ok = false;
-    if (!s_tx.pending) {
-        std::memcpy(s_tx.buf, frame, frame_len);
-        s_tx.len     = frame_len;
-        s_tx.pending = true;
+    if (s_tx_count < kTxQueueDepth) {
+        std::memcpy(s_tx_queue[s_tx_tail].buf, frame, frame_len);
+        s_tx_queue[s_tx_tail].len = frame_len;
+        s_tx_tail = (s_tx_tail + 1) % kTxQueueDepth;
+        ++s_tx_count;
         ok = true;
     }
     xSemaphoreGive(s_tx_mtx);
@@ -186,7 +203,22 @@ void tx_tick() {
     const uint32_t now = millis();
     switch (s_tx_state) {
     case TxState::Idle:
-        if (s_tx.pending) {
+        if (!s_tx_current_pending) {
+            // Pop the head frame into the working slot. Mutex only covers the
+            // queue mutation so radio I/O below runs unlocked.
+            if (xSemaphoreTake(s_tx_mtx, pdMS_TO_TICKS(20)) == pdTRUE) {
+                if (s_tx_count > 0) {
+                    const TxFrame& head = s_tx_queue[s_tx_head];
+                    std::memcpy(s_tx_current.buf, head.buf, head.len);
+                    s_tx_current.len = head.len;
+                    s_tx_head = (s_tx_head + 1) % kTxQueueDepth;
+                    --s_tx_count;
+                    s_tx_current_pending = true;
+                }
+                xSemaphoreGive(s_tx_mtx);
+            }
+        }
+        if (s_tx_current_pending) {
             const uint32_t jitter = (esp_random() & 0xFF);  // 0..255 ms
             s_backoff_deadline_ms = now + jitter;
             s_tx_state = TxState::Backoff;
@@ -208,15 +240,12 @@ void tx_tick() {
         break;
 
     case TxState::CadWait: {
-        if (xSemaphoreTake(s_tx_mtx, pdMS_TO_TICKS(20)) == pdTRUE) {
-            const int rc = s_radio.transmit(s_tx.buf, s_tx.len);
-            if (rc != RADIOLIB_ERR_NONE) {
-                LL_LOG_W(kTag, "tx rc=%d", rc);
-            }
-            s_tx.pending = false;
-            s_tx.len     = 0;
-            xSemaphoreGive(s_tx_mtx);
+        const int rc = s_radio.transmit(s_tx_current.buf, s_tx_current.len);
+        if (rc != RADIOLIB_ERR_NONE) {
+            LL_LOG_W(kTag, "tx rc=%d", rc);
         }
+        s_tx_current_pending = false;
+        s_tx_current.len     = 0;
         s_radio.startReceive();
         s_tx_state = TxState::Idle;
         break;

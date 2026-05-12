@@ -22,8 +22,11 @@ export function SendMeshForm() {
       return;
     }
     hapticTick();
-    const ok = await send(text);
-    if (ok) setText("");
+    const sent = text;
+    const ok = await send(sent);
+    // WHY: textarea stays enabled during the BLE write so focus is never lost.
+    // Only clear if the user did not start composing the next message mid-send.
+    if (ok) setText((cur) => (cur === sent ? "" : cur));
   }
 
   return (
@@ -38,6 +41,18 @@ export function SendMeshForm() {
           onChange={(e) => {
             setText(e.target.value);
           }}
+          onKeyDown={(e) => {
+            // WHY: nativeEvent.isComposing guards IME composition (e.g. Korean)
+            // so confirming a candidate with Enter does not submit the form.
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
           placeholder="Message"
           rows={1}
           className={cn(
@@ -45,7 +60,6 @@ export function SendMeshForm() {
             tooLong &&
               "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/50",
           )}
-          disabled={sending}
         />
         <Button
           type="submit"
