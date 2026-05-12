@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Send } from "lucide-react";
 
 import { cn, hapticTick } from "@/shared/lib";
@@ -9,6 +9,7 @@ import { useSendMeshMessage } from "../model/use-send-mesh-message";
 export function SendMeshForm() {
   const { send, status, maxBytes } = useSendMeshMessage();
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const byteLength = new TextEncoder().encode(text).byteLength;
   const tooLong = byteLength > maxBytes;
@@ -23,10 +24,13 @@ export function SendMeshForm() {
     }
     hapticTick();
     const sent = text;
+    // WHY: on iOS Safari, programmatic focus only works inside a user gesture.
+    // Refocus synchronously before awaiting the BLE write so the soft keyboard
+    // stays open even if a parent rerender or button tap stole focus.
+    textareaRef.current?.focus();
     const ok = await send(sent);
-    // WHY: textarea stays enabled during the BLE write so focus is never lost.
-    // Only clear if the user did not start composing the next message mid-send.
     if (ok) setText((cur) => (cur === sent ? "" : cur));
+    textareaRef.current?.focus();
   }
 
   return (
@@ -36,6 +40,7 @@ export function SendMeshForm() {
     >
       <div className="flex items-end gap-2">
         <textarea
+          ref={textareaRef}
           aria-label="Mesh message"
           value={text}
           onChange={(e) => {
@@ -66,6 +71,15 @@ export function SendMeshForm() {
           size="icon-lg"
           aria-label="Send"
           disabled={sending || text.trim().length === 0}
+          // WHY: preventing the default mousedown/pointerdown keeps focus on
+          // the textarea so the mobile soft keyboard does not collapse when
+          // the user taps Send. The click event still fires and submits.
+          onMouseDown={(e) => {
+            e.preventDefault();
+          }}
+          onPointerDown={(e) => {
+            e.preventDefault();
+          }}
           className="rounded-full h-10.5 w-10.5"
         >
           <Send className="size-4" aria-hidden="true" />
