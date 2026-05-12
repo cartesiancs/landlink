@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
-import { BackButton } from "@/shared/ui";
+import { PageHeader } from "@/widgets/page-header";
 
 type Section = {
   title: string;
@@ -76,10 +76,11 @@ const SECTIONS: readonly Section[] = [
 export function PrivacyPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur supports-backdrop-filter:bg-background/70">
-        <BackButton fallback={ROUTES.home} aria-label="Back to Home" />
-        <h1 className="text-base font-medium">Privacy</h1>
-      </header>
+      <PageHeader
+        title="Privacy"
+        fallback={ROUTES.home}
+        backLabel="Back to Home"
+      />
 
       <section className="px-4 pt-2 pb-4">
         <h2 className="font-display text-3xl leading-tight tracking-tight">

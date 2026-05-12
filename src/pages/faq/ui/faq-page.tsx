@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 
 import { ROUTES } from "@/shared/config";
-import { BackButton } from "@/shared/ui";
+import { PageHeader } from "@/widgets/page-header";
 
 type FaqItem = {
   question: string;
@@ -54,10 +54,11 @@ const FAQS: readonly FaqItem[] = [
 export function FaqPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur supports-backdrop-filter:bg-background/70">
-        <BackButton fallback={ROUTES.home} aria-label="Back to Home" />
-        <h1 className="text-base font-medium">FAQ</h1>
-      </header>
+      <PageHeader
+        title="FAQ"
+        fallback={ROUTES.home}
+        backLabel="Back to Home"
+      />
 
       <section className="px-4 pt-2 pb-6">
         <h2 className="font-display text-3xl leading-tight tracking-tight">

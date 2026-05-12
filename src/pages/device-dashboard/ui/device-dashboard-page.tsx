@@ -12,7 +12,6 @@ import { SendMeshForm } from "@/features/send-mesh-message";
 import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
 import {
-  BackButton,
   Button,
   Dialog,
   DialogContent,
@@ -32,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui";
 import { MeshMessageFeed } from "@/widgets/mesh-message-feed";
+import { PageHeader } from "@/widgets/page-header";
 
 function formatLatLon(e7: number): string {
   return (e7 / 1e7).toFixed(6);
@@ -131,11 +131,11 @@ export function DeviceDashboardPage() {
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-background/90 px-4 ps-1 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur supports-backdrop-filter:bg-background/70">
-        <BackButton fallback={ROUTES.lists} aria-label="Back to Lists" />
-        <h1 className="flex-1 truncate text-base font-medium">
-          {device?.name ?? "No device"}
-        </h1>
+      <PageHeader
+        title={device?.name ?? "No device"}
+        fallback={ROUTES.lists}
+        backLabel="Back to Lists"
+      >
         {device ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -173,7 +173,7 @@ export function DeviceDashboardPage() {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-      </header>
+      </PageHeader>
       <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4">
         {isConnected ? (
           <MeshMessageFeed />
