@@ -170,7 +170,9 @@ export function AppLayout() {
           {renderStep(pathname)}
         </SlideSwitch>
 
-        <StepCta defaultLabel={label} defaultOnAction={handleAdvance} />
+        {!(IS_NATIVE_APP && pathname === ROUTES.home && devices.length > 0) && (
+          <StepCta defaultLabel={label} defaultOnAction={handleAdvance} />
+        )}
       </StepActionProvider>
 
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />

@@ -211,3 +211,33 @@
     animation-duration: 1ms;
   }
 }
+
+/* AppHeader and BottomNavBar are hoisted out of the `root` snapshot via their
+   own `view-transition-name`. Their group doesn't morph (they don't move
+   between pages), but the old/new snapshots still cross-fade in sync with
+   the root so that:
+   - present on both sides → identical images cross-fade invisibly via
+     the UA's plus-lighter blending, giving a pinned-in-place look;
+   - present only on the old side → snapshot fades out as the page leaves;
+   - present only on the new side → snapshot fades in as the page enters.
+*/
+::view-transition-group(app-header),
+::view-transition-group(bottom-nav-bar) {
+  animation: none;
+}
+::view-transition-old(app-header),
+::view-transition-new(app-header),
+::view-transition-old(bottom-nav-bar),
+::view-transition-new(bottom-nav-bar) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(app-header),
+  ::view-transition-new(app-header),
+  ::view-transition-old(bottom-nav-bar),
+  ::view-transition-new(bottom-nav-bar) {
+    animation-duration: 1ms;
+  }
+}

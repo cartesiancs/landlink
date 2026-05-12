@@ -10,7 +10,7 @@ type AppHeaderProps = {
 
 export function AppHeader({ onMenuOpen, onSupportOpen }: AppHeaderProps) {
   return (
-    <header className="shrink-0">
+    <header className="shrink-0 [view-transition-name:app-header]">
       {/* Solid strip covering the iOS safe-area-inset-top so Safari's URL bar
           tint can never sample a translucent/blurred edge. */}
       <div

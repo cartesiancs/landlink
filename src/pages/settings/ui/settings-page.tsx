@@ -3,7 +3,9 @@ import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
+import { cn } from "@/shared/lib";
 import { AppHeader } from "@/widgets/app-header";
+import { BottomNavBar, useBottomNavVisible } from "@/widgets/bottom-nav-bar";
 import { NavigationSidebar } from "@/widgets/navigation-sidebar";
 import { SupportDrawer } from "@/widgets/support-drawer";
 
@@ -23,6 +25,7 @@ const ENTRIES: readonly SettingEntry[] = [
 export function SettingsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const navVisible = useBottomNavVisible();
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -37,7 +40,14 @@ export function SettingsPage() {
       <div className="px-4 pt-1 pb-3">
         <h1 className="text-base font-medium">Settings</h1>
       </div>
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+      <main
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto px-4",
+          navVisible
+            ? "pb-[calc(max(env(safe-area-inset-bottom),0.75rem)+4.5rem)]"
+            : "pb-[max(env(safe-area-inset-bottom),1.5rem)]",
+        )}
+      >
         <section
           aria-label="Settings sections"
           className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -63,6 +73,7 @@ export function SettingsPage() {
       </main>
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />
+      <BottomNavBar />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/shared/config";
 import { cn, hapticTick, useInView, useScrollRestoration } from "@/shared/lib";
 import { Button } from "@/shared/ui";
+import { BottomNavBar } from "@/widgets/bottom-nav-bar";
 import { HomeCommunity } from "@/widgets/home-community";
 import { HomeHeroCarousel } from "@/widgets/home-hero-carousel";
 import { HomeLinkList } from "@/widgets/home-link-list";
@@ -246,6 +247,8 @@ export function HomePage() {
         </div>,
         document.body,
       )}
+
+      <BottomNavBar />
     </>
   );
 }
