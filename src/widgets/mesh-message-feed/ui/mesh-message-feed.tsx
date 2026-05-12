@@ -81,7 +81,6 @@ export function MeshMessageFeed() {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2">
-      <h2 className="text-sm font-semibold tracking-tight">Chat</h2>
       {messages.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
           No messages yet.

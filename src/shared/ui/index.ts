@@ -34,6 +34,18 @@ export {
   DropdownMenuLabel,
 } from "./dropdown-menu";
 export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from "./dialog";
+export {
   Carousel,
   CarouselContent,
   CarouselItem,
