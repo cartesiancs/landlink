@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Send } from "lucide-react";
 
-import { hapticTick } from "@/shared/lib";
-import { Button } from "@/shared/ui";
+import { cn, hapticTick } from "@/shared/lib";
+import { Button, toast } from "@/shared/ui";
 
 import { useSendMeshMessage } from "../model/use-send-mesh-message";
 
 export function SendMeshForm() {
-  const { send, status, error, maxBytes } = useSendMeshMessage();
+  const { send, status, maxBytes } = useSendMeshMessage();
   const [text, setText] = useState("");
 
   const byteLength = new TextEncoder().encode(text).byteLength;
@@ -16,14 +16,21 @@ export function SendMeshForm() {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
-    if (sending || tooLong || text.trim().length === 0) return;
+    if (sending || text.trim().length === 0) return;
+    if (tooLong) {
+      toast.error(`Messages over ${maxBytes.toString()} bytes are not allowed`);
+      return;
+    }
     hapticTick();
     const ok = await send(text);
     if (ok) setText("");
   }
 
   return (
-    <form className="flex flex-col gap-2" onSubmit={(e) => void handleSubmit(e)}>
+    <form
+      className="flex flex-col gap-1"
+      onSubmit={(e) => void handleSubmit(e)}
+    >
       <div className="flex items-end gap-2">
         <textarea
           aria-label="Mesh message"
@@ -31,29 +38,24 @@ export function SendMeshForm() {
           onChange={(e) => {
             setText(e.target.value);
           }}
-          placeholder="Broadcast to mesh peers"
-          rows={2}
-          className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          placeholder="Message"
+          rows={1}
+          className={cn(
+            "max-h-32 min-h-9 flex-1 resize-none rounded-2xl border border-border bg-muted px-4 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+            tooLong &&
+              "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/50",
+          )}
           disabled={sending}
         />
         <Button
           type="submit"
           size="icon-lg"
           aria-label="Send"
-          disabled={sending || tooLong || text.trim().length === 0}
+          disabled={sending || text.trim().length === 0}
+          className="rounded-full h-10.5 w-10.5"
         >
           <Send className="size-4" aria-hidden="true" />
         </Button>
-      </div>
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span className={tooLong ? "text-destructive" : undefined}>
-          {byteLength}/{maxBytes} B
-        </span>
-        {status === "error" && error ? (
-          <span className="text-destructive">{error}</span>
-        ) : status === "sent" ? (
-          <span className="text-emerald-600">Sent</span>
-        ) : null}
       </div>
     </form>
   );

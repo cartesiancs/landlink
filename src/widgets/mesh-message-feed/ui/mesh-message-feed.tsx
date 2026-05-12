@@ -61,7 +61,7 @@ export function MeshMessageFeed() {
   }, [messages.length]);
 
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex min-h-0 flex-1 flex-col gap-2">
       <h2 className="text-sm font-semibold tracking-tight">Chat</h2>
       {messages.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
@@ -70,7 +70,7 @@ export function MeshMessageFeed() {
       ) : (
         <div
           ref={scrollRef}
-          className="flex max-h-72 flex-col-reverse gap-2 overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col-reverse gap-2 overflow-y-auto"
         >
           <ul className="flex flex-col gap-2">
             {messages.map((m, i) => (
