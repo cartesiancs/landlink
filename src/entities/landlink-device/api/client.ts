@@ -12,11 +12,13 @@ import {
 } from "@/shared/api";
 import {
   decodeFrame,
+  decodeTlvs,
   encodeFrame,
   encodeTlvs,
   LANDLINK_CHARACTERISTIC,
   LANDLINK_SERVICE_UUID,
   Opcode,
+  TlvTag,
   type FsmStateValue,
   type OpcodeValue,
   type Tlv,
@@ -34,7 +36,9 @@ import {
   setFsmState,
   setInfo,
   setLastEvtFrame,
+  setProtocol,
   setTelemetry,
+  type ProtocolMode,
 } from "../model/store";
 
 let seqCounter = 0;
@@ -136,6 +140,15 @@ export async function attachLandlinkClient(
               // handlers must not break the EVT stream
             }
           }
+        } else if (op === Opcode.RADIO_PROTOCOL_RESULT) {
+          const tlvs = decodeTlvs(frame.payload);
+          for (const t of tlvs) {
+            if (t.tag === TlvTag.PROTOCOL && t.value.byteLength === 1) {
+              const v = t.value[0];
+              if (v === 0 || v === 1) setProtocol(v);
+              break;
+            }
+          }
         } else {
           setLastEvtFrame(frame);
         }
@@ -181,6 +194,12 @@ export async function attachLandlinkClient(
     }
 
     setConnected();
+    // Fetch current protocol mode after the link is up. Non-fatal on failure.
+    try {
+      await sendLandlinkCommand(Opcode.RADIO_GET_PROTOCOL);
+    } catch (err) {
+      console.warn("[landlink] RADIO_GET_PROTOCOL failed", err);
+    }
   } catch (err) {
     await runStoppers();
     clearActive();
@@ -217,6 +236,12 @@ export async function sendLandlinkCommand(
     frame,
   );
   return seq;
+}
+
+export async function setLandlinkProtocolMode(mode: ProtocolMode): Promise<void> {
+  await sendLandlinkCommand(Opcode.RADIO_SET_PROTOCOL, [
+    { tag: TlvTag.PROTOCOL, value: new Uint8Array([mode]) },
+  ]);
 }
 
 export function appendOutgoingMessage(text: string): void {

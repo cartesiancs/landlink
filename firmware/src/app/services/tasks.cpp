@@ -11,13 +11,12 @@
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
 #include "hal/pmu/pmu.h"
-#include "mesh/router/router.h"
+#include "mesh/frame/frame.h"
+#include "mesh/protocol/protocol.h"
 #include "shared/util/log.h"
 #include "transport/lora/sx1262_driver.h"
 
 namespace landlink::app::services {
-
-extern landlink::mesh::Router g_router;  // defined in main.cpp
 
 namespace {
 constexpr const char* kTag = "tasks";
@@ -91,7 +90,7 @@ constexpr const char* kTag = "tasks";
         if (transport::lora::poll_rx(buf, sizeof(buf), rep)) {
             uint8_t fwd[mesh::kMaxFrame];
             size_t  fwd_len = 0;
-            g_router.on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len);
+            mesh::protocol::on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len);
             if (fwd_len > 0) {
                 transport::lora::queue_tx(fwd, fwd_len);
             }

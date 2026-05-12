@@ -4,6 +4,7 @@ export {
   detachLandlinkClient,
   onLandlinkPeerFound,
   sendLandlinkCommand,
+  setLandlinkProtocolMode,
   type PeerFoundFrame,
 } from "./api/client";
 export { parseLandlinkInfo } from "./lib/parse-info";
@@ -17,4 +18,5 @@ export type {
   MeshMessage,
   MeshMessageDirection,
   ParsedInfo,
+  ProtocolMode,
 } from "./model/store";

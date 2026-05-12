@@ -9,6 +9,7 @@
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/storage/storage.h"
 #include "mesh/frame/frame.h"
+#include "mesh/protocol/protocol.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
 #include "shared/util/log.h"
@@ -79,6 +80,43 @@ bool handle_cmd(Opcode op, uint8_t seq,
         hal::storage::set_u8("ll.radio", "region", t.data[0]);
         transport::ble::notify_evt(Opcode::RADIO_REGION_RESULT, seq,
                                    t.data, t.len);
+        return true;
+    }
+
+    case Opcode::RADIO_GET_PROTOCOL: {
+        const uint8_t mode = static_cast<uint8_t>(mesh::protocol::active());
+        uint8_t buf[3];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put_u8(TlvTag::PROTOCOL, mode);
+        transport::ble::notify_evt(Opcode::RADIO_PROTOCOL_RESULT, seq,
+                                   b.data(), b.size());
+        return true;
+    }
+
+    case Opcode::RADIO_SET_PROTOCOL: {
+        landlink::Tlv t;
+        if (!r.find(TlvTag::PROTOCOL, t) || t.len != 1) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        const uint8_t requested = t.data[0];
+        if (requested > 1) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        const auto target = (requested == 1)
+            ? mesh::protocol::Mode::MESHTASTIC
+            : mesh::protocol::Mode::LANDLINK;
+        if (!mesh::protocol::set_active(target)) {
+            send_error(seq, 0xFF /* INTERNAL */);
+            return true;
+        }
+        const uint8_t applied = static_cast<uint8_t>(mesh::protocol::active());
+        uint8_t buf[3];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put_u8(TlvTag::PROTOCOL, applied);
+        transport::ble::notify_evt(Opcode::RADIO_PROTOCOL_RESULT, seq,
+                                   b.data(), b.size());
         return true;
     }
 

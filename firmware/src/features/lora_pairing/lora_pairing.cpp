@@ -10,6 +10,7 @@
 #include "features/telemetry/telemetry.h"
 #include "hal/storage/storage.h"
 #include "mesh/frame/frame.h"
+#include "mesh/protocol/protocol.h"
 #include "mesh/router/router.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
@@ -189,6 +190,9 @@ void on_beacon_rx(uint32_t src,
 }
 
 void send_beacon() {
+    if (landlink::mesh::protocol::active() != landlink::mesh::protocol::Mode::LANDLINK) {
+        return;  // Landlink beacon makes no sense in Meshtastic mode
+    }
     if (s_self_id == 0) {
         LL_LOG_W(kTag, "beacon skip: self_id=0 (lora_pair::init not called?)");
         return;

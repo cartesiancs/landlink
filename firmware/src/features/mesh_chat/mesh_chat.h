@@ -24,4 +24,10 @@ bool send_chat(uint32_t dst,
 void on_chat(uint32_t src, uint32_t pkt_id,
              const uint8_t* tlv_payload, size_t tlv_len);
 
+// Same surface for Meshtastic-mode RX. Called by the Meshtastic sink when a
+// TEXT_MESSAGE_APP `Data` packet arrives. The text is the decoded protobuf
+// `payload` field (UTF-8, not TLV).
+void on_meshtastic_chat(uint32_t src, uint32_t pkt_id,
+                        const uint8_t* text, size_t text_len);
+
 } // namespace landlink::features::mesh_chat

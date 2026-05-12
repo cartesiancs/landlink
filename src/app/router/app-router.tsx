@@ -17,6 +17,7 @@ import { ListsPage } from "@/pages/lists";
 import { PrivacyPage } from "@/pages/privacy";
 import { SettingsPage } from "@/pages/settings";
 import { SettingsDebugPage } from "@/pages/settings-debug";
+import { SettingsProtocolPage } from "@/pages/settings-protocol";
 import { SettingsResetPage } from "@/pages/settings-reset";
 import { SettingsThemePage } from "@/pages/settings-theme";
 import { TermsPage } from "@/pages/terms";
@@ -44,6 +45,7 @@ const routes: RouteObject[] = [
       { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
       { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },
       { path: ROUTES.settingsReset, element: <SettingsResetPage /> },
+      { path: ROUTES.settingsProtocol, element: <SettingsProtocolPage /> },
       { path: ROUTES.error, element: <ErrorPage /> },
       { path: "*", element: <AppLayout /> },
     ],

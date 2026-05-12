@@ -15,6 +15,7 @@ type SettingEntry = {
 
 const ENTRIES: readonly SettingEntry[] = [
   { id: "theme", label: "Theme", to: ROUTES.settingsTheme },
+  { id: "protocol", label: "Meshtastic compatibility", to: ROUTES.settingsProtocol },
   { id: "debug", label: "Debug mode", to: ROUTES.settingsDebug },
   { id: "reset", label: "Reset all data", to: ROUTES.settingsReset },
 ];

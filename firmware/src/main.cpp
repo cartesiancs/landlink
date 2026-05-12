@@ -24,6 +24,9 @@
 #include "hal/pmu/pmu.h"
 #include "hal/storage/storage.h"
 #include "mesh/frame/frame.h"
+#include "mesh/meshtastic/data_pb.h"
+#include "mesh/meshtastic/frame.h"
+#include "mesh/protocol/protocol.h"
 #include "mesh/router/router.h"
 #include "shared/config/build_info.h"
 #include "shared/protocol/opcodes.h"
@@ -93,6 +96,20 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
         break;
     }
 }
+
+// Meshtastic router sink. Dispatches by Data.portnum.
+void meshtastic_payload_sink(const landlink::mesh::meshtastic::Header& h,
+                             const landlink::mesh::meshtastic::DataMessage& data) {
+    using namespace landlink::mesh::meshtastic;
+    LL_LOG_I(kTag, "mt rx: src=%08x portnum=%u len=%u",
+             static_cast<unsigned>(h.src),
+             static_cast<unsigned>(data.portnum),
+             static_cast<unsigned>(data.payload_len));
+    if (data.portnum == kPortnumTextMessageApp && data.payload != nullptr) {
+        landlink::features::mesh_chat::on_meshtastic_chat(
+            h.src, h.pkt_id, data.payload, data.payload_len);
+    }
+}
 }
 
 void setup() {
@@ -153,6 +170,12 @@ void setup() {
     cfg.default_hop_limit = 5;
     landlink::app::services::g_router.init(cfg, net_key);
     landlink::app::services::g_router.set_sink(&landlink_payload_sink);
+
+    landlink::mesh::protocol::InitContext pcx{};
+    pcx.self_id = node_id;
+    pcx.region  = load_region();
+    landlink::mesh::protocol::init(pcx, landlink::app::services::g_router);
+    landlink::mesh::protocol::set_meshtastic_sink(&meshtastic_payload_sink);
 
     landlink::features::lora_pair::init(node_id);
 
