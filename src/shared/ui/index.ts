@@ -25,6 +25,15 @@ export {
   DrawerDescription,
 } from "./drawer";
 export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuPortal,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "./dropdown-menu";
+export {
   Carousel,
   CarouselContent,
   CarouselItem,

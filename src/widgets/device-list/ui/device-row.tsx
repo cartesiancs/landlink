@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { useLandlinkDevice } from "@/entities/landlink-device";
@@ -6,14 +6,11 @@ import { useLoraPeer } from "@/entities/lora-peer";
 import {
   formatLastConnected,
   formatPing,
-  removeRegisteredDevice,
   type RegisteredDevice,
 } from "@/entities/registered-device";
 import { useReconnectDevice } from "@/features/auto-reconnect";
 import { ROUTES } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
-
-import { SignalBars } from "./signal-bars";
 
 type DeviceRowProps = {
   device: RegisteredDevice;
@@ -42,7 +39,7 @@ export function DeviceRow({ device }: DeviceRowProps) {
   const handleClick = () => {
     if (isLive) {
       hapticTick();
-      void navigate(ROUTES.deviceDashboard);
+      void navigate(ROUTES.deviceDashboard, { viewTransition: true });
       return;
     }
     if (canReconnect && !isReconnecting) {
@@ -72,9 +69,6 @@ export function DeviceRow({ device }: DeviceRowProps) {
     : isNearby
     ? "bg-emerald-500"
     : "bg-muted-foreground/40";
-
-  const signalDbm =
-    isNearby && peer?.rssiDbm !== undefined ? peer.rssiDbm : device.signalDbm;
 
   return (
     <li
@@ -112,19 +106,10 @@ export function DeviceRow({ device }: DeviceRowProps) {
           {subtitle}
         </p>
       </div>
-      <SignalBars signalDbm={signalDbm} />
-      <button
-        type="button"
-        aria-label={`Remove ${device.name}`}
-        className="ms-1 flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={(e) => {
-          e.stopPropagation();
-          hapticTick();
-          removeRegisteredDevice(device.id);
-        }}
-      >
-        <Trash2 className="size-4" aria-hidden="true" />
-      </button>
+      <ChevronRight
+        className="size-4 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
     </li>
   );
 }
