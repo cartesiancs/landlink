@@ -1,6 +1,4 @@
-import { decodeTlvs, TlvTag } from "@/shared/protocol";
-
-import type { MeshMessage } from "../model/store";
+import { decodeTlvs, MeshKind, TlvTag } from "@/shared/protocol";
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = "";
@@ -11,22 +9,69 @@ function bytesToHex(bytes: Uint8Array): string {
   return out;
 }
 
-export function parseMeshRecv(payload: Uint8Array): MeshMessage | null {
+function readU32LE(bytes: Uint8Array): number | null {
+  if (bytes.byteLength !== 4) return null;
+  const b0 = bytes[0] ?? 0;
+  const b1 = bytes[1] ?? 0;
+  const b2 = bytes[2] ?? 0;
+  const b3 = bytes[3] ?? 0;
+  // Use unsigned right shift to coerce back into a u32 range.
+  return ((b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0);
+}
+
+export type ParsedMeshRecv =
+  | {
+      kind: "chat";
+      senderNodeId: string;
+      text: string;
+      pktId: number | null;
+      receivedAt: number;
+    }
+  | {
+      kind: "ack";
+      senderNodeId: string;
+      ackPktId: number;
+      receivedAt: number;
+    };
+
+export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
   let senderNodeId: string | null = null;
   let text: string | null = null;
+  let kindValue: number | null = null;
+  let ackPktId: number | null = null;
   const decoder = new TextDecoder();
   for (const tlv of decodeTlvs(payload)) {
     if (tlv.tag === TlvTag.NODE_ID && tlv.value.byteLength === 4) {
       senderNodeId = bytesToHex(tlv.value);
     } else if (tlv.tag === TlvTag.CHAT_TEXT) {
       text = decoder.decode(tlv.value);
+    } else if (tlv.tag === TlvTag.KIND && tlv.value.byteLength === 1) {
+      kindValue = tlv.value[0] ?? null;
+    } else if (tlv.tag === TlvTag.ACK_PKT_ID) {
+      ackPktId = readU32LE(tlv.value);
     }
   }
-  if (senderNodeId === null || text === null) return null;
+  if (senderNodeId === null) return null;
+
+  // Firmware prefixes every MESH_RECV with the outer ACK_PKT_ID = source pkt_id
+  // of the received frame. For chat that doubles as the message identifier the
+  // host uses for retry tracking. The KIND TLV inside the payload disambiguates
+  // a chat message from an ACK packet.
+  if (kindValue === MeshKind.ACK) {
+    if (ackPktId === null) return null;
+    return {
+      kind: "ack",
+      senderNodeId,
+      ackPktId,
+      receivedAt: Date.now(),
+    };
+  }
+  if (text === null) return null;
   return {
+    kind: "chat",
     senderNodeId,
     text,
-    direction: "incoming",
+    pktId: ackPktId,
     receivedAt: Date.now(),
   };
 }

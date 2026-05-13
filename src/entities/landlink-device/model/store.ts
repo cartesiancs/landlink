@@ -34,11 +34,17 @@ export type DeviceTelemetry = {
 
 export type MeshMessageDirection = "incoming" | "outgoing";
 
+export type MeshMessageStatus = "sending" | "delivered" | "failed";
+
 export type MeshMessage = {
   senderNodeId: string;
   text: string;
   direction: MeshMessageDirection;
   receivedAt: number;
+  pktId?: number;
+  bleSeq?: number;
+  status?: MeshMessageStatus;
+  attempts?: number;
 };
 
 export type ProtocolMode = 0 | 1;
@@ -137,6 +143,58 @@ export function appendMessage(message: MeshMessage): void {
   const next = state.messages.length >= MAX_MESSAGES
     ? [...state.messages.slice(1), message]
     : [...state.messages, message];
+  state = { ...state, messages: next };
+  emit();
+}
+
+export function attachPktIdToOutgoing(bleSeq: number, pktId: number): void {
+  if (!state) return;
+  let changed = false;
+  const next = state.messages.map((m) => {
+    if (
+      m.direction === "outgoing" &&
+      m.bleSeq === bleSeq &&
+      m.pktId === undefined
+    ) {
+      changed = true;
+      return { ...m, pktId };
+    }
+    return m;
+  });
+  if (!changed) return;
+  state = { ...state, messages: next };
+  emit();
+}
+
+export function updateOutgoingByPktId(
+  pktId: number,
+  patch: Partial<Pick<MeshMessage, "status" | "attempts">>,
+): void {
+  if (!state) return;
+  let changed = false;
+  const next = state.messages.map((m) => {
+    if (m.direction === "outgoing" && m.pktId === pktId) {
+      changed = true;
+      return { ...m, ...patch };
+    }
+    return m;
+  });
+  if (!changed) return;
+  state = { ...state, messages: next };
+  emit();
+}
+
+export function failAllOutgoingPending(): void {
+  if (!state) return;
+  let changed = false;
+  const next = state.messages.map((m) => {
+    if (m.direction === "outgoing" && m.status === "sending") {
+      changed = true;
+      return { ...m, status: "failed" as const };
+    }
+    return m;
+  });
+  if (!changed) return;
   state = { ...state, messages: next };
   emit();
 }

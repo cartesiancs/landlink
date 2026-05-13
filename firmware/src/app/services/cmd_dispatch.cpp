@@ -152,7 +152,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
         return true;
 
     case Opcode::MESH_SEND: {
-        landlink::Tlv kind, text, dst_tlv;
+        landlink::Tlv kind, text, dst_tlv, retry_tlv;
         if (!r.find(TlvTag::KIND, kind) || kind.len != 1 ||
             kind.data[0] != 0x01 /* MeshKind::CHAT_TEXT */) {
             LL_LOG_W(kTag, "MESH_SEND bad KIND");
@@ -172,13 +172,34 @@ bool handle_cmd(Opcode op, uint8_t seq,
                   (static_cast<uint32_t>(dst_tlv.data[2]) << 16) |
                   (static_cast<uint32_t>(dst_tlv.data[3]) << 24);
         }
-        LL_LOG_I(kTag, "MESH_SEND dst=%08x len=%u",
-                 static_cast<unsigned>(dst), text.len);
+        uint32_t retry_pkt_id = 0;
+        if (r.find(TlvTag::RETRY_PKT_ID, retry_tlv) && retry_tlv.len == 4) {
+            retry_pkt_id = static_cast<uint32_t>(retry_tlv.data[0]) |
+                           (static_cast<uint32_t>(retry_tlv.data[1]) << 8) |
+                           (static_cast<uint32_t>(retry_tlv.data[2]) << 16) |
+                           (static_cast<uint32_t>(retry_tlv.data[3]) << 24);
+        }
+        LL_LOG_I(kTag, "MESH_SEND dst=%08x len=%u retry=%u",
+                 static_cast<unsigned>(dst), text.len,
+                 static_cast<unsigned>(retry_pkt_id));
+        uint32_t assigned_pkt_id = 0;
         const bool ok = features::mesh_chat::send_chat(
-            dst, reinterpret_cast<const char*>(text.data), text.len, 0);
+            dst, reinterpret_cast<const char*>(text.data), text.len,
+            /*reply_to*/0, retry_pkt_id, &assigned_pkt_id);
         if (!ok) {
             LL_LOG_W(kTag, "MESH_SEND send_chat failed");
             send_error(seq, 0x05 /* BUSY */);
+            return true;
+        }
+        // Landlink-only: surface assigned pkt_id so the host can track retries.
+        // Meshtastic path leaves assigned_pkt_id at 0 (skip the notify).
+        if (assigned_pkt_id != 0) {
+            uint8_t buf[16];
+            landlink::TlvBuilder b(buf, sizeof(buf));
+            b.put_u8 (TlvTag::KIND,       0x01 /* MeshKind::CHAT_TEXT */);
+            b.put_u32(TlvTag::ACK_PKT_ID, assigned_pkt_id);
+            transport::ble::notify_evt(Opcode::MESH_SEND_RESULT, seq,
+                                       b.data(), b.size());
         }
         return true;
     }

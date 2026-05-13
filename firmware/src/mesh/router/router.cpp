@@ -112,13 +112,16 @@ bool Router::decode_frame(const uint8_t* in, size_t in_len,
 size_t Router::originate(uint32_t dst,
                          uint8_t  flags,
                          const uint8_t* payload, size_t payload_len,
-                         uint8_t* out, size_t out_cap) {
+                         uint8_t* out, size_t out_cap,
+                         uint32_t reuse_pkt_id,
+                         uint32_t* out_pkt_id) {
     Header h;
     h.flags      = flags | FlagEncrypted | (dst != kBroadcastAddr ? FlagUnicast : 0);
     h.mesh_id    = cfg_.mesh_id;
     h.src        = cfg_.self_id;
     h.dst        = dst;
-    h.pkt_id     = next_pkt_id_++ & 0x00FFFFFFu;
+    h.pkt_id     = reuse_pkt_id ? (reuse_pkt_id & 0x00FFFFFFu)
+                                : (next_pkt_id_++ & 0x00FFFFFFu);
     h.hop_limit  = cfg_.default_hop_limit;
     h.hop_count  = 0;
     h.counter    = tx_counter_++;
@@ -131,6 +134,7 @@ size_t Router::originate(uint32_t dst,
         LL_LOG_W(kTag, "encode failed");
         return 0;
     }
+    if (out_pkt_id) *out_pkt_id = h.pkt_id;
     return out_len;
 }
 
@@ -147,12 +151,15 @@ void Router::on_rx(const uint8_t* frame, size_t frame_len,
         return;
     }
     if (h.mesh_id != cfg_.mesh_id)                      return;
-    if (dedup_.seen_or_insert(h.src, h.pkt_id))         return;
+    const bool duplicate = dedup_.seen_or_insert(h.src, h.pkt_id);
 
     const bool for_us = (h.dst == cfg_.self_id || h.dst == kBroadcastAddr);
     if (for_us && sink_) {
-        sink_(h, plain, plain_len);
+        sink_(h, plain, plain_len, duplicate);
     }
+
+    // Duplicates are not re-forwarded; flooding loop protection.
+    if (duplicate) return;
 
     // Forward if there's still hop budget and it's not uniquely for us.
     const bool should_forward = (h.hop_count + 1) < h.hop_limit &&

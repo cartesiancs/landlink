@@ -6,6 +6,7 @@
 
 #include "app/fsm/fsm.h"
 #include "features/lora_pairing/lora_pairing.h"
+#include "features/mesh_chat/mesh_chat.h"
 #include "features/telemetry/telemetry.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
@@ -79,6 +80,7 @@ constexpr const char* kTag = "tasks";
 [[noreturn]] void lora_tx_task(void*) {
     for (;;) {
         transport::lora::tx_tick();
+        features::mesh_chat::ack_tick();
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

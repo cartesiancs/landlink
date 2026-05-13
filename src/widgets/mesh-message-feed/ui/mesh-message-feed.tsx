@@ -27,6 +27,24 @@ function groupMessages(messages: readonly MeshMessage[]): GroupedMessage[] {
   });
 }
 
+function DeliveryIndicator({ message }: { message: MeshMessage }) {
+  if (message.direction !== "outgoing" || !message.status) return null;
+  if (message.status === "delivered") return null;
+  const label =
+    message.status === "sending"
+      ? message.attempts && message.attempts > 1
+        ? `Retrying (${message.attempts}/3)`
+        : "Sending"
+      : "Failed";
+  const tone =
+    message.status === "failed"
+      ? "text-destructive"
+      : "text-muted-foreground";
+  return (
+    <span className={cn("mt-0.5 px-2 text-[10px]", tone)}>{label}</span>
+  );
+}
+
 function MessageRow({
   message,
   isFirstInGroup,
@@ -60,6 +78,7 @@ function MessageRow({
       >
         {message.text}
       </div>
+      {outgoing && isLastInGroup ? <DeliveryIndicator message={message} /> : null}
     </li>
   );
 }

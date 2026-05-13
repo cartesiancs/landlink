@@ -64,6 +64,7 @@ opcodes:
   MESH_LEAVE:            { code: 0x31, dir: C_TO_F }
   MESH_SEND:             { code: 0x32, dir: C_TO_F }
   MESH_RECV:             { code: 0x33, dir: F_TO_C }
+  MESH_SEND_RESULT:      { code: 0x34, dir: F_TO_C, note: "Landlink-only: returns assigned pkt_id for a MESH_SEND so the host can track ACKs/retries" }
 
   # Device telemetry (battery + GPS), pushed periodically while BLE is connected
   DEVICE_TELEMETRY:      { code: 0x70, dir: F_TO_C }
@@ -134,6 +135,7 @@ tlv_tags:
   # Routing / ack
   ACK_PKT_ID:            { tag: 0x40, type: u32 }
   HOP_LIMIT:             { tag: 0x41, type: u8 }
+  RETRY_PKT_ID:          { tag: 0x42, type: u32, desc: "Landlink-only: on MESH_SEND, reuse this pkt_id instead of allocating a new one (chat retry)" }
 
   # Beacon / peer meta
   NODE_NAME:             { tag: 0x50, type: utf8, desc: "Human-friendly peer name <=32 B" }

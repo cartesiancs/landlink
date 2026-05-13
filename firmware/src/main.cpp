@@ -43,6 +43,10 @@ landlink::mesh::Router g_router;
 namespace {
 constexpr const char* kTag = "main";
 
+// Captured at setup() time so the landlink_payload_sink can filter self-loops
+// (broadcasts that the radio overhears from itself via the mesh repeater).
+uint32_t g_self_node_id = 0;
+
 uint32_t load_or_create_salt(uint8_t out[8]) {
     size_t len = 8;
     if (!landlink::hal::storage::get_blob("ll.id", "salt", out, len) || len != 8) {
@@ -70,8 +74,13 @@ void load_network_key(uint8_t out[32]) {
 
 // Mesh router decrypted-payload sink: read the KIND TLV and dispatch to the
 // matching feature handler. Without this hook, MESH_RECV BLE events never fire.
+//
+// `duplicate` is true when the router has already seen (src, pkt_id). For
+// CHAT_TEXT we still dispatch (mesh_chat re-ACKs duplicates so a sender whose
+// ACK was lost can recover); for all other kinds we drop duplicates.
 void landlink_payload_sink(const landlink::mesh::Header& h,
-                           const uint8_t* payload, size_t payload_len) {
+                           const uint8_t* payload, size_t payload_len,
+                           bool duplicate) {
     landlink::TlvReader r(payload, payload_len);
     landlink::Tlv kind;
     if (!r.find(landlink::proto::TlvTag::KIND, kind) || kind.len != 1) {
@@ -79,18 +88,32 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
                  static_cast<unsigned>(h.src));
         return;
     }
-    LL_LOG_I(kTag, "rx sink: src=%08x kind=0x%02x len=%u",
+    LL_LOG_I(kTag, "rx sink: src=%08x kind=0x%02x len=%u dup=%d",
              static_cast<unsigned>(h.src),
              static_cast<unsigned>(kind.data[0]),
-             static_cast<unsigned>(payload_len));
+             static_cast<unsigned>(payload_len),
+             duplicate ? 1 : 0);
+
+    // Drop self-loops (own broadcasts received back via mesh repeater) to
+    // avoid sending an ACK to ourselves.
+    if (h.src == g_self_node_id) {
+        return;
+    }
+
     switch (kind.data[0]) {
     case 0x01:  // MeshKind::CHAT_TEXT
-        landlink::features::mesh_chat::on_chat(h.src, h.pkt_id,
-                                               payload, payload_len);
+        landlink::features::mesh_chat::on_chat(h, payload, payload_len, duplicate);
+        break;
+    case 0x04:  // MeshKind::ACK
+        if (!duplicate) {
+            landlink::features::mesh_chat::on_ack(h, payload, payload_len);
+        }
         break;
     case 0x05:  // MeshKind::BEACON
-        landlink::features::lora_pair::on_beacon_rx(h.src,
-                                                    payload, payload_len);
+        if (!duplicate) {
+            landlink::features::lora_pair::on_beacon_rx(h.src,
+                                                        payload, payload_len);
+        }
         break;
     default:
         break;
@@ -134,6 +157,7 @@ void setup() {
 
     uint8_t salt[8];
     const uint32_t node_id = load_or_create_salt(salt);
+    g_self_node_id = node_id;
     LL_LOG_I(kTag, "node_id=%08x", static_cast<unsigned>(node_id));
 
     landlink::hal::gps::init();

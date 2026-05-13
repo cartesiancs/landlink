@@ -23,9 +23,13 @@ namespace landlink::mesh {
 
 // Consumer hook — router calls this when a decrypted frame is addressed to us.
 // Implementations live in features/ (mesh_chat, mesh_location, mesh_sensor).
+//
+// `duplicate` is true when this (src, pkt_id) was seen before. The sink decides
+// per-kind whether to act on duplicates (e.g. chat re-emits ACK only).
 using PayloadSink = void (*)(const Header& h,
                              const uint8_t* payload,
-                             size_t         payload_len);
+                             size_t         payload_len,
+                             bool           duplicate);
 
 struct RouterConfig {
     uint16_t mesh_id           = 0;
@@ -40,12 +44,21 @@ public:
 
     // Encode + encrypt an outbound frame. Writes the complete OTA-ready bytes
     // into `out` and returns the byte count, or 0 on failure.
+    //
+    // `reuse_pkt_id` = 0 allocates a fresh monotonic pkt_id (normal case).
+    // Non-zero reuses the given value verbatim — used for chat retransmissions
+    // so the receiver's dedup recognizes the frame as a duplicate and the
+    // sender can match incoming ACKs against the original pkt_id.
+    //
+    // If `out_pkt_id` is non-null, the assigned pkt_id is written there.
     size_t originate(uint32_t dst,
                      uint8_t  flags,
                      const uint8_t* payload,
                      size_t         payload_len,
                      uint8_t* out,
-                     size_t   out_cap);
+                     size_t   out_cap,
+                     uint32_t reuse_pkt_id = 0,
+                     uint32_t* out_pkt_id  = nullptr);
 
     // Handle a raw RX frame. If the frame is a unicast for us or a broadcast,
     // calls the registered sink. If it should be forwarded, re-encodes into

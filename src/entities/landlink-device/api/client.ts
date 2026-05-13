@@ -29,6 +29,7 @@ import { parseMeshRecv } from "../lib/parse-mesh-recv";
 import { parseTelemetry } from "../lib/parse-telemetry";
 import {
   appendMessage,
+  failAllOutgoingPending,
   getState,
   setConnected,
   setConnecting,
@@ -38,13 +39,45 @@ import {
   setLastEvtFrame,
   setProtocol,
   setTelemetry,
+  subscribe as subscribeStore,
+  type MeshMessage,
   type ProtocolMode,
 } from "../model/store";
+import {
+  attachPktId,
+  cancelAll as cancelAllRetries,
+  onAck,
+  setRetrySender,
+  trackPending,
+} from "../model/retry-tracker";
 
 let seqCounter = 0;
 function nextSeq(): number {
   seqCounter = (seqCounter + 1) & 0xff;
   return seqCounter;
+}
+
+// Small LRU over (senderNodeId, pktId) to deduplicate incoming chat that
+// firmware may forward more than once (rare: a duplicate flag would normally
+// suppress the BLE notify, but BLE retries on the host side, or future kinds
+// that route through this path, can race). Acts as second-line defense.
+const RECENT_CHAT_CACHE = 32;
+const recentChats: string[] = [];
+function chatSeen(key: string): boolean {
+  const idx = recentChats.indexOf(key);
+  if (idx !== -1) return true;
+  recentChats.push(key);
+  if (recentChats.length > RECENT_CHAT_CACHE) recentChats.shift();
+  return false;
+}
+
+function readU32LE(bytes: Uint8Array): number | null {
+  if (bytes.byteLength !== 4) return null;
+  const b0 = bytes[0] ?? 0;
+  const b1 = bytes[1] ?? 0;
+  const b2 = bytes[2] ?? 0;
+  const b3 = bytes[3] ?? 0;
+  return (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0;
 }
 
 let activeDeviceId: string | null = null;
@@ -100,6 +133,8 @@ export async function attachLandlinkClient(
   seqCounter = 0;
 
   activeUnsubDisconnect = onLandlinkDisconnect(deviceId, () => {
+    cancelAllRetries();
+    failAllOutgoingPending();
     void runStoppers().finally(() => {
       clearActive();
       setDisconnected();
@@ -129,9 +164,38 @@ export async function attachLandlinkClient(
         const op = frame.opcode as number;
         if (op === Opcode.DEVICE_TELEMETRY) {
           setTelemetry(parseTelemetry(frame.payload));
+        } else if (op === Opcode.MESH_SEND_RESULT) {
+          let pktId: number | null = null;
+          for (const t of decodeTlvs(frame.payload)) {
+            if (t.tag === TlvTag.ACK_PKT_ID) {
+              pktId = readU32LE(t.value);
+              break;
+            }
+          }
+          if (pktId !== null) attachPktId(frame.seq, pktId);
         } else if (op === Opcode.MESH_RECV) {
-          const msg = parseMeshRecv(frame.payload);
-          if (msg) appendMessage(msg);
+          const parsed = parseMeshRecv(frame.payload);
+          if (!parsed) return;
+          // Defense in depth: drop frames that purport to come from us.
+          const selfNodeId = getState()?.info?.nodeId;
+          if (selfNodeId && parsed.senderNodeId === selfNodeId) return;
+
+          if (parsed.kind === "ack") {
+            onAck(parsed.ackPktId);
+            return;
+          }
+          const dedupKey = parsed.pktId !== null
+            ? `${parsed.senderNodeId}:${parsed.pktId}`
+            : `${parsed.senderNodeId}:${parsed.receivedAt}`;
+          if (chatSeen(dedupKey)) return;
+          const msg: MeshMessage = {
+            senderNodeId: parsed.senderNodeId,
+            text: parsed.text,
+            direction: "incoming",
+            receivedAt: parsed.receivedAt,
+          };
+          if (parsed.pktId !== null) msg.pktId = parsed.pktId;
+          appendMessage(msg);
         } else if (op === Opcode.LORA_PEER_FOUND) {
           for (const handler of peerFoundHandlers) {
             try {
@@ -222,12 +286,18 @@ export async function detachLandlinkClient(deviceId: string): Promise<void> {
 export async function sendLandlinkCommand(
   opcode: OpcodeValue,
   tlvs: readonly Tlv[] = [],
+  onSeqAssigned?: (seq: number) => void,
 ): Promise<number> {
   const dev = getState();
   if (dev?.status !== "connected") {
     throw new Error("Landlink device not connected");
   }
   const seq = nextSeq();
+  // WHY: firmware may emit MESH_SEND_RESULT via BLE notify before the
+  // writeCharacteristic await resolves on a fast link. Letting the caller
+  // register state here closes the race — by the time the notify lands, the
+  // pending entry already exists.
+  onSeqAssigned?.(seq);
   const frame = encodeFrame(opcode, seq, encodeTlvs(tlvs));
   await writeCharacteristic(
     dev.deviceId,
@@ -237,6 +307,26 @@ export async function sendLandlinkCommand(
   );
   return seq;
 }
+
+// Register sendLandlinkCommand with the retry tracker so retransmissions can
+// originate without features/ importing api/ (which would be a sideways layer
+// import). Done once at module load.
+setRetrySender((opcode, retryTlvs) =>
+  sendLandlinkCommand(opcode as OpcodeValue, retryTlvs),
+);
+
+// Watch for landlink->meshtastic transitions. ACK/retry semantics are
+// landlink-only; switching modes must clear pending work so messages don't
+// dangle as "sending" forever.
+let lastSeenProtocol: ProtocolMode | null = null;
+subscribeStore(() => {
+  const next = getState()?.protocol ?? null;
+  if (lastSeenProtocol === 0 && next === 1) {
+    cancelAllRetries();
+    failAllOutgoingPending();
+  }
+  lastSeenProtocol = next;
+});
 
 export async function setLandlinkProtocolMode(mode: ProtocolMode): Promise<void> {
   await sendLandlinkCommand(Opcode.RADIO_SET_PROTOCOL, [
@@ -252,4 +342,30 @@ export function appendOutgoingMessage(text: string): void {
     direction: "outgoing",
     receivedAt: Date.now(),
   });
+}
+
+// Landlink-only: append an outgoing chat in "sending" state, tagged with the
+// BLE seq used to write the MESH_SEND command. The retry tracker correlates
+// this with the firmware's MESH_SEND_RESULT to attach a pkt_id and drive the
+// "delivered"/"failed" transitions.
+export function appendOutgoingPending(text: string, bleSeq: number): void {
+  const dev = getState();
+  appendMessage({
+    senderNodeId: dev?.info?.nodeId ?? "self",
+    text,
+    direction: "outgoing",
+    receivedAt: Date.now(),
+    bleSeq,
+    status: "sending",
+    attempts: 1,
+  });
+}
+
+// Landlink-only: hand the retry tracker the bytes it needs to retransmit.
+export function trackPendingChat(
+  bleSeq: number,
+  text: string,
+  encodedText: Uint8Array,
+): void {
+  trackPending(bleSeq, text, encodedText);
 }

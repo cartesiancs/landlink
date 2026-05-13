@@ -28,6 +28,7 @@ enum class TlvTag : uint8_t {
     CHARGE_STATE = 0x35,  // bit0 VBUS, bit1 CHARGING, bit2 FULL, bit3 BATT_PRESENT
     ACK_PKT_ID = 0x40,
     HOP_LIMIT = 0x41,
+    RETRY_PKT_ID = 0x42,  // Landlink-only: on MESH_SEND, reuse this pkt_id instead of allocating a new one (chat retry)
     NODE_NAME = 0x50,  // Human-friendly peer name <=32 B
     CAP_FLAGS = 0x51,  // Capability bitfield
     PUBKEY_X25519 = 0x70,
