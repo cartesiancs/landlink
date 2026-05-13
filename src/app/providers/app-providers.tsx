@@ -11,7 +11,14 @@ type AppProvidersProps = {
 
 function ThemedToaster() {
   const { theme } = useTheme();
-  return <Toaster theme={theme} position="top-center" />;
+  return (
+    <Toaster
+      theme={theme}
+      position="top-center"
+      offset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
+      mobileOffset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
+    />
+  );
 }
 
 function LiveDeviceSyncBridge() {
