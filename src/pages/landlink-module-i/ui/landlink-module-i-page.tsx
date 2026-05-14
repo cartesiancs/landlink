@@ -95,7 +95,7 @@ export function LandlinkModuleIPage() {
       >
         <div className="flex items-baseline justify-between">
           <p className="font-display text-2xl leading-none tracking-tight">
-            $199
+            $99
           </p>
           <p className="text-[11px] text-muted-foreground">One time</p>
         </div>
