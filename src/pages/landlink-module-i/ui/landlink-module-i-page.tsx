@@ -52,7 +52,7 @@ export function LandlinkModuleIPage() {
       <section className="px-4 pt-2 pb-6">
         <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted">
           <img
-            src="/images/groundstation.webp"
+            src="/images/moduleone.webp"
             alt="Landlink Module I"
             className="h-[78%] w-auto object-contain"
           />

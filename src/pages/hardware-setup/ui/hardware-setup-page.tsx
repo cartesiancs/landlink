@@ -45,15 +45,15 @@ const HARDWARE: readonly Hardware[] = [
     tagline: "Minimum communication payload",
     status: "available",
     icon: Radio,
-    imageSrc: "/images/groundstation.webp",
+    imageSrc: "/images/moduleone.webp",
     specs: [
       { label: "Form factor", value: "Palm-sized radio module" },
       { label: "Weight", value: "92 g" },
       { label: "Radio", value: "Sub-GHz LoRa mesh, 868 / 915 MHz" },
       { label: "Range", value: "Up to 12 km line-of-sight" },
       { label: "Power", value: "USB-C, 5 V / 1 A" },
-      { label: "Battery", value: "2,200 mAh swappable cell" },
-      { label: "Interfaces", value: "Web Bluetooth, UART, GPIO" },
+      { label: "Battery", value: "2,200 mAh" },
+      { label: "Interfaces", value: "Bluetooth, Wi-Fi" },
       { label: "Storage", value: "On-device only, AES-256 at rest" },
     ],
   },
@@ -67,11 +67,11 @@ const HARDWARE: readonly Hardware[] = [
     specs: [
       { label: "Form factor", value: "Quad-rotor aerial relay" },
       { label: "Weight", value: "~1.4 kg (TBD)" },
-      { label: "Radio", value: "Mesh backhaul + Module I downlink" },
+      { label: "Radio", value: "Module I downlink" },
       { label: "Range", value: "Up to 50 km from ground station" },
       { label: "Flight time", value: "~35 min per battery (TBD)" },
       { label: "Power", value: "Hot-swappable flight battery" },
-      { label: "Pairing", value: "Web Bluetooth via ground station" },
+      { label: "Pairing", value: "Bluetooth via ground station" },
       { label: "Availability", value: "Release date TBD" },
     ],
   },
@@ -319,7 +319,7 @@ export function HardwareSetupPage() {
                 aria-hidden="true"
               />
               <span className="text-muted-foreground">
-                A Chromium-based browser (Chrome, Edge, Brave, Arc)
+                A Chromium-based browser
               </span>
             </li>
             <li className="flex items-center gap-2">
@@ -374,8 +374,8 @@ export function HardwareSetupPage() {
         </p>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           If you walk away from this tab, the pairing ends. If you wipe the
-          module, your keys are gone. You stay in full control, including of
-          how things fail.
+          module, your keys are gone. You stay in full control, including of how
+          things fail.
         </p>
       </section>
 

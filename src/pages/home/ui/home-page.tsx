@@ -32,7 +32,7 @@ function GroundStationMedia() {
       className="flex h-full w-full items-center justify-center gap-2"
     >
       <img
-        src="/images/groundstation.webp"
+        src="/images/moduleone.webp"
         alt=""
         aria-hidden
         className={cn(
@@ -46,7 +46,7 @@ function GroundStationMedia() {
         className="h-[80%] w-auto max-w-[45%] object-contain"
       />
       <img
-        src="/images/groundstation.webp"
+        src="/images/moduleone.webp"
         alt=""
         aria-hidden
         className={cn(
@@ -204,7 +204,7 @@ export function HomePage() {
             <div className="mx-auto h-full w-full max-w-[430px]">
               <HomeStep
                 step={3}
-                title="Ground Station Setup"
+                title="Module Setup"
                 description="Build a mesh network with simple, plug-and-play modules. The ground station ships ready to relay text payloads, and you can add camera, microphone, or speaker modules whenever you need richer media."
                 media={<GroundStationMedia />}
               />
