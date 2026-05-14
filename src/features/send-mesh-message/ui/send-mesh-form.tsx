@@ -1,3 +1,4 @@
+import { usePostHog } from "@posthog/react";
 import { useRef, useState, type FormEvent } from "react";
 import { Send } from "lucide-react";
 
@@ -10,6 +11,7 @@ export function SendMeshForm() {
   const { send, status, maxBytes } = useSendMeshMessage();
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const posthog = usePostHog();
 
   const byteLength = new TextEncoder().encode(text).byteLength;
   const tooLong = byteLength > maxBytes;
@@ -29,7 +31,10 @@ export function SendMeshForm() {
     // stays open even if a parent rerender or button tap stole focus.
     textareaRef.current?.focus();
     const ok = await send(sent);
-    if (ok) setText((cur) => (cur === sent ? "" : cur));
+    if (ok) {
+      posthog.capture("mesh_message_sent", { byte_length: byteLength });
+      setText((cur) => (cur === sent ? "" : cur));
+    }
     textareaRef.current?.focus();
   }
 

@@ -1,3 +1,4 @@
+import { usePostHog } from "@posthog/react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -20,8 +21,10 @@ export function ResetAppDataButton() {
   const [open, setOpen] = useState(false);
   const live = useLandlinkDevice();
   const navigate = useNavigate();
+  const posthog = usePostHog();
 
   const handleConfirm = () => {
+    posthog.capture("app_data_reset");
     if (live !== null) {
       void detachLandlinkClient(live.deviceId);
     }

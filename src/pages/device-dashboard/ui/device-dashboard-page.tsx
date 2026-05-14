@@ -1,3 +1,4 @@
+import { usePostHog } from "@posthog/react";
 import { Info, MoreVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -115,6 +116,7 @@ function TelemetryDialogBody({ telemetry }: { telemetry: DeviceTelemetry }) {
 export function DeviceDashboardPage() {
   const navigate = useNavigate();
   const device = useLandlinkDevice();
+  const posthog = usePostHog();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
 
@@ -124,6 +126,10 @@ export function DeviceDashboardPage() {
   const handleConfirmRemove = () => {
     if (!device) return;
     hapticTick();
+    posthog.capture("device_removed", {
+      device_id: device.deviceId,
+      device_name: device.name,
+    });
     removeRegisteredDevice(device.deviceId);
     setConfirmOpen(false);
     void navigate(ROUTES.lists, { replace: true });

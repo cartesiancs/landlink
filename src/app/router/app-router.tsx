@@ -1,8 +1,12 @@
+import { usePostHog } from "@posthog/react";
+import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import {
   createBrowserRouter,
   createHashRouter,
+  Outlet,
   RouterProvider,
+  useLocation,
   type RouteObject,
 } from "react-router-dom";
 
@@ -24,12 +28,24 @@ import { TermsPage } from "@/pages/terms";
 import { ROUTES } from "@/shared/config";
 import { AppLayout } from "@/app/layout/app-layout";
 
+function PostHogPageTracker() {
+  const location = useLocation();
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    posthog.capture("$pageview");
+  }, [location, posthog]);
+
+  return <Outlet />;
+}
+
 // WHY: a parent route with errorElement (and no element of its own) lets the
 // custom ErrorPage handle thrown errors from any child route without altering
 // their layout. Default behavior renders react-router's plain "Unexpected
 // Application Error!" message which we don't want users to see.
 const routes: RouteObject[] = [
   {
+    element: <PostHogPageTracker />,
     errorElement: <ErrorPage />,
     children: [
       { path: ROUTES.about, element: <AboutPage /> },

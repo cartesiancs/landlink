@@ -1,3 +1,4 @@
+import { usePostHog } from "@posthog/react";
 import { useCallback, useState } from "react";
 
 import {
@@ -53,6 +54,7 @@ function describe(err: unknown): string {
 
 export function useBluetoothPairing() {
   const [state, setState] = useState<State>(detectInitial);
+  const posthog = usePostHog();
 
   const start = useCallback(async () => {
     if (!isBlePairingSupported()) {
@@ -60,6 +62,7 @@ export function useBluetoothPairing() {
       return;
     }
 
+    posthog.capture("bluetooth_pairing_started");
     setState({ status: "scanning", device: null, error: null });
 
     let paired;
@@ -67,9 +70,11 @@ export function useBluetoothPairing() {
       paired = await requestLandlinkDevice();
     } catch (err) {
       if (err instanceof PairingCancelledError) {
+        posthog.capture("bluetooth_pairing_cancelled");
         setState(INITIAL);
         return;
       }
+      posthog.capture("bluetooth_pairing_failed", { error: describe(err) });
       setState({ status: "error", device: null, error: describe(err) });
       return;
     }
@@ -79,6 +84,7 @@ export function useBluetoothPairing() {
     try {
       await connectLandlinkDevice(paired.id);
     } catch (err) {
+      posthog.capture("bluetooth_pairing_failed", { error: describe(err) });
       setState({ status: "error", device: null, error: describe(err) });
       return;
     }
@@ -93,17 +99,23 @@ export function useBluetoothPairing() {
     } catch (err) {
       setPrimaryDeviceId(previousPrimary);
       await detachLandlinkClient(paired.id).catch(() => undefined);
+      posthog.capture("bluetooth_pairing_failed", { error: describe(err) });
       setState({ status: "error", device: null, error: describe(err) });
       return;
     }
 
     registerDevice({ id: paired.id, name: paired.name, source: "ble" });
 
+    posthog.capture("bluetooth_pairing_succeeded", {
+      device_id: paired.id,
+      device_name: paired.name,
+    });
+
     // WHY: hold the connecting state briefly so the transition to "connected" is perceivable even on fast connects.
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     setState({ status: "connected", device: paired, error: null });
-  }, []);
+  }, [posthog]);
 
   const reset = useCallback(() => {
     setState(INITIAL);

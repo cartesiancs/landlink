@@ -1,3 +1,4 @@
+import { usePostHog } from "@posthog/react";
 import { Plus } from "lucide-react";
 
 import { registerDevice } from "@/entities/registered-device";
@@ -7,6 +8,8 @@ import { Button, toast } from "@/shared/ui";
 import { createMockDevice } from "../model/create-mock-device";
 
 export function RegisterMockDeviceButton() {
+  const posthog = usePostHog();
+
   return (
     <Button
       variant="outline"
@@ -21,6 +24,7 @@ export function RegisterMockDeviceButton() {
           pingMs: draft.pingMs,
           signalDbm: draft.signalDbm,
         });
+        posthog.capture("mock_device_registered", { device_name: draft.name });
         toast.success(`Mock device "${draft.name}" added.`);
       }}
     >
