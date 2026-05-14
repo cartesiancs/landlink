@@ -45,7 +45,7 @@ export function ConnectBluetoothPage() {
     if (status !== "connected") return;
     hapticTick();
     const timer = window.setTimeout(() => {
-      void navigate(ROUTES.connectWifi);
+      void navigate(ROUTES.lists, { viewTransition: true });
     }, AUTO_ADVANCE_MS);
     return () => {
       window.clearTimeout(timer);
@@ -55,7 +55,7 @@ export function ConnectBluetoothPage() {
   const action = useMemo(
     () =>
       toAction(status, start, () => {
-        void navigate(ROUTES.connectWifi);
+        void navigate(ROUTES.lists, { viewTransition: true });
       }),
     [status, start, navigate],
   );
