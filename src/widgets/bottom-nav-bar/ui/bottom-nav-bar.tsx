@@ -26,7 +26,10 @@ export function BottomNavBar() {
   if (!visible) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center [view-transition-name:bottom-nav-bar]">
+    <div
+      data-vt-name="bottom-nav-bar"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center"
+    >
       <div className="pointer-events-auto w-full max-w-[430px]">
         <nav
           aria-label="Bottom navigation"

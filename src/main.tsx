@@ -3,6 +3,9 @@ import { PostHogProvider } from "@posthog/react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "@/app";
+import { installViewTransitionFlag } from "@/shared/lib";
+
+installViewTransitionFlag();
 
 const isLocalhost =
   window.location.hostname === "localhost" ||

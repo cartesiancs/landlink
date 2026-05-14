@@ -10,7 +10,7 @@ type AppHeaderProps = {
 
 export function AppHeader({ onMenuOpen, onSupportOpen }: AppHeaderProps) {
   return (
-    <header className="shrink-0 [view-transition-name:app-header]">
+    <header data-vt-name="app-header" className="shrink-0">
       <div aria-hidden className="h-[env(safe-area-inset-top)] bg-background" />
       <div className="flex h-14 items-center justify-between bg-background px-2">
         <Button

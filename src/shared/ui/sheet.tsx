@@ -5,12 +5,14 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 import { Capacitor } from "@capacitor/core"
 
 import { cn } from "@/shared/lib/utils"
+import { useOverlayOpenFlag } from "@/shared/lib/overlay-flag"
 import { Button } from "@/shared/ui/button"
 import { XIcon } from "lucide-react"
 
 const IS_NATIVE_APP = Capacitor.isNativePlatform()
 
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
+function Sheet(props: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  useOverlayOpenFlag(props.open === true)
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
 

@@ -2,10 +2,10 @@ import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/shared/lib/utils"
+import { useOverlayOpenFlag } from "@/shared/lib/overlay-flag"
 
-function Drawer({
-  ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Root>) {
+function Drawer(props: React.ComponentProps<typeof DrawerPrimitive.Root>) {
+  useOverlayOpenFlag(props.open === true)
   return <DrawerPrimitive.Root data-slot="drawer" {...props} />
 }
 

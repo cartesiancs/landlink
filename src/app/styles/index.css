@@ -185,6 +185,24 @@
     }
 }
 
+/* Headers opt into being hoisted out of the root snapshot via `data-vt-name`.
+   This gives them their own `::view-transition-group` so they appear pinned
+   in place across route changes. When a transition is started while an
+   overlay (Sheet/Drawer/Dialog) is open, `installViewTransitionFlag` sets
+   `data-suppress-pin` on <html> for the duration of the transition — the
+   header drops back into the root snapshot so it doesn't stack above the
+   closing overlay's backdrop. */
+[data-vt-name="app-header"] {
+  view-transition-name: app-header;
+}
+[data-vt-name="bottom-nav-bar"] {
+  view-transition-name: bottom-nav-bar;
+}
+html[data-suppress-pin] [data-vt-name="app-header"],
+html[data-suppress-pin] [data-vt-name="bottom-nav-bar"] {
+  view-transition-name: none;
+}
+
 /* iOS-like cross-fade-with-slide between top-level routes.
    Triggered by React Router's `viewTransition` prop on Link / navigate. */
 ::view-transition-old(root),
