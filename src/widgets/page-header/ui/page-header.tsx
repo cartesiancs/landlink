@@ -35,7 +35,7 @@ export function PageHeader({
     <header
       data-vt-name="app-header"
       data-scrolled={scrolled ? "" : undefined}
-      className="group sticky top-0 z-100"
+      className="group sticky top-0"
     >
       {/* WHY: height-reserving strip mirrors AppHeader so PageHeader content
           sits at the same vertical center across all pages — without it, the
