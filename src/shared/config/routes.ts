@@ -8,6 +8,7 @@ export const ROUTES = {
   faq: "/faq",
   landlinkOne: "/landlink-one",
   landlinkModuleI: "/landlink-module-i",
+  landlinkModuleIBuy: "/landlink-module-i/buy",
   hardwareSetup: "/hardware-setup",
   privacy: "/privacy",
   terms: "/terms",

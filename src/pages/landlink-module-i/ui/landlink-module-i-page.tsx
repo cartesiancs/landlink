@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ROUTES } from "@/shared/config";
 import { cn } from "@/shared/lib";
-import { Button, toast } from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import { PageHeader } from "@/widgets/page-header";
 
 type Spec = {
@@ -20,6 +21,7 @@ const SPECS: readonly Spec[] = [
 ];
 
 export function LandlinkModuleIPage() {
+  const navigate = useNavigate();
   const [isFooterVisible, setIsFooterVisible] = useState(true);
 
   useEffect(() => {
@@ -102,14 +104,12 @@ export function LandlinkModuleIPage() {
         <Button
           size="lg"
           className="mt-4 h-12 w-full text-base"
-          aria-label="Pre order Landlink Module I"
+          aria-label="Buy Landlink Module I"
           onClick={() => {
-            toast.info("Pre orders are not yet supported.", {
-              description: "We will open them soon. Thanks for your patience.",
-            });
+            void navigate(ROUTES.landlinkModuleIBuy, { viewTransition: true });
           }}
         >
-          Pre order
+          Buy
         </Button>
       </section>
     </main>
