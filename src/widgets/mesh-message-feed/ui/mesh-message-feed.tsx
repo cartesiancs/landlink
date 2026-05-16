@@ -1,3 +1,4 @@
+import { Check, CheckCheck } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import {
@@ -29,19 +30,21 @@ function groupMessages(messages: readonly MeshMessage[]): GroupedMessage[] {
 
 function DeliveryIndicator({ message }: { message: MeshMessage }) {
   if (message.direction !== "outgoing" || !message.status) return null;
-  if (message.status === "delivered") return null;
-  const label =
-    message.status === "sending"
-      ? message.attempts && message.attempts > 1
-        ? `Retrying (${message.attempts}/3)`
-        : "Sending"
-      : "Failed";
-  const tone =
-    message.status === "failed"
-      ? "text-destructive"
-      : "text-muted-foreground";
+  // Sent and failed look identical so users never see a failure state.
+  const delivered = message.status === "delivered";
+  const Icon = delivered ? CheckCheck : Check;
+  const label = delivered ? "Delivered" : "Sent";
   return (
-    <span className={cn("mt-0.5 px-2 text-[10px]", tone)}>{label}</span>
+    <span
+      className={cn(
+        "mt-0.5 flex items-center px-2",
+        delivered ? "text-sky-500" : "text-muted-foreground",
+      )}
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="size-3" aria-hidden="true" />
+    </span>
   );
 }
 

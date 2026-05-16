@@ -53,7 +53,9 @@ export function DeviceRow({ device }: DeviceRowProps) {
     : reconnectStatus === "error" && reconnectError
     ? reconnectError
     : isNearby && peer
-    ? `Nearby via LoRa · ${peer.batteryPct ?? "?"}%`
+    ? `Nearby via LoRa · ${peer.batteryPct ?? "?"}% · heartbeat ${formatLastConnected(
+        peer.lastSeenAt,
+      )}`
     : `${formatPing(device.pingMs)} · ${formatLastConnected(
         device.lastConnectedAt,
       )}`;
