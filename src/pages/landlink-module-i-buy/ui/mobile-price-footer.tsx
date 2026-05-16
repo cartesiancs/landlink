@@ -2,7 +2,6 @@ import { Button } from "@/shared/ui";
 
 type MobilePriceFooterProps = {
   total: number;
-  monthly: number;
   onAddToBag: () => void;
 };
 
@@ -10,16 +9,8 @@ function formatMoney(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-function formatMonthly(value: number): string {
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
 export function MobilePriceFooter({
   total,
-  monthly,
   onAddToBag,
 }: MobilePriceFooterProps) {
   return (

@@ -14,15 +14,8 @@ function formatMoney(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-function formatMonthly(value: number): string {
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
 export function LandlinkModuleIBuyPage() {
-  const { selections, total, monthly, select } = useConfigurator();
+  const { selections, total, select } = useConfigurator();
 
   const handleAddToBag = () => {
     toast.info("Cart isn't wired up yet.", {
@@ -109,11 +102,7 @@ export function LandlinkModuleIBuyPage() {
               </p>
             </div>
 
-            <MobilePriceFooter
-              total={total}
-              monthly={monthly}
-              onAddToBag={handleAddToBag}
-            />
+            <MobilePriceFooter total={total} onAddToBag={handleAddToBag} />
           </section>
         </div>
       </div>
