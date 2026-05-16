@@ -30,10 +30,10 @@ export function BottomNavBar() {
       data-vt-name="bottom-nav-bar"
       className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center"
     >
-      <div className="pointer-events-auto w-full max-w-[430px]">
+      <div className="pointer-events-auto w-full">
         <nav
           aria-label="Bottom navigation"
-          className="flex border-t border-border bg-background/90 backdrop-blur pt-2 supports-backdrop-filter:bg-background/70"
+          className="flex justify-between border-t border-border bg-background/90 backdrop-blur px-6 pt-2 pb-2 supports-backdrop-filter:bg-background/70"
         >
           {ITEMS.map(({ to, label, Icon, state }) => {
             const active = pathname === to;
@@ -49,7 +49,7 @@ export function BottomNavBar() {
                   hapticTick();
                 }}
                 className={cn(
-                  "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
+                  "flex flex-col items-center justify-center gap-1 px-6 py-2.5 text-[11px] font-medium transition-colors",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
