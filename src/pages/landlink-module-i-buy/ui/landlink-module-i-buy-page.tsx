@@ -5,6 +5,7 @@ import { PageHeader } from "@/widgets/page-header";
 import { SPEC_GROUPS } from "../model/specs";
 import { useConfigurator } from "../model/use-configurator";
 import { DesktopPriceBanner } from "./desktop-price-banner";
+import { FaqSection } from "./faq-section";
 import { MobilePriceFooter } from "./mobile-price-footer";
 import { ProductImageCarousel } from "./product-image-carousel";
 import { SpecSection } from "./spec-section";
@@ -116,6 +117,8 @@ export function LandlinkModuleIBuyPage() {
           </section>
         </div>
       </div>
+
+      <FaqSection />
     </main>
   );
 }
