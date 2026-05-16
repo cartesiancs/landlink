@@ -24,7 +24,6 @@ import {
 import { cn } from "@/shared/lib";
 import { ROUTES } from "@/shared/config";
 import { useRegisteredDevices } from "@/entities/registered-device";
-import { ThemeToggle } from "@/features/toggle-theme";
 
 const IS_NATIVE_APP = Capacitor.isNativePlatform();
 
@@ -42,10 +41,13 @@ type NavItem = {
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Home", to: ROUTES.home, icon: House },
   { label: "Lists", to: ROUTES.lists, icon: List },
-  { label: "Landlink I", to: ROUTES.landlinkOne, icon: Plane },
-  { label: "Landlink Module I", to: ROUTES.landlinkModuleI, icon: Package },
   { label: "Settings", to: ROUTES.settings, icon: Settings },
   { label: "About", to: ROUTES.about, icon: Info },
+];
+
+const PRODUCT_ITEMS: readonly NavItem[] = [
+  { label: "Landlink I", to: ROUTES.landlinkOne, icon: Plane },
+  { label: "Landlink Module I", to: ROUTES.landlinkModuleI, icon: Package },
 ];
 
 const LEGAL_ITEMS: readonly NavItem[] = [
@@ -106,13 +108,27 @@ export function NavigationSidebar({
             );
           })}
         </nav>
+        <nav className="mt-4 flex flex-col gap-1 px-4">
+          <span className="px-1 pb-1 text-xs font-medium text-muted-foreground">
+            Product
+          </span>
+          {PRODUCT_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                viewTransition
+                onClick={handleNavClick(item.to)}
+                className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
+              >
+                <Icon className="size-4" aria-hidden="true" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
         <div className="mt-auto flex flex-col gap-1 px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <div className="flex items-center justify-between gap-3 px-1 pb-3">
-            <span className="text-xs font-medium text-muted-foreground">
-              Theme
-            </span>
-            <ThemeToggle />
-          </div>
           <nav className="flex flex-col gap-1 border-t border-border pt-3">
             {LEGAL_ITEMS.map((item) => {
               const Icon = item.icon;
