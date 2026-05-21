@@ -16,8 +16,23 @@ namespace landlink::transport::lora {
 namespace {
 constexpr const char* kTag = "lora";
 
-SX1262 s_radio = new Module(pins::kLoraNss, pins::kLoraDio1,
-                            pins::kLoraRst, pins::kLoraBusy);
+// Subclass that exposes the protected register-access API. We need this to
+// apply the SX1262 0x8B5 RX sensitivity patch (used by stock Meshtastic), which
+// is not surfaced by RadioLib's public SX1262 interface.
+class SX1262Ext : public SX1262 {
+public:
+    explicit SX1262Ext(Module* mod) : SX1262(mod) {}
+    int16_t applyRxSensitivityPatch() {
+        uint8_t v = 0;
+        const int16_t rs = this->readRegister(0x8B5, &v, 1);
+        if (rs != RADIOLIB_ERR_NONE) return rs;
+        v |= 0x01;
+        return this->writeRegister(0x8B5, &v, 1);
+    }
+};
+
+SX1262Ext s_radio = SX1262Ext(new Module(pins::kLoraNss, pins::kLoraDio1,
+                                         pins::kLoraRst, pins::kLoraBusy));
 
 struct TxFrame {
     uint8_t buf[mesh::kMaxFrame];
@@ -71,7 +86,12 @@ float meshtastic_longfast_freq(Region r) {
         case Region::EU868: return 869.525f;   // 0x0A % 1  = 0  -> 869.4   + 0.125
         case Region::US915: return 904.625f;   // 0x0A % 104 = 10 -> 902.0  + 0.125 + 10*0.25
         case Region::KR923:
-        default:            return 922.625f;   // 0x0A % 12  = 10 -> 920.0  + 0.125 + 10*0.25
+        default:
+            // DIAGNOSTIC: temporarily bumped from 922.625 MHz (slot 10) to
+            // 922.875 MHz (slot 11) to test against SDR measurement showing
+            // stock Meshtastic device transmitting near 922.8 MHz. Revert to
+            // 922.625f if this turns out to be an SDR calibration artifact.
+            return 922.875f;
     }
 }
 
@@ -82,10 +102,41 @@ void IRAM_ATTR on_dio1() {
 bool apply_preset(const LoraPreset& p) {
     const int rc = s_radio.begin(p.freq_mhz, p.bw_khz, p.sf, p.cr,
                                  p.sync_word, p.tx_power_dbm, p.preamble,
-                                 1.6f, false);
+                                 1.8f, false);
     if (rc != RADIOLIB_ERR_NONE) {
         LL_LOG_E(kTag, "begin rc=%d", rc);
         return false;
+    }
+    // RadioLib begin() already calls setDio2AsRfSwitch(true) internally; the
+    // T-Beam SX1262 needs that because DIO2 controls the antenna TX/RX switch.
+    //
+    // RadioLib's begin() sets the PA over-current limit (OCP) to 60 mA, but at
+    // +22 dBm the SX1262 PA draws ~95-105 mA and trips OCP — the PA folds back
+    // and the on-air signal is dramatically attenuated. Stock Meshtastic raises
+    // OCP to 100 mA before transmitting. Without this raise, two Landlinks can
+    // still hear each other at close range (both broken the same way) but stock
+    // Meshtastic devices never hear us.
+    const int rc_ocp = s_radio.setCurrentLimit(100.0f);
+    if (rc_ocp != RADIOLIB_ERR_NONE) {
+        LL_LOG_W(kTag, "setCurrentLimit rc=%d", rc_ocp);
+    }
+    // Boosted RX gain. ~3 dB sensitivity gain at the cost of slightly higher
+    // RX current. Stock Meshtastic enables this when the user config flag is
+    // set; we enable unconditionally because Landlink does not expose a flag.
+    const int rc_bgm = s_radio.setRxBoostedGainMode(true);
+    if (rc_bgm != RADIOLIB_ERR_NONE) {
+        LL_LOG_W(kTag, "setRxBoostedGainMode rc=%d", rc_bgm);
+    }
+    // Undocumented SX1262 register 0x8B5 bit 0 = 1. A sensitivity patch
+    // recommended by Semtech/Heltec for ~3 dB additional RX gain. Stock
+    // Meshtastic applies this unconditionally; without it, marginal Meshtastic
+    // broadcasts (the standard case at room scale) get dropped at the demod
+    // stage. Read-modify-write preserves other bits.
+    const int rc_patch = s_radio.applyRxSensitivityPatch();
+    if (rc_patch != RADIOLIB_ERR_NONE) {
+        LL_LOG_W(kTag, "0x8B5 patch rc=%d", rc_patch);
+    } else {
+        LL_LOG_I(kTag, "applied SX1262 0x8B5 RX sensitivity patch");
     }
     s_radio.setDio1Action(on_dio1);
     s_radio.startReceive();
@@ -115,6 +166,23 @@ void drain_rx() {
         s_rx.rssi    = static_cast<int16_t>(s_radio.getRSSI());
         s_rx.snr_x10 = static_cast<int8_t>(s_radio.getSNR() * 10);
         s_rx.ready   = true;
+        // Wire-level RX dump. Dumps the first 32 bytes (16B header + 16B
+        // ciphertext) so we can compare what landlink sees vs. what a stock
+        // Meshtastic device transmits. RSSI/SNR are useful for distinguishing
+        // "no signal" from "signal but mismatch".
+        const size_t dump_n = pkt_len < 32 ? pkt_len : 32;
+        char hex[3 * 32 + 1];
+        size_t off = 0;
+        for (size_t i = 0; i < dump_n; ++i) {
+            off += static_cast<size_t>(
+                snprintf(hex + off, sizeof(hex) - off, "%02x ", s_rx.buf[i]));
+        }
+        LL_LOG_I(kTag, "rx wire len=%u rssi=%d snr=%d hdr+ct[0..%u]: %s",
+                 static_cast<unsigned>(pkt_len),
+                 static_cast<int>(s_rx.rssi),
+                 static_cast<int>(s_rx.snr_x10 / 10),
+                 static_cast<unsigned>(dump_n),
+                 hex);
     } else {
         LL_LOG_W(kTag, "readData rc=%d", rc);
     }
@@ -240,6 +308,23 @@ void tx_tick() {
         break;
 
     case TxState::CadWait: {
+        // Wire-level TX dump (header + first 16 bytes of ciphertext) just
+        // before handing to the radio. Pair this with the stock Meshtastic
+        // device's serial log to check whether (a) it receives anything, and
+        // (b) what byte-for-byte differs from what we transmit.
+        const size_t dump_n =
+            s_tx_current.len < 32 ? s_tx_current.len : 32;
+        char hex[3 * 32 + 1];
+        size_t doff = 0;
+        for (size_t i = 0; i < dump_n; ++i) {
+            doff += static_cast<size_t>(
+                snprintf(hex + doff, sizeof(hex) - doff, "%02x ",
+                         s_tx_current.buf[i]));
+        }
+        LL_LOG_I(kTag, "tx wire len=%u hdr+ct[0..%u]: %s",
+                 static_cast<unsigned>(s_tx_current.len),
+                 static_cast<unsigned>(dump_n),
+                 hex);
         const int rc = s_radio.transmit(s_tx_current.buf, s_tx_current.len);
         if (rc != RADIOLIB_ERR_NONE) {
             LL_LOG_W(kTag, "tx rc=%d", rc);
