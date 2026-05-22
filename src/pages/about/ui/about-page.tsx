@@ -12,14 +12,14 @@ export function AboutPage() {
 
       <section className="px-4 pt-2 pb-6">
         <h2 className="font-display text-3xl leading-tight tracking-tight">
-          Connectivity
+          Off grid
           <br />
-          without satellites
+          Connectivity
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Landlink is a drone-native connectivity platform from cartesiancs. We
-          replace satellite dependence with a fleet of autonomous relays that
-          carry your signal further, faster, and on your terms.
+          Landlink is a drone-native connectivity platform from cartesiancs. A
+          fleet of autonomous relays weaves a self-healing mesh that carries
+          your signal further, faster, and on your terms.
         </p>
       </section>
 
@@ -47,11 +47,11 @@ export function AboutPage() {
 
       <section className="px-4 pb-8">
         <h3 className="font-display text-2xl leading-tight tracking-tight">
-          Starlink alternative
+          Coverage off the grid
         </h3>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Stay online in places where satellite terminals struggle, like
-          forests, canyons, coastal fog, and dense foliage.
+          Stay online where existing networks fall short, from forests and
+          canyons to coastal fog and dense foliage.
         </p>
       </section>
 
@@ -82,9 +82,9 @@ export function AboutPage() {
           Our mission
         </h3>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          We believe the ground should not be a dead zone. Landlink brings
-          always-on connectivity to the places satellites cannot reach, powered
-          by airborne infrastructure that you own and operate.
+          We believe the ground should not be a dead zone. Landlink weaves a
+          mesh across the places existing networks cannot reach, powered by
+          airborne infrastructure that you own and operate.
         </p>
       </section>
 
