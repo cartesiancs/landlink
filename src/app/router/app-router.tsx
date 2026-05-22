@@ -15,6 +15,7 @@ import { DeviceDashboardPage } from "@/pages/device-dashboard";
 import { ErrorPage } from "@/pages/error";
 import { FaqPage } from "@/pages/faq";
 import { HardwareSetupPage } from "@/pages/hardware-setup";
+import { LandlinkFirmwarePage } from "@/pages/landlink-firmware";
 import { LandlinkModuleIPage } from "@/pages/landlink-module-i";
 import { LandlinkModuleIBuyPage } from "@/pages/landlink-module-i-buy";
 import { LandlinkOnePage } from "@/pages/landlink-one";
@@ -54,6 +55,7 @@ const routes: RouteObject[] = [
       { path: ROUTES.landlinkOne, element: <LandlinkOnePage /> },
       { path: ROUTES.landlinkModuleI, element: <LandlinkModuleIPage /> },
       { path: ROUTES.landlinkModuleIBuy, element: <LandlinkModuleIBuyPage /> },
+      { path: ROUTES.landlinkFirmware, element: <LandlinkFirmwarePage /> },
       { path: ROUTES.hardwareSetup, element: <HardwareSetupPage /> },
       { path: ROUTES.privacy, element: <PrivacyPage /> },
       { path: ROUTES.terms, element: <TermsPage /> },

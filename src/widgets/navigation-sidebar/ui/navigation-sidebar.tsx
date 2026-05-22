@@ -1,6 +1,7 @@
 import { type MouseEvent } from "react";
 import {
   Building2,
+  Cpu,
   FileText,
   House,
   Info,
@@ -48,6 +49,7 @@ const NAV_ITEMS: readonly NavItem[] = [
 const PRODUCT_ITEMS: readonly NavItem[] = [
   { label: "Landlink I", to: ROUTES.landlinkOne, icon: Plane },
   { label: "Landlink Module I", to: ROUTES.landlinkModuleI, icon: Package },
+  { label: "Landlink Firmware", to: ROUTES.landlinkFirmware, icon: Cpu },
 ];
 
 const LEGAL_ITEMS: readonly NavItem[] = [
