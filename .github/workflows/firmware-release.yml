@@ -1,0 +1,123 @@
+name: Firmware release
+
+on:
+  push:
+    tags:
+      - "fw-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. fw-v0.1.0). Used only as the release name; the workflow builds the current ref."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Install PlatformIO and codegen deps
+        run: pip install --upgrade platformio pyyaml
+
+      - name: Check protocol codegen is in sync
+        run: python3 firmware/tools/gen_protocol.py --check
+
+      - name: Build firmware (ttgo-t-beam-sx1262)
+        run: pio run -d firmware -e ttgo-t-beam-sx1262
+
+      - name: Resolve version from tag
+        id: ver
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          fi
+          version="${tag#fw-v}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage release artifacts
+        id: stage
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          src="firmware/.pio/build/ttgo-t-beam-sx1262"
+          out="release-artifacts"
+          mkdir -p "$out"
+
+          cp "$src/firmware.bin"   "$out/landlink-module1-${version}.bin"
+          cp "$src/bootloader.bin" "$out/bootloader-${version}.bin"
+          cp "$src/partitions.bin" "$out/partitions-${version}.bin"
+
+          (
+            cd "$out"
+            sha256sum \
+              "landlink-module1-${version}.bin" \
+              "bootloader-${version}.bin" \
+              "partitions-${version}.bin" \
+              > "sha256sums.txt"
+          )
+
+          ls -la "$out"
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Landlink Module I firmware `${{ steps.ver.outputs.version }}`.
+
+            **Target board:** LILYGO T-Beam V1.1 (ESP32 + SX1262, 923 MHz)
+
+            ## Flashing
+
+            Recommended via PlatformIO with the matching source tree:
+
+            ```
+            pio run -d firmware -e ttgo-t-beam-sx1262 -t upload
+            ```
+
+            Or with `esptool.py` using the attached binaries:
+
+            ```
+            esptool.py --chip esp32 --port <PORT> --baud 921600 write_flash \
+              0x1000  bootloader-${{ steps.ver.outputs.version }}.bin \
+              0x8000  partitions-${{ steps.ver.outputs.version }}.bin \
+              0x10000 landlink-module1-${{ steps.ver.outputs.version }}.bin
+            ```
+
+            Verify downloads against `sha256sums.txt`.
+          files: |
+            release-artifacts/landlink-module1-${{ steps.ver.outputs.version }}.bin
+            release-artifacts/bootloader-${{ steps.ver.outputs.version }}.bin
+            release-artifacts/partitions-${{ steps.ver.outputs.version }}.bin
+            release-artifacts/sha256sums.txt
