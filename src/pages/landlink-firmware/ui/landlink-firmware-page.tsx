@@ -125,13 +125,6 @@ export function LandlinkFirmwarePage() {
       />
 
       <section className="px-4 pt-2 pb-6">
-        <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted">
-          <Cpu
-            className="size-24 text-muted-foreground"
-            aria-hidden="true"
-            strokeWidth={1.25}
-          />
-        </div>
         <div className="mt-5">
           <h2 className="font-display text-3xl leading-tight tracking-tight">
             Landlink Firmware
