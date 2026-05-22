@@ -68,11 +68,26 @@ export function HomePage() {
   });
   const mainRef = useRef<HTMLElement>(null);
   const [isIdle, setIsIdle] = useState(lastVisibleIntent);
+  const [hasEntered, setHasEntered] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const isLeaving = location.pathname !== ROUTES.home;
+  const isVisible = hasEntered && !isLeaving;
 
   useScrollRestoration("home", mainRef);
+
+  // WHY: HomePage <main> is portaled to <body>, outside the SlideSwitch that
+  // animates route transitions. Without a mount-time opacity flip the portal
+  // appears at opacity-100 on re-entry and snaps in. Delay matches SlideSwitch
+  // phaseMs (250ms) so the outgoing route can finish exiting first.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setHasEntered(true);
+    }, 250);
+    return () => {
+      window.clearTimeout(id);
+    };
+  }, []);
 
   useEffect(() => {
     const el = mainRef.current;
@@ -128,12 +143,12 @@ export function HomePage() {
           ref={mainRef}
           className={cn(
             "fixed left-0 right-0 z-0 snap-y snap-mandatory overflow-y-auto overscroll-contain bg-background transition-opacity duration-300 ease-out [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            isLeaving
-              ? "pointer-events-none opacity-0"
-              : "pointer-events-auto opacity-100",
+            isVisible
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none opacity-0",
           )}
           style={{ top: HOME_MAIN_TOP, bottom: HOME_MAIN_BOTTOM }}
-          aria-hidden={isLeaving}
+          aria-hidden={!isVisible}
         >
           <section className="flex h-full shrink-0 snap-start snap-always flex-col overflow-hidden">
             <div className="mx-auto flex h-full w-full max-w-[430px] flex-col">
