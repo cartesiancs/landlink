@@ -1,10 +1,43 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CheckCircle2, Cpu, Download, ShieldCheck, Usb } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 
 import { ROUTES } from "@/shared/config";
 import { cn } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 import { PageHeader } from "@/widgets/page-header";
+
+const MOBILE_UA =
+  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i;
+const NARROW_MEDIA = "(max-width: 1023px)";
+const STATIC_MOBILE =
+  Capacitor.isNativePlatform() ||
+  (typeof navigator !== "undefined" && MOBILE_UA.test(navigator.userAgent));
+
+function subscribeNarrow(onChange: () => void): () => void {
+  const mql = window.matchMedia(NARROW_MEDIA);
+  mql.addEventListener("change", onChange);
+  return () => {
+    mql.removeEventListener("change", onChange);
+  };
+}
+
+function readNarrow(): boolean {
+  return window.matchMedia(NARROW_MEDIA).matches;
+}
+
+function readNarrowServer(): boolean {
+  return false;
+}
+
+function useIsMobile(): boolean {
+  const narrow = useSyncExternalStore(
+    subscribeNarrow,
+    readNarrow,
+    readNarrowServer,
+  );
+  return STATIC_MOBILE || narrow;
+}
 
 type FirmwareChannel = "stable" | "beta";
 
@@ -34,6 +67,7 @@ const INITIAL_VERSION = "1.0.0";
 const CURRENT_DEVICE_FIRMWARE = "1.3.7";
 
 export function LandlinkFirmwarePage() {
+  const isMobile = useIsMobile();
   const [connected, setConnected] = useState(false);
   const [selectedVersion, setSelectedVersion] =
     useState<string>(INITIAL_VERSION);
@@ -55,7 +89,7 @@ export function LandlinkFirmwarePage() {
   if (!selected) return null;
 
   const isFlashing = progress !== null;
-  const canFlash = connected && !isFlashing;
+  const canFlash = connected && !isFlashing && !isMobile;
 
   const handleConnect = () => {
     if (isFlashing) return;
@@ -148,7 +182,7 @@ export function LandlinkFirmwarePage() {
           <Button
             size="sm"
             variant={connected ? "outline" : "default"}
-            disabled={isFlashing}
+            disabled={isFlashing || isMobile}
             onClick={handleConnect}
             aria-label={connected ? "Disconnect device" : "Connect device"}
           >
@@ -251,6 +285,12 @@ export function LandlinkFirmwarePage() {
                 {selected.version}
               </p>
             </div>
+            {isMobile && (
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Firmware flashing requires USB access. Please open this page on
+                a desktop browser to continue.
+              </p>
+            )}
             <Button
               size="lg"
               disabled={!canFlash}
