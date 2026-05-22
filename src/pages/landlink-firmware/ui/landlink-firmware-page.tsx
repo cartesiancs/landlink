@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CheckCircle2, Cpu, Download, ShieldCheck, Usb } from "lucide-react";
+import { CheckCircle2, Download, ShieldCheck, Usb } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 
 import { ROUTES } from "@/shared/config";
