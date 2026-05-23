@@ -18,7 +18,11 @@ export type FlashProgress = {
 const BOOTLOADER_OFFSET = 0x1000;
 const PARTITIONS_OFFSET = 0x8000;
 const FIRMWARE_OFFSET = 0x10000;
-const FLASH_BAUD = 921600;
+// WHY: CH9102/CH340-based ESP32 boards (incl. LILYGO T-Beam) are flaky at
+// 921600 on macOS, surfacing as "Serial data stream stopped" right after
+// the baud switch. 460800 matches esptool stock default and is reliable
+// across the USB-serial chips we ship with.
+const FLASH_BAUD = 460800;
 
 function isUserCancellation(err: unknown): boolean {
   if (!(err instanceof DOMException)) return false;
@@ -40,14 +44,32 @@ export async function openFlasher(): Promise<FlasherHandle> {
     throw err;
   }
 
+  // WHY: the browser caches granted SerialPorts. If a previous attempt opened
+  // the port and then crashed before disconnect(), the same instance comes
+  // back here still open and Transport.connect() throws "already open".
+  if (port.readable || port.writable) {
+    try {
+      await port.close();
+    } catch {
+      // ignore: best-effort recovery from a stale open state
+    }
+  }
+
   const transport = new Transport(port, false);
   const loader = new ESPLoader({
     transport,
     baudrate: FLASH_BAUD,
   });
 
-  const chip = await loader.main();
-  return { loader, transport, chip };
+  try {
+    const chip = await loader.main();
+    return { loader, transport, chip };
+  } catch (err) {
+    await transport.disconnect().catch(() => {
+      // ignore: surface the original sync failure
+    });
+    throw err;
+  }
 }
 
 export async function closeFlasher(handle: FlasherHandle): Promise<void> {

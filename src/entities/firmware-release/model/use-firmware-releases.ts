@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchFirmwareReleases } from "../api/github-releases";
+import { fetchFirmwareReleases } from "../api/manifest";
 import type { FirmwareRelease } from "./types";
 
 export type FirmwareReleasesStatus = "idle" | "loading" | "ok" | "error";
