@@ -1,7 +1,19 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CheckCircle2, Download, ShieldCheck, Usb } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  RefreshCw,
+  ShieldCheck,
+  Usb,
+} from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 
+import {
+  useFirmwareReleases,
+  type FirmwareRelease,
+} from "@/entities/firmware-release";
+import { useFirmwareFlash } from "@/features/firmware-flash";
 import { ROUTES } from "@/shared/config";
 import { cn } from "@/shared/lib";
 import { Button } from "@/shared/ui";
@@ -39,81 +51,59 @@ function useIsMobile(): boolean {
   return STATIC_MOBILE || narrow;
 }
 
-type FirmwareChannel = "stable" | "beta";
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+  return `${Math.round(bytes / 1024)} KB`;
+}
 
-type FirmwareRelease = {
-  version: string;
-  channel: FirmwareChannel;
-  releasedAt: string;
-  size: string;
-  notes: readonly string[];
-};
-
-const RELEASES: readonly FirmwareRelease[] = [
-  {
-    version: "1.0.0",
-    channel: "stable",
-    releasedAt: "2026-04-18",
-    size: "612 KB",
-    notes: [
-      "Improved LoRa mesh recovery after radio reset",
-      "Bluetooth pairing retries automatically on dropout",
-      "Idle current draw reduced by ~12%",
-    ],
-  },
-];
-
-const INITIAL_VERSION = "1.0.0";
-const CURRENT_DEVICE_FIRMWARE = "1.3.7";
+function formatReleasedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toISOString().slice(0, 10);
+}
 
 export function LandlinkFirmwarePage() {
   const isMobile = useIsMobile();
-  const [connected, setConnected] = useState(false);
-  const [selectedVersion, setSelectedVersion] =
-    useState<string>(INITIAL_VERSION);
-  const [progress, setProgress] = useState<number | null>(null);
-  const [lastFlashed, setLastFlashed] = useState<string | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const releasesState = useFirmwareReleases();
+  const flash = useFirmwareFlash();
+  const [pickedTag, setPickedTag] = useState<string | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearInterval(timerRef.current);
-      }
-    };
-  }, []);
+  const activeTag = pickedTag ?? releasesState.releases[0]?.tag ?? null;
+  const selected: FirmwareRelease | null =
+    releasesState.releases.find((r) => r.tag === activeTag) ?? null;
 
-  const selected = RELEASES.find(
-    (release) => release.version === selectedVersion,
-  );
-  if (!selected) return null;
+  const connected =
+    flash.status === "connected" || flash.status === "flashing";
+  const isFlashing = flash.status === "flashing";
+  const canFlash = connected && !isFlashing && !isMobile && selected !== null;
+  const progress = flash.progress;
 
-  const isFlashing = progress !== null;
-  const canFlash = connected && !isFlashing && !isMobile;
+  const deviceLabel = connected ? (flash.chip ?? "Landlink Module I") : "No device connected";
+  const deviceSubLabel = connected
+    ? flash.status === "done"
+      ? `Last flashed ${selected?.version ?? ""}`
+      : "Ready to flash"
+    : flash.isSupported
+      ? "Plug into USB to start"
+      : "Use Chrome or Edge on desktop";
+
+  const connectDisabled =
+    isFlashing || isMobile || !flash.isSupported || flash.status === "connecting";
 
   const handleConnect = () => {
-    if (isFlashing) return;
-    setConnected((prev) => !prev);
+    if (connectDisabled) return;
+    if (connected) {
+      void flash.disconnect();
+      return;
+    }
+    void flash.connect();
   };
 
   const handleFlash = () => {
-    if (!canFlash) return;
-    setProgress(0);
-    timerRef.current = window.setInterval(() => {
-      setProgress((current) => {
-        if (current === null) return null;
-        const next = current + 4;
-        if (next >= 100) {
-          if (timerRef.current !== null) {
-            window.clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          setLastFlashed(selected.version);
-          return null;
-        }
-        return next;
-      });
-    }, 120);
+    if (!canFlash || !selected) return;
+    void flash.flash(selected);
   };
 
   return (
@@ -162,75 +152,114 @@ export function LandlinkFirmwarePage() {
               )}
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-medium">
-                {connected ? "Landlink Module I" : "No device connected"}
-              </span>
+              <span className="text-sm font-medium">{deviceLabel}</span>
               <span className="text-xs text-muted-foreground">
-                {connected
-                  ? `Current firmware ${lastFlashed ?? CURRENT_DEVICE_FIRMWARE}`
-                  : "Plug into USB to start"}
+                {deviceSubLabel}
               </span>
             </div>
           </div>
           <Button
             size="sm"
             variant={connected ? "outline" : "default"}
-            disabled={isFlashing || isMobile}
+            disabled={connectDisabled}
             onClick={handleConnect}
             aria-label={connected ? "Disconnect device" : "Connect device"}
           >
             {connected ? "Disconnect" : "Connect"}
           </Button>
         </div>
+        {flash.error && (
+          <div className="mt-3 flex items-start gap-2 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-xs text-destructive">
+            <AlertCircle className="mt-0.5 size-4" aria-hidden="true" />
+            <span>{flash.error}</span>
+          </div>
+        )}
       </section>
 
       <section className="px-4 pb-6">
         <h3 className="px-1 pb-2 text-xs font-medium text-muted-foreground">
           Available releases
         </h3>
-        <div className="flex flex-col gap-2">
-          {RELEASES.map((release) => {
-            const active = release.version === selected.version;
-            return (
-              <button
-                key={release.version}
-                type="button"
-                onClick={() => {
-                  setSelectedVersion(release.version);
-                }}
-                aria-pressed={active}
-                className={cn(
-                  "flex w-full flex-col gap-1.5 rounded-2xl border bg-card px-4 py-3 text-left transition-colors",
-                  active ? "border-foreground" : "border-border hover:bg-muted",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-display text-base tabular-nums">
-                      {release.version}
-                    </span>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]",
-                        release.channel === "stable"
-                          ? "bg-muted text-muted-foreground"
-                          : "bg-amber-500/10 text-amber-600",
-                      )}
-                    >
-                      {release.channel}
+        {releasesState.status === "loading" && (
+          <div className="flex flex-col gap-2">
+            {[0, 1].map((i) => (
+              <div
+                key={i}
+                className="h-17 animate-pulse rounded-2xl border border-border bg-muted/40"
+              />
+            ))}
+          </div>
+        )}
+        {releasesState.status === "error" && (
+          <div className="flex items-start justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-xs text-destructive">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 size-4" aria-hidden="true" />
+              <span>{releasesState.error ?? "Couldn't load releases."}</span>
+            </div>
+            <button
+              type="button"
+              onClick={releasesState.reload}
+              className="flex items-center gap-1 text-[11px] font-medium underline-offset-2 hover:underline"
+            >
+              <RefreshCw className="size-3" aria-hidden="true" />
+              Retry
+            </button>
+          </div>
+        )}
+        {releasesState.status === "ok" && releasesState.releases.length === 0 && (
+          <div className="rounded-2xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
+            No firmware releases published yet.
+          </div>
+        )}
+        {releasesState.releases.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {releasesState.releases.map((release) => {
+              const active = release.tag === selected?.tag;
+              const totalBytes =
+                release.assets.firmware.size +
+                release.assets.bootloader.size +
+                release.assets.partitions.size;
+              return (
+                <button
+                  key={release.tag}
+                  type="button"
+                  onClick={() => {
+                    setPickedTag(release.tag);
+                  }}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex w-full flex-col gap-1.5 rounded-2xl border bg-card px-4 py-3 text-left transition-colors",
+                    active ? "border-foreground" : "border-border hover:bg-muted",
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-display text-base tabular-nums">
+                        {release.version}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]",
+                          release.channel === "stable"
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-amber-500/10 text-amber-600",
+                        )}
+                      >
+                        {release.channel}
+                      </span>
+                    </div>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {formatSize(totalBytes)}
                     </span>
                   </div>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {release.size}
+                  <span className="text-xs text-muted-foreground">
+                    Released {formatReleasedAt(release.releasedAt)}
                   </span>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  Released {release.releasedAt}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="px-4 pb-8">
@@ -251,19 +280,19 @@ export function LandlinkFirmwarePage() {
         {isFlashing ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Flashing {selected.version}</span>
-              <span className="tabular-nums">{progress}%</span>
+              <span>Flashing {selected?.version ?? ""}</span>
+              <span className="tabular-nums">{progress ?? 0}%</span>
             </div>
             <div
               className="h-2 w-full overflow-hidden rounded-full bg-muted"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-valuenow={progress}
+              aria-valuenow={progress ?? 0}
             >
               <div
                 className="h-full bg-foreground transition-[width] duration-150 ease-linear"
-                style={{ width: `${String(progress)}%` }}
+                style={{ width: `${String(progress ?? 0)}%` }}
               />
             </div>
             <p className="pt-1 text-[11px] text-muted-foreground">
@@ -275,7 +304,7 @@ export function LandlinkFirmwarePage() {
           <>
             <div className="flex items-baseline justify-between">
               <p className="font-display text-base leading-none tracking-tight">
-                {selected.version}
+                {selected?.version ?? "—"}
               </p>
             </div>
             {isMobile && (
@@ -284,12 +313,17 @@ export function LandlinkFirmwarePage() {
                 a desktop browser to continue.
               </p>
             )}
+            {!isMobile && !flash.isSupported && (
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Web Serial is required. Please use Chrome or Edge on desktop.
+              </p>
+            )}
             <Button
               size="lg"
               disabled={!canFlash}
               className="mt-4 h-12 w-full text-base"
               onClick={handleFlash}
-              aria-label={`Flash firmware ${selected.version}`}
+              aria-label={`Flash firmware ${selected?.version ?? ""}`}
             >
               <Download className="size-4" aria-hidden="true" />
               Flash firmware
