@@ -1,7 +1,8 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { ROUTES } from "@/shared/config";
+import { ROUTES, SITE_URL } from "@/shared/config";
 import { cn } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 import { PageHeader } from "@/widgets/page-header";
@@ -106,6 +107,17 @@ export function LandlinkModuleIPage() {
           className="mt-4 h-12 w-full text-base"
           aria-label="Buy Landlink Module I"
           onClick={() => {
+            // WHY: checkout must run in the system browser. Apple disallows
+            // external-goods payment inside the in-app WKWebView, so on native
+            // platforms we hand the buy URL off to Safari instead of routing.
+            if (Capacitor.isNativePlatform()) {
+              window.open(
+                `${SITE_URL}${ROUTES.landlinkModuleIBuy}`,
+                "_blank",
+                "noopener,noreferrer",
+              );
+              return;
+            }
             void navigate(ROUTES.landlinkModuleIBuy, { viewTransition: true });
           }}
         >
