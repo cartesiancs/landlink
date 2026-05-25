@@ -40,6 +40,10 @@ export function useFirmwareFlash(): UseFirmwareFlash {
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    // WHY: reset on setup so StrictMode's simulated unmount→remount cycle
+    // doesn't leave the ref stuck at false, which would silently skip every
+    // post-await setState in connect()/flash().
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       const handle = handleRef.current;

@@ -1,4 +1,10 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 import { cn } from "@/shared/lib";
 
@@ -54,10 +60,16 @@ export function SlideSwitch({
     { key: contentKey, content: children, status: "live" },
   ]);
   const [hasTransitioned, setHasTransitioned] = useState(false);
+  // WHY: live entry always renders the latest `children` (so mutating props on
+  // the body re-render normally); only exiting entries need a frozen snapshot
+  // so the outgoing animation doesn't visually morph mid-flight. This ref
+  // holds the previous render's children to feed that snapshot.
+  const previousChildrenRef = useRef<ReactNode>(children);
 
   const liveKey = entries.find((entry) => entry.status === "live")?.key;
 
   if (liveKey !== contentKey) {
+    const snapshot = previousChildrenRef.current;
     setEntries((prev) => {
       if (reduced) {
         return [{ key: contentKey, content: children, status: "live" }];
@@ -68,7 +80,7 @@ export function SlideSwitch({
       return [
         ...withoutDuplicateIncoming.map((entry) =>
           entry.status === "live"
-            ? { ...entry, status: "exiting" as const }
+            ? { ...entry, status: "exiting" as const, content: snapshot }
             : entry,
         ),
         { key: contentKey, content: children, status: "live" as const },
@@ -76,6 +88,10 @@ export function SlideSwitch({
     });
     setHasTransitioned(true);
   }
+
+  useEffect(() => {
+    previousChildrenRef.current = children;
+  });
 
   const phaseMs = duration / 2;
   const shouldAnimateIn = hasTransitioned && !reduced;
@@ -129,7 +145,7 @@ export function SlideSwitch({
                 : undefined
             }
           >
-            {entry.content}
+            {isLive ? children : entry.content}
           </div>
         );
       })}
