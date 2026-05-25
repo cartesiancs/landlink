@@ -224,18 +224,19 @@ function StepConnect({
   return (
     <StepShell title={STEP_TITLE.connect}>
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
+        <img
+          src="/images/flash.webp"
+          alt=""
+          className={cn(
+            "size-72 object-contain transition-opacity duration-300 sm:size-100",
+            connected ? "opacity-100" : "opacity-80",
+          )}
+        />
         {hint && (
           <p className="max-w-xs text-center text-xs text-muted-foreground">
             {hint}
           </p>
         )}
-        <div
-          aria-hidden
-          className={cn(
-            "size-48 rounded-3xl transition-colors duration-300",
-            connected ? "bg-emerald-500/10" : "bg-muted/40",
-          )}
-        />
       </div>
     </StepShell>
   );
