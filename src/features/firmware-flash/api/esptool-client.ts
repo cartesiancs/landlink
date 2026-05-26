@@ -139,10 +139,25 @@ export async function flashRelease(
     },
   });
 
+  // WHY: esptool-js's after("hard_reset") only toggles RTS, which on CH9102/
+  // CH340 boards (macOS especially) leaves IO0 floating low, so the chip can
+  // re-enter download mode after the reset pulse and force a manual button
+  // press. Drive DTR (IO0) high first, then pulse RTS (EN) ourselves, and let
+  // the lines settle before the caller closes the transport.
   try {
-    await handle.loader.after("hard_reset");
+    await handle.transport.setDTR(false);
+    await handle.transport.setRTS(true);
+    await sleep(100);
+    await handle.transport.setRTS(false);
+    await sleep(50);
   } catch {
-    // hardware reset is best-effort: some boards reboot before the
-    // command returns, which surfaces as a transport error
+    // best-effort: some boards reboot before the toggle returns, which
+    // surfaces as a transport error
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
