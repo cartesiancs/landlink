@@ -201,7 +201,13 @@ export function DeviceDashboardPage() {
         )}
       </main>
       {isConnected ? (
-        <div className="bg-background px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+        <div
+          className="bg-background px-4 pt-3 transition-[padding-bottom] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          style={{
+            paddingBottom:
+              "calc(max(env(safe-area-inset-bottom), 0.75rem) + var(--keyboard-inset, 0px))",
+          }}
+        >
           <SendMeshForm />
         </div>
       ) : null}
