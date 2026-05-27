@@ -5,17 +5,23 @@ import {
   updateOutgoingByPktId,
 } from "./store";
 
-// Sender-side ACK/retry state machine for landlink chat.
+// Sender-side ACK state machine for outgoing chat.
 //
-// Each MESH_SEND issued in landlink mode is tracked here until either
-//   (a) an ACK arrives within RETRY_TIMEOUT_MS, or
-//   (b) we exhaust MAX_ATTEMPTS retransmissions, or
-//   (c) the BLE link drops / the user switches to meshtastic, in which case
+// Each MESH_SEND is tracked here until either
+//   (a) an ACK arrives within RETRY_TIMEOUT_MS (-> "delivered"), or
+//   (b) the entry exhausts its retry budget (landlink: up to MAX_ATTEMPTS
+//       retransmissions with RETRY_PKT_ID; meshtastic: noRetry=true -> the
+//       first timeout fails the entry), or
+//   (c) the BLE link drops / the user switches protocol modes, in which case
 //       every pending entry is force-failed.
 //
 // The host doesn't know the assigned pkt_id until the firmware emits
 // MESH_SEND_RESULT. Entries are therefore indexed by bleSeq first and gain a
 // pktId asynchronously via attachPktId().
+//
+// Meshtastic mode reuses this machinery for the ACK matching half only —
+// RETRY_PKT_ID has no Meshtastic equivalent on the wire, so retry must be
+// disabled via { noRetry: true }.
 
 const RETRY_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 3;
@@ -35,6 +41,15 @@ type PendingEntry = {
   encodedText: Uint8Array;
   attempts: number;
   timerId: ReturnType<typeof setTimeout> | null;
+  noRetry: boolean;
+};
+
+export type TrackPendingOptions = {
+  // When true, the entry will fail at the first timeout instead of issuing a
+  // RETRY_PKT_ID retransmit. Used for Meshtastic mode, which has no on-wire
+  // retry semantics — duplicate sends would allocate a fresh pkt_id and the
+  // receiver would render them as new messages.
+  noRetry?: boolean;
 };
 
 let sendFn: SendFn | null = null;
@@ -119,6 +134,9 @@ async function handleTimeout(bleSeq: number): Promise<void> {
   // If the firmware never returned a MESH_SEND_RESULT, retrying without a
   // RETRY_PKT_ID would allocate a brand new pkt_id and the receiver would
   // dedup differently from the original. Give the result a short grace window.
+  // (Even in noRetry mode we wait for the pktId — without it the host has no
+  // way to ever correlate an inbound ACK, so failing immediately would be
+  // strictly worse than waiting one grace cycle.)
   if (entry.pktId === null) {
     entry.timerId = setTimeout(() => {
       void handleTimeout(bleSeq);
@@ -126,7 +144,7 @@ async function handleTimeout(bleSeq: number): Promise<void> {
     return;
   }
 
-  if (entry.attempts >= MAX_ATTEMPTS) {
+  if (entry.noRetry || entry.attempts >= MAX_ATTEMPTS) {
     fail(entry);
     return;
   }
@@ -138,6 +156,7 @@ export function trackPending(
   bleSeq: number,
   text: string,
   encodedText: Uint8Array,
+  options: TrackPendingOptions = {},
 ): void {
   dropOldestIfFull();
   const entry: PendingEntry = {
@@ -147,6 +166,7 @@ export function trackPending(
     encodedText,
     attempts: 1,
     timerId: null,
+    noRetry: options.noRetry ?? false,
   };
   scheduleTimer(entry);
   pending.set(bleSeq, entry);

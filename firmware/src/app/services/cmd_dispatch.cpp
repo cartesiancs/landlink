@@ -191,8 +191,10 @@ bool handle_cmd(Opcode op, uint8_t seq,
             send_error(seq, 0x05 /* BUSY */);
             return true;
         }
-        // Landlink-only: surface assigned pkt_id so the host can track retries.
-        // Meshtastic path leaves assigned_pkt_id at 0 (skip the notify).
+        // Surface the assigned pkt_id so the host can correlate ACKs and
+        // (in landlink) drive retries. Both protocols populate this now —
+        // Meshtastic mode uses it to match Routing(request_id) replies and
+        // flip the message to "delivered" in the UI.
         if (assigned_pkt_id != 0) {
             uint8_t buf[16];
             landlink::TlvBuilder b(buf, sizeof(buf));

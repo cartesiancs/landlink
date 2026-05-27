@@ -124,13 +124,24 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
 void meshtastic_payload_sink(const landlink::mesh::meshtastic::Header& h,
                              const landlink::mesh::meshtastic::DataMessage& data) {
     using namespace landlink::mesh::meshtastic;
-    LL_LOG_I(kTag, "mt rx: src=%08x portnum=%u len=%u",
+    LL_LOG_I(kTag, "mt rx: src=%08x dst=%08x pkt_id=%u portnum=%u want_ack=%d len=%u",
              static_cast<unsigned>(h.src),
+             static_cast<unsigned>(h.dst),
+             static_cast<unsigned>(h.pkt_id),
              static_cast<unsigned>(data.portnum),
+             h.want_ack ? 1 : 0,
              static_cast<unsigned>(data.payload_len));
     if (data.portnum == kPortnumTextMessageApp && data.payload != nullptr) {
         landlink::features::mesh_chat::on_meshtastic_chat(
-            h.src, h.pkt_id, data.payload, data.payload_len);
+            h.src, h.dst, h.pkt_id, h.want_ack,
+            data.payload, data.payload_len);
+    } else if (data.portnum == kPortnumRoutingApp && data.has_request_id) {
+        // Routing payload with a request_id is the Meshtastic ACK shape
+        // (error_reason=NONE is encoded implicitly via the default value when
+        // the Routing body is empty). NACKs with explicit error_reason are
+        // out-of-scope for now and treated as "no ACK arrived".
+        landlink::features::mesh_chat::on_meshtastic_routing(
+            h.src, data.request_id);
     }
 }
 }
@@ -200,6 +211,10 @@ void setup() {
     pcx.region  = load_region();
     landlink::mesh::protocol::init(pcx, landlink::app::services::g_router);
     landlink::mesh::protocol::set_meshtastic_sink(&meshtastic_payload_sink);
+    // Upstream-compatible implicit broadcast ACK: when a relay forwards one
+    // of our own packets back to us, treat it as proof of delivery.
+    landlink::mesh::protocol::meshtastic_router().set_own_echo_callback(
+        &landlink::features::mesh_chat::on_meshtastic_own_echo);
 
     landlink::features::lora_pair::init(node_id);
 

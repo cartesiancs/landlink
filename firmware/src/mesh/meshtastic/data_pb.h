@@ -32,14 +32,25 @@ struct DataMessage {
     size_t         payload_len = 0;
     uint32_t       source     = 0;
     uint32_t       request_id = 0;
+    bool           want_response  = false;
     bool           has_source     = false;
     bool           has_request_id = false;
+    bool           has_want_response = false;
 };
 
 // Returns bytes written, or 0 on overflow.
 size_t encode_data(uint32_t portnum,
                    const uint8_t* payload, size_t payload_len,
                    uint8_t* out, size_t out_cap);
+
+// Encode a Data message that also carries the optional request_id field
+// (used by Routing ACK replies). Pass payload=nullptr/0 to omit the bytes
+// field — Routing ACKs ride on an empty Routing payload, which represents
+// error_reason=NONE by default.
+size_t encode_data_with_request_id(uint32_t portnum,
+                                   uint32_t request_id,
+                                   const uint8_t* payload, size_t payload_len,
+                                   uint8_t* out, size_t out_cap);
 
 // Returns true on a well-formed message. Unknown fields are skipped.
 // `out.payload` points into `buf` — the caller must keep `buf` alive while

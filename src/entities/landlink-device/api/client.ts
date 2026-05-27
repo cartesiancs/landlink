@@ -49,6 +49,7 @@ import {
   onAck,
   setRetrySender,
   trackPending,
+  type TrackPendingOptions,
 } from "../model/retry-tracker";
 
 let seqCounter = 0;
@@ -176,14 +177,19 @@ export async function attachLandlinkClient(
         } else if (op === Opcode.MESH_RECV) {
           const parsed = parseMeshRecv(frame.payload);
           if (!parsed) return;
-          // Defense in depth: drop frames that purport to come from us.
-          const selfNodeId = getState()?.info?.nodeId;
-          if (selfNodeId && parsed.senderNodeId === selfNodeId) return;
 
+          // ACKs first — the implicit-broadcast-ACK path (Meshtastic mode
+          // hearing its own relayed broadcast) intentionally reports
+          // senderNodeId == self_id, so it must not be filtered by the
+          // chat-echo guard below.
           if (parsed.kind === "ack") {
             onAck(parsed.ackPktId);
             return;
           }
+
+          // Defense in depth: drop chat frames that purport to come from us.
+          const selfNodeId = getState()?.info?.nodeId;
+          if (selfNodeId && parsed.senderNodeId === selfNodeId) return;
           const dedupKey = parsed.pktId !== null
             ? `${parsed.senderNodeId}:${parsed.pktId}`
             : `${parsed.senderNodeId}:${parsed.receivedAt}`;
@@ -315,13 +321,17 @@ setRetrySender((opcode, retryTlvs) =>
   sendLandlinkCommand(opcode as OpcodeValue, retryTlvs),
 );
 
-// Watch for landlink->meshtastic transitions. ACK/retry semantics are
-// landlink-only; switching modes must clear pending work so messages don't
-// dangle as "sending" forever.
+// Watch for protocol-mode transitions. Switching radios re-tunes the SX1262
+// and (in Meshtastic) flips encryption keys, so any in-flight pending chat
+// must be abandoned in either direction — its ACK can never round-trip.
 let lastSeenProtocol: ProtocolMode | null = null;
 subscribeStore(() => {
   const next = getState()?.protocol ?? null;
-  if (lastSeenProtocol === 0 && next === 1) {
+  if (
+    lastSeenProtocol !== null &&
+    next !== null &&
+    lastSeenProtocol !== next
+  ) {
     cancelAllRetries();
     failAllOutgoingPending();
   }
@@ -361,11 +371,14 @@ export function appendOutgoingPending(text: string, bleSeq: number): void {
   });
 }
 
-// Landlink-only: hand the retry tracker the bytes it needs to retransmit.
+// Hand the retry tracker the bytes it needs for retransmit/ACK matching.
+// Pass { noRetry: true } in Meshtastic mode — that path has no RETRY_PKT_ID
+// equivalent so the tracker should only listen for the ACK, never retransmit.
 export function trackPendingChat(
   bleSeq: number,
   text: string,
   encodedText: Uint8Array,
+  options: TrackPendingOptions = {},
 ): void {
-  trackPending(bleSeq, text, encodedText);
+  trackPending(bleSeq, text, encodedText, options);
 }

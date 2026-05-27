@@ -79,6 +79,16 @@ bool skip_field(const uint8_t* buf, size_t buf_len, size_t& off, uint8_t wire) {
 
 } // namespace
 
+bool put_fixed32(uint8_t* out, size_t out_cap, size_t& off, uint32_t v) {
+    if (off + 4 > out_cap) return false;
+    out[off + 0] = static_cast<uint8_t>(v & 0xff);
+    out[off + 1] = static_cast<uint8_t>((v >> 8) & 0xff);
+    out[off + 2] = static_cast<uint8_t>((v >> 16) & 0xff);
+    out[off + 3] = static_cast<uint8_t>((v >> 24) & 0xff);
+    off += 4;
+    return true;
+}
+
 size_t encode_data(uint32_t portnum,
                    const uint8_t* payload, size_t payload_len,
                    uint8_t* out, size_t out_cap) {
@@ -95,6 +105,30 @@ size_t encode_data(uint32_t portnum,
         std::memcpy(out + off, payload, payload_len);
         off += payload_len;
     }
+    return off;
+}
+
+size_t encode_data_with_request_id(uint32_t portnum,
+                                   uint32_t request_id,
+                                   const uint8_t* payload, size_t payload_len,
+                                   uint8_t* out, size_t out_cap) {
+    size_t off = 0;
+    // Field 1 portnum (varint).
+    if (!put_key(out, out_cap, off, 1, kWireVarint)) return 0;
+    if (!put_varint(out, out_cap, off, portnum))    return 0;
+
+    // Field 2 payload (bytes) — optional.
+    if (payload != nullptr && payload_len > 0) {
+        if (!put_key(out, out_cap, off, 2, kWireLenDelim)) return 0;
+        if (!put_varint(out, out_cap, off, payload_len))   return 0;
+        if (off + payload_len > out_cap)                   return 0;
+        std::memcpy(out + off, payload, payload_len);
+        off += payload_len;
+    }
+
+    // Field 6 request_id (fixed32).
+    if (!put_key(out, out_cap, off, 6, kWireFixed32)) return 0;
+    if (!put_fixed32(out, out_cap, off, request_id))  return 0;
     return off;
 }
 
@@ -118,6 +152,11 @@ bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out) {
             out.payload     = buf + off;
             out.payload_len = static_cast<size_t>(len);
             off += len;
+        } else if (field == 3 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out.want_response     = (v != 0);
+            out.has_want_response = true;
         } else if (field == 5 && wire == kWireFixed32) {
             uint32_t v;
             if (!read_fixed32(buf, buf_len, off, v)) return false;

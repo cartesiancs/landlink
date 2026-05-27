@@ -42,15 +42,21 @@ export function useSendMeshMessage() {
     setStatus("sending");
     setError(null);
     try {
-      // ACK/retry is a landlink-only protocol feature. Meshtastic mode is
-      // fire-and-forget and keeps its existing UX. The pre-seq hook registers
-      // the pending entry synchronously, before the BLE write — necessary
-      // because MESH_SEND_RESULT can race past the await on a fast link.
+      // Both protocols surface MESH_SEND_RESULT with the assigned pkt_id, so
+      // the host can wait for an ACK (landlink: KIND=ACK frame; meshtastic:
+      // Routing reply with matching request_id) and flip the message to
+      // "delivered". Meshtastic mode disables retry — there's no on-wire
+      // equivalent of RETRY_PKT_ID and duplicate sends would be rendered as
+      // new messages on the receiver. The pre-seq hook registers the pending
+      // entry synchronously, before the BLE write, because MESH_SEND_RESULT
+      // can race past the await on a fast link.
       let registered = false;
       await sendLandlinkCommand(Opcode.MESH_SEND, tlvs, (seq) => {
-        if (protocolMode === 0) {
+        if (protocolMode !== null) {
           appendOutgoingPending(trimmed, seq);
-          trackPendingChat(seq, trimmed, encoded);
+          trackPendingChat(seq, trimmed, encoded, {
+            noRetry: protocolMode === 1,
+          });
           registered = true;
         }
       });

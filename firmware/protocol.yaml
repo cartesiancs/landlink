@@ -64,7 +64,7 @@ opcodes:
   MESH_LEAVE:            { code: 0x31, dir: C_TO_F }
   MESH_SEND:             { code: 0x32, dir: C_TO_F }
   MESH_RECV:             { code: 0x33, dir: F_TO_C }
-  MESH_SEND_RESULT:      { code: 0x34, dir: F_TO_C, note: "Landlink-only: returns assigned pkt_id for a MESH_SEND so the host can track ACKs/retries" }
+  MESH_SEND_RESULT:      { code: 0x34, dir: F_TO_C, note: "Returns assigned pkt_id for a MESH_SEND so the host can track ACKs. Emitted in both Landlink and Meshtastic modes." }
 
   # Device telemetry (battery + GPS), pushed periodically while BLE is connected
   DEVICE_TELEMETRY:      { code: 0x70, dir: F_TO_C }

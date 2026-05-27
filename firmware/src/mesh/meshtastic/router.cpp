@@ -21,7 +21,8 @@ void MeshtasticRouter::init(const RouterConfig& cfg) {
 
 size_t MeshtasticRouter::originate(uint32_t dst, bool want_ack, uint32_t portnum,
                                    const uint8_t* payload, size_t payload_len,
-                                   uint8_t* out, size_t out_cap) {
+                                   uint8_t* out, size_t out_cap,
+                                   uint32_t* out_pkt_id) {
     if (out_cap < kHeaderLen + 4) return 0;
 
     // Step 1: encode the Data protobuf into a scratch buffer.
@@ -32,10 +33,19 @@ size_t MeshtasticRouter::originate(uint32_t dst, bool want_ack, uint32_t portnum
         LL_LOG_W(kTag, "originate: encode_data overflow");
         return 0;
     }
-    if (out_cap < kHeaderLen + pb_len) {
-        LL_LOG_W(kTag, "originate: out_cap %u < %u",
+    return originate_data(dst, want_ack, pb_buf, pb_len, out, out_cap,
+                          out_pkt_id);
+}
+
+size_t MeshtasticRouter::originate_data(uint32_t dst, bool want_ack,
+                                        const uint8_t* data_pb,
+                                        size_t data_pb_len,
+                                        uint8_t* out, size_t out_cap,
+                                        uint32_t* out_pkt_id) {
+    if (out_cap < kHeaderLen + data_pb_len) {
+        LL_LOG_W(kTag, "originate_data: out_cap %u < %u",
                  static_cast<unsigned>(out_cap),
-                 static_cast<unsigned>(kHeaderLen + pb_len));
+                 static_cast<unsigned>(kHeaderLen + data_pb_len));
         return 0;
     }
 
@@ -53,16 +63,17 @@ size_t MeshtasticRouter::originate(uint32_t dst, bool want_ack, uint32_t portnum
 
     if (!pack_header(h, out, out_cap)) return 0;
 
-    // Step 2: copy protobuf into output buffer (post-header) and encrypt in place.
+    // Copy protobuf into output buffer (post-header) and encrypt in place.
     uint8_t* ct = out + kHeaderLen;
-    std::memcpy(ct, pb_buf, pb_len);
-    if (!crypt(cfg_.channel_key, h.pkt_id, h.src, ct, pb_len)) {
-        LL_LOG_W(kTag, "originate: crypt failed");
+    std::memcpy(ct, data_pb, data_pb_len);
+    if (!crypt(cfg_.channel_key, h.pkt_id, h.src, ct, data_pb_len)) {
+        LL_LOG_W(kTag, "originate_data: crypt failed");
         return 0;
     }
 
     dedup_.seen_or_insert(h.src, h.pkt_id);  // do not echo back to self
-    return kHeaderLen + pb_len;
+    if (out_pkt_id != nullptr) *out_pkt_id = h.pkt_id;
+    return kHeaderLen + data_pb_len;
 }
 
 void MeshtasticRouter::on_rx(const uint8_t* frame, size_t frame_len,
@@ -76,7 +87,17 @@ void MeshtasticRouter::on_rx(const uint8_t* frame, size_t frame_len,
     if (!unpack_header(frame, frame_len, h)) return;
 
     if (h.channel != cfg_.channel_hash) return;       // not our channel
-    if (h.src == cfg_.self_id)          return;       // our own echo
+
+    // Hearing our own (self_id, pkt_id) being relayed back is the implicit-ACK
+    // signal upstream Meshtastic clients use to confirm broadcast delivery —
+    // real Meshtastic firmware never sends Routing ACKs for broadcasts, but
+    // every node forwards them. Fire the callback (host turns it into a
+    // KIND=ACK MESH_RECV that resolves the pending send) then drop. The
+    // pending-send dedup at the host handles repeats across multiple hops.
+    if (h.src == cfg_.self_id) {
+        if (own_echo_cb_) own_echo_cb_(h.pkt_id);
+        return;
+    }
     if (dedup_.seen_or_insert(h.src, h.pkt_id)) return;
 
     const size_t ct_len = frame_len - kHeaderLen;
