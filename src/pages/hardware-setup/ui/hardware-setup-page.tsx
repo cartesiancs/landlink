@@ -245,7 +245,7 @@ export function HardwareSetupPage() {
                     <SheetContent
                       side="bottom"
                       showCloseButton={false}
-                      className="rounded-t-xl pb-[max(env(safe-area-inset-bottom),1rem)]"
+                      className="rounded-t-xl pb-[max(env(safe-area-inset-bottom),1rem)] sm:mx-auto sm:max-w-md"
                     >
                       <SheetHeader>
                         <SheetTitle>{item.name}</SheetTitle>

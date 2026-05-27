@@ -17,7 +17,7 @@ type SupportDrawerProps = {
 export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent>
+      <DrawerContent className="sm:mx-auto sm:max-w-md">
         <DrawerHeader>
           <DrawerTitle>Support</DrawerTitle>
           <DrawerDescription>
