@@ -32,6 +32,27 @@ bool init() {
     return true;
 }
 
+// Convert a date+time pair (UTC, from the GNRMC/GPRMC NMEA sentence) to
+// epoch milliseconds. Uses the civil-from-days algorithm by Howard Hinnant
+// (public domain) to avoid pulling in <chrono> at this layer.
+uint64_t to_epoch_ms(uint16_t y, uint8_t mo, uint8_t d,
+                     uint8_t h, uint8_t mi, uint8_t s, uint16_t cs_ms) {
+    if (y < 1970 || mo < 1 || mo > 12 || d < 1 || d > 31) return 0;
+    const int32_t yy = static_cast<int32_t>(y) - (mo <= 2 ? 1 : 0);
+    const int32_t era = (yy >= 0 ? yy : yy - 399) / 400;
+    const uint32_t yoe = static_cast<uint32_t>(yy - era * 400);
+    const uint32_t mp  = (mo + (mo > 2 ? -3 : 9));
+    const uint32_t doy = (153 * mp + 2) / 5 + (d - 1);
+    const uint32_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const int64_t  days = static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(doe) - 719468;
+    const uint64_t seconds =
+        static_cast<uint64_t>(days) * 86400ULL
+        + static_cast<uint64_t>(h) * 3600ULL
+        + static_cast<uint64_t>(mi) * 60ULL
+        + static_cast<uint64_t>(s);
+    return seconds * 1000ULL + cs_ms;
+}
+
 void pump() {
     while (s_uart.available()) {
         const int b = s_uart.read();
@@ -53,6 +74,20 @@ void pump() {
             if (s_gps.speed.isUpdated()) {
                 s_fix.speed_kmh_x10 =
                     static_cast<uint16_t>(s_gps.speed.kmph() * 10);
+            }
+            // UTC date/time: the RMC sentence carries both. We require both to
+            // be valid to publish a non-zero epoch — partial info would set
+            // wall-clock to a wrong year on the receiving Meshtastic node.
+            if (s_gps.date.isValid() && s_gps.time.isValid() &&
+                s_gps.date.year() >= 2024) {
+                s_fix.epoch_ms = to_epoch_ms(
+                    static_cast<uint16_t>(s_gps.date.year()),
+                    static_cast<uint8_t>(s_gps.date.month()),
+                    static_cast<uint8_t>(s_gps.date.day()),
+                    static_cast<uint8_t>(s_gps.time.hour()),
+                    static_cast<uint8_t>(s_gps.time.minute()),
+                    static_cast<uint8_t>(s_gps.time.second()),
+                    static_cast<uint16_t>(s_gps.time.centisecond()) * 10);
             }
         }
     }

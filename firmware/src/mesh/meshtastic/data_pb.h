@@ -23,6 +23,7 @@
 namespace landlink::mesh::meshtastic {
 
 inline constexpr uint32_t kPortnumTextMessageApp = 1;
+inline constexpr uint32_t kPortnumPositionApp    = 3;
 inline constexpr uint32_t kPortnumNodeInfoApp    = 4;
 inline constexpr uint32_t kPortnumRoutingApp     = 5;
 
@@ -56,5 +57,27 @@ size_t encode_data_with_request_id(uint32_t portnum,
 // `out.payload` points into `buf` — the caller must keep `buf` alive while
 // reading the payload.
 bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out);
+
+// Encode a Meshtastic `User` protobuf (the payload of a NODEINFO_APP Data
+// message). Fields written: id (1), long_name (2), short_name (3),
+// macaddr (4, 6 bytes), hw_model (5, varint). Caller-provided strings must
+// stay alive only for the duration of this call.
+size_t encode_user(const char* id,
+                   const char* long_name,
+                   const char* short_name,
+                   const uint8_t macaddr[6],
+                   uint32_t hw_model,
+                   uint8_t* out, size_t out_cap);
+
+// Encode a Meshtastic `Position` protobuf (the payload of a POSITION_APP
+// Data message). Fields written: latitude_i (1, sfixed32), longitude_i (2,
+// sfixed32), altitude (3, varint, only if has_altitude), time (4, fixed32,
+// only if epoch_seconds != 0), location_source (5, varint).
+// location_source values: UNSET=0, LOC_INTERNAL=1, LOC_EXTERNAL=2.
+size_t encode_position(int32_t latitude_i, int32_t longitude_i,
+                       int32_t altitude, bool has_altitude,
+                       uint32_t epoch_seconds,
+                       uint32_t location_source,
+                       uint8_t* out, size_t out_cap);
 
 } // namespace landlink::mesh::meshtastic

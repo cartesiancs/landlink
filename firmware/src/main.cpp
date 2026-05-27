@@ -18,6 +18,7 @@
 #include "app/services/tasks.h"
 #include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
+#include "features/mesh_identity/mesh_identity.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
@@ -217,6 +218,7 @@ void setup() {
         &landlink::features::mesh_chat::on_meshtastic_own_echo);
 
     landlink::features::lora_pair::init(node_id);
+    landlink::features::mesh_identity::init(node_id);
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

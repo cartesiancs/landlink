@@ -7,6 +7,7 @@
 #include "app/fsm/fsm.h"
 #include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
+#include "features/mesh_identity/mesh_identity.h"
 #include "features/telemetry/telemetry.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
@@ -70,6 +71,26 @@ constexpr const char* kTag = "tasks";
     }
 }
 
+[[noreturn]] void mesh_identity_task(void*) {
+    // Periodic Meshtastic-compatible NodeInfo + Position broadcasts. The
+    // send functions are no-ops outside MESHTASTIC mode so this loop runs
+    // unconditionally. Initial 5s grace lets boot settle (LoRa init, NVS,
+    // GPS first NMEA burst) before the first transmit. Interval 15min
+    // matches upstream Meshtastic's position_broadcast_secs default; that
+    // is also the interval real Meshtastic clients expect for NodeDB
+    // refresh and last_heard updates.
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    constexpr uint32_t kIntervalMs = 15UL * 60UL * 1000UL;
+    for (;;) {
+        (void)features::mesh_identity::send_nodeinfo();
+        // Space NodeInfo and Position by ~1s so the LoRa TX queue can drain
+        // (CAD between frames) rather than concatenating them back-to-back.
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        (void)features::mesh_identity::send_position();
+        vTaskDelay(pdMS_TO_TICKS(kIntervalMs));
+    }
+}
+
 [[noreturn]] void gps_task(void*) {
     for (;;) {
         hal::gps::pump();
@@ -109,6 +130,7 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(button_task,     "button",      2048, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(telemetry_task,  "telemetry",   4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(beacon_task,     "beacon",      4096, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(mesh_identity_task, "mt_id",     4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);

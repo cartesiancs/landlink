@@ -132,6 +132,80 @@ size_t encode_data_with_request_id(uint32_t portnum,
     return off;
 }
 
+namespace {
+// proto3 varint of a signed int32: ZigZag is only for sint32/sint64. The
+// "int32" wire type uses straight 2's-complement varint, which expands a
+// negative number to a full 10-byte varint. Implemented as cast-to-u64.
+bool put_varint_i32(uint8_t* out, size_t out_cap, size_t& off, int32_t v) {
+    return put_varint(out, out_cap, off, static_cast<uint64_t>(static_cast<int64_t>(v)));
+}
+
+bool put_string_field(uint8_t* out, size_t out_cap, size_t& off,
+                      uint32_t field, const char* s) {
+    if (s == nullptr) return true;
+    const size_t n = std::strlen(s);
+    if (n == 0) return true;
+    if (!put_key(out, out_cap, off, field, kWireLenDelim)) return false;
+    if (!put_varint(out, out_cap, off, n))                  return false;
+    if (off + n > out_cap)                                  return false;
+    std::memcpy(out + off, s, n);
+    off += n;
+    return true;
+}
+
+bool put_bytes_field(uint8_t* out, size_t out_cap, size_t& off,
+                     uint32_t field, const uint8_t* data, size_t len) {
+    if (data == nullptr || len == 0) return true;
+    if (!put_key(out, out_cap, off, field, kWireLenDelim)) return false;
+    if (!put_varint(out, out_cap, off, len))                return false;
+    if (off + len > out_cap)                                return false;
+    std::memcpy(out + off, data, len);
+    off += len;
+    return true;
+}
+} // namespace
+
+size_t encode_user(const char* id,
+                   const char* long_name,
+                   const char* short_name,
+                   const uint8_t macaddr[6],
+                   uint32_t hw_model,
+                   uint8_t* out, size_t out_cap) {
+    size_t off = 0;
+    if (!put_string_field(out, out_cap, off, 1, id))            return 0;
+    if (!put_string_field(out, out_cap, off, 2, long_name))     return 0;
+    if (!put_string_field(out, out_cap, off, 3, short_name))    return 0;
+    if (!put_bytes_field (out, out_cap, off, 4, macaddr, 6))    return 0;
+    if (!put_key (out, out_cap, off, 5, kWireVarint))           return 0;
+    if (!put_varint(out, out_cap, off, hw_model))               return 0;
+    return off;
+}
+
+size_t encode_position(int32_t latitude_i, int32_t longitude_i,
+                       int32_t altitude, bool has_altitude,
+                       uint32_t epoch_seconds,
+                       uint32_t location_source,
+                       uint8_t* out, size_t out_cap) {
+    size_t off = 0;
+    if (!put_key (out, out_cap, off, 1, kWireFixed32)) return 0;
+    if (!put_fixed32(out, out_cap, off, static_cast<uint32_t>(latitude_i))) return 0;
+    if (!put_key (out, out_cap, off, 2, kWireFixed32)) return 0;
+    if (!put_fixed32(out, out_cap, off, static_cast<uint32_t>(longitude_i))) return 0;
+    if (has_altitude) {
+        if (!put_key (out, out_cap, off, 3, kWireVarint))  return 0;
+        if (!put_varint_i32(out, out_cap, off, altitude))  return 0;
+    }
+    if (epoch_seconds != 0) {
+        if (!put_key (out, out_cap, off, 4, kWireFixed32)) return 0;
+        if (!put_fixed32(out, out_cap, off, epoch_seconds)) return 0;
+    }
+    if (location_source != 0) {
+        if (!put_key (out, out_cap, off, 5, kWireVarint))      return 0;
+        if (!put_varint(out, out_cap, off, location_source))   return 0;
+    }
+    return off;
+}
+
 bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out) {
     out = DataMessage{};
     size_t off = 0;
