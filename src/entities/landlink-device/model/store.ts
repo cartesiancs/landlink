@@ -41,6 +41,9 @@ export type MeshMessage = {
   text: string;
   direction: MeshMessageDirection;
   receivedAt: number;
+  // Meshtastic channel index 0..7. Undefined (legacy) is treated as 0 = Primary
+  // so existing Landlink-protocol traffic surfaces on the Primary channel.
+  channelIndex?: number;
   pktId?: number;
   bleSeq?: number;
   status?: MeshMessageStatus;

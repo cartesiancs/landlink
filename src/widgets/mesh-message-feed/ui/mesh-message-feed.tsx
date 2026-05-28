@@ -86,9 +86,18 @@ function MessageRow({
   );
 }
 
-export function MeshMessageFeed() {
+type MeshMessageFeedProps = {
+  // Filter messages to a specific Meshtastic channel index. Undefined channels
+  // on legacy MeshMessage entries are treated as Primary (0).
+  channelIndex?: number;
+};
+
+export function MeshMessageFeed({ channelIndex = 0 }: MeshMessageFeedProps = {}) {
   const device = useLandlinkDevice();
-  const messages = device?.messages ?? [];
+  const allMessages = device?.messages ?? [];
+  const messages = allMessages.filter(
+    (m) => (m.channelIndex ?? 0) === channelIndex,
+  );
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastCount = useRef(0);
 

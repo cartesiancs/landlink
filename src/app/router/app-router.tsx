@@ -11,6 +11,8 @@ import {
 } from "react-router-dom";
 
 import { AboutPage } from "@/pages/about";
+import { ChannelChatPage } from "@/pages/channel-chat";
+import { ChannelsPage } from "@/pages/channels";
 import { DeviceDashboardPage } from "@/pages/device-dashboard";
 import { ErrorPage } from "@/pages/error";
 import { FaqPage } from "@/pages/faq";
@@ -61,6 +63,8 @@ const routes: RouteObject[] = [
       { path: ROUTES.terms, element: <TermsPage /> },
       { path: ROUTES.lists, element: <ListsPage /> },
       { path: ROUTES.deviceDashboard, element: <DeviceDashboardPage /> },
+      { path: ROUTES.channels, element: <ChannelsPage /> },
+      { path: ROUTES.channelChat, element: <ChannelChatPage /> },
       { path: ROUTES.settings, element: <SettingsPage /> },
       { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
       { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },

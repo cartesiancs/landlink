@@ -1,5 +1,5 @@
 import { usePostHog } from "@posthog/react";
-import { Info, MoreVertical, Trash2 } from "lucide-react";
+import { MoreVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -9,16 +9,10 @@ import {
   type DeviceTelemetry,
 } from "@/entities/landlink-device";
 import { removeRegisteredDevice } from "@/entities/registered-device";
-import { SendMeshForm } from "@/features/send-mesh-message";
 import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
   Drawer,
   DrawerClose,
   DrawerContent,
@@ -31,7 +25,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui";
-import { MeshMessageFeed } from "@/widgets/mesh-message-feed";
 import { PageHeader } from "@/widgets/page-header";
 
 function formatLatLon(e7: number): string {
@@ -57,12 +50,12 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function TelemetryDialogBody({ telemetry }: { telemetry: DeviceTelemetry }) {
+function TelemetryBlock({ telemetry }: { telemetry: DeviceTelemetry }) {
   const pct = Math.max(0, Math.min(100, telemetry.batteryPct));
   const receivedAt = new Date(telemetry.receivedAt).toLocaleString();
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div>
         <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Battery
@@ -118,7 +111,6 @@ export function DeviceDashboardPage() {
   const device = useLandlinkDevice();
   const posthog = usePostHog();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
 
   const isConnected = device?.status === "connected";
   const telemetry = device?.telemetry ?? null;
@@ -158,15 +150,6 @@ export function DeviceDashboardPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem
-                onSelect={() => {
-                  hapticTick();
-                  setInfoOpen(true);
-                }}
-              >
-                <Info aria-hidden="true" />
-                Info
-              </DropdownMenuItem>
-              <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => {
                   hapticTick();
@@ -180,10 +163,8 @@ export function DeviceDashboardPage() {
           </DropdownMenu>
         ) : null}
       </PageHeader>
-      <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4">
-        {isConnected ? (
-          <MeshMessageFeed />
-        ) : (
+      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-6 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+        {!isConnected ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-muted-foreground">
               No device connected.
@@ -198,19 +179,29 @@ export function DeviceDashboardPage() {
               Connect a device
             </Button>
           </div>
+        ) : telemetry ? (
+          <TelemetryBlock telemetry={telemetry} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No telemetry received yet.
+          </p>
         )}
+        {isConnected ? (
+          <div className="mt-6">
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-12 w-full"
+              onClick={() => {
+                hapticTick();
+                void navigate(ROUTES.channels);
+              }}
+            >
+              Open channels
+            </Button>
+          </div>
+        ) : null}
       </main>
-      {isConnected ? (
-        <div
-          className="bg-background px-4 pt-3 transition-[padding-bottom] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)]"
-          style={{
-            paddingBottom:
-              "calc(max(env(safe-area-inset-bottom), 0.75rem) + var(--keyboard-inset, 0px))",
-          }}
-        >
-          <SendMeshForm />
-        </div>
-      ) : null}
       <Drawer open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DrawerContent className="pb-[max(env(safe-area-inset-bottom),0.75rem)]">
           <DrawerHeader>
@@ -243,23 +234,6 @@ export function DeviceDashboardPage() {
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
-      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Device info</DialogTitle>
-            <DialogDescription>
-              Latest telemetry snapshot reported by the device.
-            </DialogDescription>
-          </DialogHeader>
-          {telemetry ? (
-            <TelemetryDialogBody telemetry={telemetry} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No telemetry received yet.
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

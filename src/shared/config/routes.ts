@@ -15,6 +15,8 @@ export const ROUTES = {
   terms: "/terms",
   lists: "/lists",
   deviceDashboard: "/device",
+  channels: "/channels",
+  channelChat: "/channels/:index",
   settings: "/settings",
   settingsTheme: "/settings/theme",
   settingsDebug: "/settings/debug",

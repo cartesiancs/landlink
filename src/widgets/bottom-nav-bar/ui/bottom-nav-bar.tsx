@@ -1,7 +1,8 @@
-import { Home, List, Settings } from "lucide-react";
+import { HashIcon, Home, List, Settings } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 import { Link, useLocation } from "react-router-dom";
 
+import { useRegisteredDevices } from "@/entities/registered-device";
 import { ROUTES, type RoutePath } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
 
@@ -17,13 +18,19 @@ type NavItem = {
 const ITEMS: readonly NavItem[] = [
   { to: ROUTES.home, label: "Home", Icon: Home, state: { fromNav: true } },
   { to: ROUTES.lists, label: "Lists", Icon: List },
+  { to: ROUTES.channels, label: "Channels", Icon: HashIcon },
   { to: ROUTES.settings, label: "Settings", Icon: Settings },
 ];
 
 export function BottomNavBar() {
   const visible = useBottomNavVisible();
+  const devices = useRegisteredDevices();
+  const hasAnyDevice = devices.length > 0;
   const { pathname } = useLocation();
   if (!visible) return null;
+  const visibleItems = ITEMS.filter(
+    (item) => item.to !== ROUTES.channels || hasAnyDevice,
+  );
 
   return (
     <div
@@ -35,7 +42,7 @@ export function BottomNavBar() {
           aria-label="Bottom navigation"
           className="flex justify-between border-t border-border bg-background/90 backdrop-blur px-6 pt-2 pb-2 supports-backdrop-filter:bg-background/70"
         >
-          {ITEMS.map(({ to, label, Icon, state }) => {
+          {visibleItems.map(({ to, label, Icon, state }) => {
             const active = pathname === to;
             return (
               <Link

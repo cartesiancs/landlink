@@ -3,6 +3,7 @@ import {
   Building2,
   Cpu,
   FileText,
+  Hash as HashIcon,
   House,
   Info,
   List,
@@ -42,6 +43,7 @@ type NavItem = {
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Home", to: ROUTES.home, icon: House },
   { label: "Lists", to: ROUTES.lists, icon: List },
+  { label: "Channels", to: ROUTES.channels, icon: HashIcon },
   { label: "Settings", to: ROUTES.settings, icon: Settings },
   { label: "About", to: ROUTES.about, icon: Info },
 ];
@@ -63,9 +65,12 @@ export function NavigationSidebar({
 }: NavigationSidebarProps) {
   const location = useLocation();
   const devices = useRegisteredDevices();
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) => item.to !== ROUTES.lists || devices.length > 0,
-  );
+  const hasAnyDevice = devices.length > 0;
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (item.to === ROUTES.lists) return hasAnyDevice;
+    if (item.to === ROUTES.channels) return hasAnyDevice;
+    return true;
+  });
   const handleClose = () => {
     onOpenChange(false);
   };
