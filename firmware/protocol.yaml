@@ -62,9 +62,19 @@ opcodes:
   # Mesh membership + messaging
   MESH_JOIN:             { code: 0x30, dir: C_TO_F }
   MESH_LEAVE:            { code: 0x31, dir: C_TO_F }
-  MESH_SEND:             { code: 0x32, dir: C_TO_F }
-  MESH_RECV:             { code: 0x33, dir: F_TO_C }
+  MESH_SEND:             { code: 0x32, dir: C_TO_F, note: "Optional CHANNEL_INDEX TLV selects the channel (default 0 = Primary)." }
+  MESH_RECV:             { code: 0x33, dir: F_TO_C, note: "Always carries CHANNEL_INDEX so the host can demux into the right channel feed." }
   MESH_SEND_RESULT:      { code: 0x34, dir: F_TO_C, note: "Returns assigned pkt_id for a MESH_SEND so the host can track ACKs. Emitted in both Landlink and Meshtastic modes." }
+
+  # Channel management. Channels are (name, PSK) pairs mirroring the Meshtastic
+  # channel concept; up to 8 per device (index 0..7). Index 0 = Primary (cannot
+  # be deleted). Both Landlink and Meshtastic protocol modes use the same
+  # channel registry. CHANNEL_LIST_RESULT streams one EVT per occupied slot.
+  CHANNEL_LIST:          { code: 0x35, dir: C_TO_F }
+  CHANNEL_LIST_RESULT:   { code: 0x36, dir: F_TO_C, note: "One EVT per occupied slot; PSK included only on authed sessions." }
+  CHANNEL_SET:           { code: 0x37, dir: C_TO_F, note: "Not gated on authed(); mirrors MESH_JOIN's posture so unprovisioned devices can still receive channel config." }
+  CHANNEL_DELETE:        { code: 0x38, dir: C_TO_F }
+  CHANNEL_RESULT:        { code: 0x39, dir: F_TO_C, note: "Emitted after SET (carries new slot TLVs) and DELETE (CHANNEL_INDEX only)." }
 
   # Device telemetry (battery + GPS), pushed periodically while BLE is connected
   DEVICE_TELEMETRY:      { code: 0x70, dir: F_TO_C }
@@ -169,6 +179,12 @@ tlv_tags:
   # BLE mesh membership
   MESH_KEY:              { tag: 0xB0, type: bytes32 }
   MESH_SALT:             { tag: 0xB1, type: bytes8 }
+
+  # Channels
+  CHANNEL_INDEX:         { tag: 0xC0, type: u8,    desc: "Channel index 0..7" }
+  CHANNEL_NAME:          { tag: 0xC1, type: utf8,  desc: "Channel name, <=12 B (Meshtastic cap)" }
+  CHANNEL_PSK:           { tag: 0xC2, type: bytes, desc: "Pre-shared key, 1/16/32 B (Meshtastic PSK rules)" }
+  CHANNEL_ROLE:          { tag: 0xC3, type: u8,    desc: "0=primary, 1=secondary, 2=disabled" }
 
   # Errors
   ERR_CODE:              { tag: 0xF0, type: u8 }

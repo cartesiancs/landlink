@@ -13,8 +13,8 @@ import {
   updateRegisteredDevice,
 } from "@/entities/registered-device";
 import {
-  clearDeviceChannels,
-  setDeviceChannels,
+  clearChannels,
+  setChannels,
   type Channel as ChannelStoreEntry,
 } from "@/entities/meshtastic-channel";
 import {
@@ -93,7 +93,7 @@ async function runStoppers(): Promise<void> {
 function clearActive(): void {
   activeUnsubDisconnect?.();
   activeUnsubDisconnect = null;
-  if (activeDeviceId) clearDeviceChannels(activeDeviceId);
+  if (activeDeviceId) clearChannels(activeDeviceId);
   activeDeviceId = null;
   activeStoppers = [];
   pendingChannels = [];
@@ -166,7 +166,7 @@ function dispatchFromRadio(data: Uint8Array): void {
         channels: pendingChannels.length,
       });
       if (activeDeviceId) {
-        setDeviceChannels(activeDeviceId, pendingChannels);
+        setChannels(activeDeviceId, pendingChannels);
         pendingChannels = [];
       }
       setConnected();

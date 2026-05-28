@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
 
-import { useLandlinkDevice } from "@/entities/landlink-device";
 import {
-  addSecondary,
+  landlinkChannelSet,
+  useLandlinkDevice,
+} from "@/entities/landlink-device";
+import {
   generatePsk,
   nextFreeIndex,
 } from "@/entities/meshtastic-channel";
@@ -18,7 +20,7 @@ export function useCreateChannel() {
   const [error, setError] = useState<string | null>(null);
   const device = useLandlinkDevice();
 
-  const create = useCallback((name: string): boolean => {
+  const create = useCallback(async (name: string): Promise<boolean> => {
     const trimmed = name.trim();
     setError(null);
 
@@ -47,15 +49,19 @@ export function useCreateChannel() {
     }
 
     setStatus("creating");
-    addSecondary(device.deviceId, {
-      index,
-      name: trimmed,
-      psk: generatePsk(),
-      role: "secondary",
-      createdAt: Date.now(),
-    });
-    setStatus("success");
-    return true;
+    try {
+      // Write to the device's channel registry. The sync feature listens for
+      // the CHANNEL_RESULT EVT and updates the local store, so we don't
+      // mutate cache state here — that keeps the device authoritative and
+      // prevents the UI from drifting if the firmware rejected the slot.
+      await landlinkChannelSet(index, trimmed, generatePsk(), "secondary");
+      setStatus("success");
+      return true;
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Create failed");
+      return false;
+    }
   }, [device]);
 
   const reset = useCallback(() => {

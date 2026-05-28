@@ -96,6 +96,36 @@ export function onLandlinkPeerFound(handler: PeerFoundHandler): () => void {
   };
 }
 
+// Generic EVT bus. Fires for every decoded EVT frame after the client's
+// built-in handlers (telemetry, mesh-recv, ack-tracking, etc.) have run, so
+// downstream consumers can subscribe to opcodes the client does not own
+// (e.g. CHANNEL_LIST_RESULT, CHANNEL_RESULT) without each of them needing
+// their own characteristic subscription.
+export type LandlinkEvtFrame = {
+  opcode: number;
+  seq: number;
+  payload: Uint8Array;
+};
+type EvtHandler = (frame: LandlinkEvtFrame) => void;
+const evtHandlers = new Set<EvtHandler>();
+
+export function onLandlinkEvt(handler: EvtHandler): () => void {
+  evtHandlers.add(handler);
+  return () => {
+    evtHandlers.delete(handler);
+  };
+}
+
+function broadcastEvt(frame: LandlinkEvtFrame): void {
+  for (const h of evtHandlers) {
+    try {
+      h(frame);
+    } catch {
+      // handlers must not break the EVT stream
+    }
+  }
+}
+
 async function runStoppers(): Promise<void> {
   const stoppers = activeStoppers;
   activeStoppers = [];
@@ -163,6 +193,11 @@ export async function attachLandlinkClient(
         const frame = decodeFrame(data);
         if (!frame) return;
         const op = frame.opcode as number;
+        // Fan out to generic subscribers (channel-list/result, future
+        // unowned opcodes) before the client's own handlers — keeps the
+        // visible-side-effects ordering deterministic for consumers that
+        // also subscribe to store updates.
+        broadcastEvt({ opcode: op, seq: frame.seq, payload: frame.payload });
         if (op === Opcode.DEVICE_TELEMETRY) {
           setTelemetry(parseTelemetry(frame.payload));
         } else if (op === Opcode.MESH_SEND_RESULT) {
@@ -199,6 +234,7 @@ export async function attachLandlinkClient(
             text: parsed.text,
             direction: "incoming",
             receivedAt: parsed.receivedAt,
+            channelIndex: parsed.channelIndex,
           };
           if (parsed.pktId !== null) msg.pktId = parsed.pktId;
           appendMessage(msg);
@@ -219,6 +255,20 @@ export async function attachLandlinkClient(
               break;
             }
           }
+        } else if (op === Opcode.ERROR) {
+          // Firmware reports a per-command rejection (BAD_ARG, NOT_FOUND,
+          // BUSY, UNAUTHED, ...). The payload is the legacy 3-byte tuple
+          // [0xF0, 0x01, err_code] used by send_error() — surface it to the
+          // console so silent rejections (e.g. a CHANNEL_SET that the
+          // firmware refused) are diagnosable without a serial monitor.
+          const errCode =
+            frame.payload.byteLength >= 3 && frame.payload[0] === 0xf0
+              ? (frame.payload[2] ?? null)
+              : null;
+          console.warn(
+            "[landlink] ERROR seq=" + frame.seq.toString() +
+              " err=" + (errCode === null ? "?" : "0x" + errCode.toString(16).padStart(2, "0")),
+          );
         } else {
           setLastEvtFrame(frame);
         }
@@ -289,6 +339,16 @@ export async function detachLandlinkClient(deviceId: string): Promise<void> {
   setDisconnected();
 }
 
+// Web Bluetooth serializes GATT ops per-device but throws synchronously when
+// a second op starts before the first completes ("GATT operation already in
+// progress"). When the device first connects we have multiple callers
+// queuing writes back-to-back (RADIO_GET_PROTOCOL from attachLandlinkClient,
+// CHANNEL_LIST from useSyncDeviceChannels, future channel reads), so we
+// serialize at this layer via a per-process chain rather than asking each
+// caller to coordinate. A single FIFO is fine because we only ever talk to
+// one device at a time (the active session).
+let writeChain: Promise<unknown> = Promise.resolve();
+
 export async function sendLandlinkCommand(
   opcode: OpcodeValue,
   tlvs: readonly Tlv[] = [],
@@ -305,12 +365,19 @@ export async function sendLandlinkCommand(
   // pending entry already exists.
   onSeqAssigned?.(seq);
   const frame = encodeFrame(opcode, seq, encodeTlvs(tlvs));
-  await writeCharacteristic(
-    dev.deviceId,
-    LANDLINK_SERVICE_UUID,
-    LANDLINK_CHARACTERISTIC.CMD,
-    frame,
+  const deviceId = dev.deviceId;
+  const run = writeChain.then(() =>
+    writeCharacteristic(
+      deviceId,
+      LANDLINK_SERVICE_UUID,
+      LANDLINK_CHARACTERISTIC.CMD,
+      frame,
+    ),
   );
+  // Keep the chain alive even if this write rejects; the next caller still
+  // needs a serialization point, just not the failure.
+  writeChain = run.catch(() => undefined);
+  await run;
   return seq;
 }
 
@@ -344,13 +411,14 @@ export async function setLandlinkProtocolMode(mode: ProtocolMode): Promise<void>
   ]);
 }
 
-export function appendOutgoingMessage(text: string): void {
+export function appendOutgoingMessage(text: string, channelIndex = 0): void {
   const dev = getState();
   appendMessage({
     senderNodeId: dev?.info?.nodeId ?? "self",
     text,
     direction: "outgoing",
     receivedAt: Date.now(),
+    channelIndex,
   });
 }
 
@@ -358,13 +426,18 @@ export function appendOutgoingMessage(text: string): void {
 // BLE seq used to write the MESH_SEND command. The retry tracker correlates
 // this with the firmware's MESH_SEND_RESULT to attach a pkt_id and drive the
 // "delivered"/"failed" transitions.
-export function appendOutgoingPending(text: string, bleSeq: number): void {
+export function appendOutgoingPending(
+  text: string,
+  bleSeq: number,
+  channelIndex = 0,
+): void {
   const dev = getState();
   appendMessage({
     senderNodeId: dev?.info?.nodeId ?? "self",
     text,
     direction: "outgoing",
     receivedAt: Date.now(),
+    channelIndex,
     bleSeq,
     status: "sending",
     attempts: 1,

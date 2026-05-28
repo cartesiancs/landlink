@@ -3,6 +3,7 @@ import { StrictMode, type ReactNode } from "react";
 import { ThemeProvider, useTheme } from "@/entities/theme";
 import { useLoraDiscovery } from "@/features/lora-discovery";
 import { useLiveDeviceSync } from "@/features/register-device";
+import { useSyncDeviceChannels } from "@/features/sync-device-channels";
 import { useKeyboardInset } from "@/shared/lib";
 import { Toaster } from "@/shared/ui";
 
@@ -32,6 +33,11 @@ function LoraDiscoveryBridge() {
   return null;
 }
 
+function ChannelSyncBridge() {
+  useSyncDeviceChannels();
+  return null;
+}
+
 function KeyboardInsetBridge() {
   useKeyboardInset();
   return null;
@@ -43,6 +49,7 @@ export function AppProviders({ children }: AppProvidersProps) {
       <ThemeProvider>
         <LiveDeviceSyncBridge />
         <LoraDiscoveryBridge />
+        <ChannelSyncBridge />
         <KeyboardInsetBridge />
         {children}
         <ThemedToaster />

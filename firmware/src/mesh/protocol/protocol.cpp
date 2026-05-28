@@ -3,7 +3,6 @@
 #include <cstring>
 
 #include "hal/storage/storage.h"
-#include "mesh/meshtastic/channel.h"
 #include "mesh/router/router.h"
 #include "shared/util/log.h"
 #include "transport/lora/sx1262_driver.h"
@@ -36,14 +35,13 @@ Mode init(const InitContext& ctx, ::landlink::mesh::Router& landlink_router) {
     s_region   = ctx.region;
     s_landlink = &landlink_router;
 
-    // Configure the Meshtastic router with the default LongFast channel. We do
-    // this unconditionally so the router is ready even if the user toggles to
-    // Meshtastic mode later without rebooting.
+    // Channel set lives in the central registry (mesh/channel/registry.h);
+    // the routers read keys/hashes from there per-frame. Slot 0 is always
+    // populated (registry handles migration on first boot), so we just
+    // configure self_id and hop limit here.
     meshtastic::RouterConfig mt_cfg;
     mt_cfg.self_id           = ctx.self_id;
     mt_cfg.default_hop_limit = 3;
-    mt_cfg.channel_name      = "LongFast";
-    meshtastic::default_channel(mt_cfg.channel_key, mt_cfg.channel_hash);
     s_mt_router.init(mt_cfg);
 
     uint8_t stored = 0;

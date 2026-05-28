@@ -98,7 +98,11 @@ bool send_nodeinfo() {
 
     uint8_t frame[kMaxFrame];
     uint32_t assigned = 0;
+    // NodeInfo broadcasts on Primary (channel 0). Real Meshtastic nodes do
+    // the same — secondary channels carry chat/sensor traffic, never
+    // identity beacons (those need to be readable across every group).
     const size_t frame_len = mesh::protocol::meshtastic_router().originate_data(
+        /*channel_index=*/0,
         kBroadcastAddr, /*want_ack=*/false,
         data_buf, data_len, frame, sizeof(frame), &assigned);
     if (frame_len == 0) {
@@ -159,7 +163,9 @@ bool send_position() {
 
     uint8_t frame[kMaxFrame];
     uint32_t assigned = 0;
+    // Position broadcasts on Primary — same rationale as NodeInfo above.
     const size_t frame_len = mesh::protocol::meshtastic_router().originate_data(
+        /*channel_index=*/0,
         kBroadcastAddr, /*want_ack=*/false,
         data_buf, data_len, frame, sizeof(frame), &assigned);
     if (frame_len == 0) {

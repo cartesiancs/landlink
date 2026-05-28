@@ -43,8 +43,10 @@ export function CreateChannelDialog({
     e.preventDefault();
     if (!canCreate || tooLong || name.trim().length === 0) return;
     hapticTick();
-    const ok = create(name);
-    if (ok) onOpenChange(false);
+    void (async () => {
+      const ok = await create(name);
+      if (ok) onOpenChange(false);
+    })();
   }
 
   return (

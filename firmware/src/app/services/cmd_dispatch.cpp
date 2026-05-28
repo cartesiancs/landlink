@@ -8,6 +8,7 @@
 #include "features/ota/ota.h"
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/storage/storage.h"
+#include "mesh/channel/registry.h"
 #include "mesh/frame/frame.h"
 #include "mesh/protocol/protocol.h"
 #include "shared/protocol/opcodes.h"
@@ -138,7 +139,13 @@ bool handle_cmd(Opcode op, uint8_t seq,
     case Opcode::MESH_JOIN: {
         landlink::Tlv k;
         if (!r.find(TlvTag::MESH_KEY, k) || k.len != 32) return false;
+        // Legacy join: install the supplied 32-byte network key as Primary
+        // (channel slot 0). Also persist the raw key under the legacy NVS
+        // location so the next boot's registry migration picks it up if
+        // slot 0 has been wiped.
         hal::storage::set_wrapped("ll.net", "key", k.data, 32);
+        mesh::channel::add_or_update(0, "Primary", k.data, 32,
+                                     mesh::channel::RolePrimary);
         landlink::Tlv m;
         if (r.find(TlvTag::MESH_ID, m) && m.len == 2) {
             hal::storage::set_blob("ll.net", "mesh_id", m.data, 2);
@@ -151,8 +158,135 @@ bool handle_cmd(Opcode op, uint8_t seq,
         hal::storage::erase_namespace("ll.net");
         return true;
 
+    case Opcode::CHANNEL_LIST: {
+        // Stream one EVT per occupied slot. Mirrors the WIFI_SCAN_RESULT
+        // pattern so we never need fragmentation. PSK is included only when
+        // the BLE session has cleared pair-confirm (same bar as KEY_EXPORT),
+        // letting authed phones build share-channel QR codes while denying
+        // unauthed sniffers the secret.
+        //
+        // Iterate directly via channel::get() rather than snapshotting into a
+        // Slot[8] on the stack: each Slot is ~120 bytes, so the array form
+        // overflowed the NimBLE host task stack (~3 KB) once the cmd handler
+        // also frame/tlv-buffered on the same frame.
+        const bool include_psk = authed();
+        for (uint8_t i = 0; i < mesh::channel::kMaxSlots; ++i) {
+            const auto* s = mesh::channel::get(i);
+            if (s == nullptr) continue;
+            uint8_t buf[64];
+            landlink::TlvBuilder b(buf, sizeof(buf));
+            b.put_u8(TlvTag::CHANNEL_INDEX, s->index);
+            b.put(TlvTag::CHANNEL_NAME,
+                  reinterpret_cast<const uint8_t*>(s->name),
+                  static_cast<uint8_t>(std::strlen(s->name)));
+            b.put_u8(TlvTag::CHANNEL_ROLE, s->role);
+            if (include_psk) {
+                b.put(TlvTag::CHANNEL_PSK, s->psk_raw,
+                      static_cast<uint8_t>(s->psk_raw_len));
+            }
+            transport::ble::notify_evt(Opcode::CHANNEL_LIST_RESULT, seq,
+                                       b.data(), b.size());
+        }
+        return true;
+    }
+
+    case Opcode::CHANNEL_SET: {
+        // Not gated on authed(): mirrors MESH_JOIN, which installs the
+        // primary 32-byte network key without authentication. Channel CRUD
+        // is no more sensitive than that, and gating here makes the feature
+        // unusable on unprovisioned devices (which is everyone right after
+        // first pairing).
+        landlink::Tlv idx_tlv, name_tlv, psk_tlv, role_tlv;
+        if (!r.find(TlvTag::CHANNEL_INDEX, idx_tlv) || idx_tlv.len != 1) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        const uint8_t index = idx_tlv.data[0];
+        if (index >= mesh::channel::kMaxSlots) {
+            send_error(seq, 0x01);
+            return true;
+        }
+        const char* name_ptr = "";
+        size_t      name_len = 0;
+        if (r.find(TlvTag::CHANNEL_NAME, name_tlv)) {
+            name_ptr = reinterpret_cast<const char*>(name_tlv.data);
+            name_len = name_tlv.len;
+        }
+        // Bail on missing PSK; the registry rejects empty PSKs anyway, but
+        // BAD_ARG here gives the host a clearer signal.
+        if (!r.find(TlvTag::CHANNEL_PSK, psk_tlv) ||
+            (psk_tlv.len != 1 && psk_tlv.len != 16 && psk_tlv.len != 32)) {
+            send_error(seq, 0x01);
+            return true;
+        }
+        uint8_t role = (index == 0)
+            ? mesh::channel::RolePrimary
+            : mesh::channel::RoleSecondary;
+        if (r.find(TlvTag::CHANNEL_ROLE, role_tlv) && role_tlv.len == 1) {
+            role = role_tlv.data[0];
+        }
+
+        // Copy name into a NUL-terminated stack buffer because the registry
+        // expects a C string; the source TLV is not NUL-terminated.
+        char name_buf[mesh::channel::kMaxNameBytes + 1] = { 0 };
+        const size_t copy_len = name_len > mesh::channel::kMaxNameBytes
+            ? mesh::channel::kMaxNameBytes
+            : name_len;
+        std::memcpy(name_buf, name_ptr, copy_len);
+        name_buf[copy_len] = '\0';
+
+        if (!mesh::channel::add_or_update(index, name_buf,
+                                          psk_tlv.data, psk_tlv.len, role)) {
+            send_error(seq, 0x08 /* STORAGE_FAIL */);
+            return true;
+        }
+        // Echo back the new slot so the host can refresh without a follow-up
+        // CHANNEL_LIST.
+        const auto* slot = mesh::channel::get(index);
+        if (slot != nullptr) {
+            uint8_t buf[64];
+            landlink::TlvBuilder b(buf, sizeof(buf));
+            b.put_u8(TlvTag::CHANNEL_INDEX, slot->index);
+            b.put(TlvTag::CHANNEL_NAME,
+                  reinterpret_cast<const uint8_t*>(slot->name),
+                  static_cast<uint8_t>(std::strlen(slot->name)));
+            b.put_u8(TlvTag::CHANNEL_ROLE, slot->role);
+            b.put(TlvTag::CHANNEL_PSK, slot->psk_raw,
+                  static_cast<uint8_t>(slot->psk_raw_len));
+            transport::ble::notify_evt(Opcode::CHANNEL_RESULT, seq,
+                                       b.data(), b.size());
+        }
+        return true;
+    }
+
+    case Opcode::CHANNEL_DELETE: {
+        // See CHANNEL_SET above for the not-authed-gated rationale.
+        landlink::Tlv idx_tlv;
+        if (!r.find(TlvTag::CHANNEL_INDEX, idx_tlv) || idx_tlv.len != 1) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        const uint8_t index = idx_tlv.data[0];
+        if (index == 0 || index >= mesh::channel::kMaxSlots) {
+            // Primary is mandatory; anything out of range is a bad request.
+            send_error(seq, 0x01);
+            return true;
+        }
+        if (!mesh::channel::remove(index)) {
+            send_error(seq, 0x04 /* NOT_FOUND */);
+            return true;
+        }
+        // Bare CHANNEL_INDEX in CHANNEL_RESULT signals deletion to the host.
+        uint8_t buf[8];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put_u8(TlvTag::CHANNEL_INDEX, index);
+        transport::ble::notify_evt(Opcode::CHANNEL_RESULT, seq,
+                                   b.data(), b.size());
+        return true;
+    }
+
     case Opcode::MESH_SEND: {
-        landlink::Tlv kind, text, dst_tlv, retry_tlv;
+        landlink::Tlv kind, text, dst_tlv, retry_tlv, ch_tlv;
         if (!r.find(TlvTag::KIND, kind) || kind.len != 1 ||
             kind.data[0] != 0x01 /* MeshKind::CHAT_TEXT */) {
             LL_LOG_W(kTag, "MESH_SEND bad KIND");
@@ -179,12 +313,33 @@ bool handle_cmd(Opcode op, uint8_t seq,
                            (static_cast<uint32_t>(retry_tlv.data[2]) << 16) |
                            (static_cast<uint32_t>(retry_tlv.data[3]) << 24);
         }
-        LL_LOG_I(kTag, "MESH_SEND dst=%08x len=%u retry=%u",
+        // Channel index defaults to 0 (Primary) when the host doesn't
+        // supply it — keeps hosts that predate multi-channel support
+        // working unchanged.
+        uint8_t channel_index = 0;
+        if (r.find(TlvTag::CHANNEL_INDEX, ch_tlv) && ch_tlv.len == 1) {
+            channel_index = ch_tlv.data[0];
+        }
+        if (channel_index >= mesh::channel::kMaxSlots) {
+            LL_LOG_W(kTag, "MESH_SEND bad channel %u",
+                     static_cast<unsigned>(channel_index));
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        if (mesh::channel::get(channel_index) == nullptr) {
+            LL_LOG_W(kTag, "MESH_SEND channel %u empty",
+                     static_cast<unsigned>(channel_index));
+            send_error(seq, 0x04 /* NOT_FOUND */);
+            return true;
+        }
+        LL_LOG_I(kTag, "MESH_SEND ch=%u dst=%08x len=%u retry=%u",
+                 static_cast<unsigned>(channel_index),
                  static_cast<unsigned>(dst), text.len,
                  static_cast<unsigned>(retry_pkt_id));
         uint32_t assigned_pkt_id = 0;
         const bool ok = features::mesh_chat::send_chat(
-            dst, reinterpret_cast<const char*>(text.data), text.len,
+            channel_index, dst,
+            reinterpret_cast<const char*>(text.data), text.len,
             /*reply_to*/0, retry_pkt_id, &assigned_pkt_id);
         if (!ok) {
             LL_LOG_W(kTag, "MESH_SEND send_chat failed");

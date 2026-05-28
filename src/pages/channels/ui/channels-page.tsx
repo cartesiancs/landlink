@@ -22,10 +22,12 @@ export function ChannelsPage() {
   const registered = device
     ? findDevice(registeredDevices, device.deviceId)
     : null;
-  // Meshtastic channels are device-managed (added/removed via admin_message
-  // writes to NVS). Local-only creation would lie to the user about what's
-  // configured on-device, so we hide the affordance for that family.
-  const canCreateLocally = registered?.protocol !== "meshtastic";
+  // Landlink-family devices accept channel CRUD via our BLE CHANNEL_* opcodes
+  // (the firmware's shared channel registry covers both protocol modes).
+  // Stock Meshtastic devices speak admin_message instead, which we don't
+  // implement on this app — they stay read-only here, managed via the
+  // official Meshtastic app.
+  const canCreateOnDevice = registered?.protocol !== "meshtastic";
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -49,7 +51,7 @@ export function ChannelsPage() {
         )}
       >
         <ChannelList />
-        {canCreateLocally ? (
+        {canCreateOnDevice ? (
           <Button
             variant="outline"
             size="lg"

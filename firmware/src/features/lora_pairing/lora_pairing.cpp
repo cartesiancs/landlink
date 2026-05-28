@@ -222,7 +222,11 @@ void send_beacon() {
     }
 
     uint8_t frame[landlink::mesh::kMaxFrame];
+    // Beacons (peer discovery + telemetry) ride on Primary so they're
+    // visible to every paired phone regardless of which secondary
+    // channels are configured.
     const size_t frame_len = landlink::app::services::g_router.originate(
+        /*channel_index=*/0,
         landlink::mesh::kBroadcastAddr, 0, payload, b.size(),
         frame, sizeof(frame));
     if (frame_len == 0) {

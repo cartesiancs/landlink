@@ -4,6 +4,7 @@
 
 #include <cstring>
 
+#include "mesh/channel/registry.h"
 #include "mesh/crypto/aes_ccm.h"
 #include "shared/util/log.h"
 
@@ -38,9 +39,8 @@ void build_nonce(uint32_t src, uint32_t counter, const uint8_t hdr_nonce[7],
 }
 } // namespace
 
-void Router::init(const RouterConfig& cfg, const uint8_t network_key[32]) {
+void Router::init(const RouterConfig& cfg) {
     cfg_ = cfg;
-    landlink::mesh::crypto::derive_session_key(network_key, session_key_);
     next_pkt_id_ = 1;
     tx_counter_  = 0;
     dedup_.clear();
@@ -50,7 +50,8 @@ void Router::random_nonce(uint8_t out[7]) {
     esp_fill_random(out, 7);
 }
 
-bool Router::encode_frame(Header& h,
+bool Router::encode_frame(const uint8_t session_key[16],
+                          Header& h,
                           const uint8_t* plaintext, size_t plaintext_len,
                           uint8_t* out, size_t out_cap, size_t& out_len) {
     if (plaintext_len > kMaxPayload)         return false;
@@ -68,7 +69,7 @@ bool Router::encode_frame(Header& h,
     uint8_t* ct  = out + kHeaderLen;
     uint8_t* tag = ct + plaintext_len;
 
-    if (!landlink::mesh::crypto::encrypt(session_key_,
+    if (!landlink::mesh::crypto::encrypt(session_key,
                                          aad, kHeaderLen,
                                          nonce,
                                          plaintext, plaintext_len,
@@ -80,8 +81,9 @@ bool Router::encode_frame(Header& h,
     return true;
 }
 
-bool Router::decode_frame(const uint8_t* in, size_t in_len,
-                          Header& h, uint8_t* plain_out, size_t& plain_len) {
+bool Router::try_decode_frame(const uint8_t* in, size_t in_len,
+                              Header& h, uint8_t* plain_out, size_t& plain_len,
+                              uint8_t& out_channel_index) {
     if (!unpack_header(in, in_len, h)) return false;
     const size_t expected = kHeaderLen + h.payload_len + kMicLen;
     if (in_len < expected)                return false;
@@ -97,24 +99,39 @@ bool Router::decode_frame(const uint8_t* in, size_t in_len,
     const uint8_t* ct  = in + kHeaderLen;
     const uint8_t* tag = ct + h.payload_len;
 
-    if (!landlink::mesh::crypto::decrypt(session_key_,
-                                         aad, kHeaderLen,
-                                         nonce,
-                                         ct, h.payload_len,
-                                         tag,
-                                         plain_out)) {
-        return false;
+    // Trial-decrypt against each occupied channel slot. The CCM 4-byte MIC
+    // is the oracle — at most one configured key will verify.
+    for (uint8_t i = 0; i < channel::kMaxSlots; ++i) {
+        const channel::Slot* slot = channel::get(i);
+        if (slot == nullptr) continue;
+        if (landlink::mesh::crypto::decrypt(slot->ll_session_key,
+                                            aad, kHeaderLen,
+                                            nonce,
+                                            ct, h.payload_len,
+                                            tag,
+                                            plain_out)) {
+            plain_len         = h.payload_len;
+            out_channel_index = i;
+            return true;
+        }
     }
-    plain_len = h.payload_len;
-    return true;
+    return false;
 }
 
-size_t Router::originate(uint32_t dst,
+size_t Router::originate(uint8_t channel_index,
+                         uint32_t dst,
                          uint8_t  flags,
                          const uint8_t* payload, size_t payload_len,
                          uint8_t* out, size_t out_cap,
                          uint32_t reuse_pkt_id,
                          uint32_t* out_pkt_id) {
+    const channel::Slot* slot = channel::get(channel_index);
+    if (slot == nullptr) {
+        LL_LOG_W(kTag, "originate: channel %u empty",
+                 static_cast<unsigned>(channel_index));
+        return 0;
+    }
+
     Header h;
     h.flags      = flags | FlagEncrypted | (dst != kBroadcastAddr ? FlagUnicast : 0);
     h.mesh_id    = cfg_.mesh_id;
@@ -130,7 +147,8 @@ size_t Router::originate(uint32_t dst,
     dedup_.seen_or_insert(h.src, h.pkt_id);  // do not echo to self
 
     size_t out_len = 0;
-    if (!encode_frame(h, payload, payload_len, out, out_cap, out_len)) {
+    if (!encode_frame(slot->ll_session_key,
+                      h, payload, payload_len, out, out_cap, out_len)) {
         LL_LOG_W(kTag, "encode failed");
         return 0;
     }
@@ -146,8 +164,9 @@ void Router::on_rx(const uint8_t* frame, size_t frame_len,
     Header h;
     uint8_t plain[kMaxPayload];
     size_t  plain_len = sizeof(plain);
-    if (!decode_frame(frame, frame_len, h, plain, plain_len)) {
-        LL_LOG_W(kTag, "rx decode fail");
+    uint8_t channel_index = 0;
+    if (!try_decode_frame(frame, frame_len, h, plain, plain_len, channel_index)) {
+        LL_LOG_W(kTag, "rx decode fail (no channel key matched)");
         return;
     }
     if (h.mesh_id != cfg_.mesh_id)                      return;
@@ -155,7 +174,7 @@ void Router::on_rx(const uint8_t* frame, size_t frame_len,
 
     const bool for_us = (h.dst == cfg_.self_id || h.dst == kBroadcastAddr);
     if (for_us && sink_) {
-        sink_(h, plain, plain_len, duplicate);
+        sink_(h, channel_index, plain, plain_len, duplicate);
     }
 
     // Duplicates are not re-forwarded; flooding loop protection.
@@ -172,10 +191,6 @@ void Router::on_rx(const uint8_t* frame, size_t frame_len,
     // AAD (header is hashed pre-serialization at origin; we accept header
     // mutation at relays and rely on CCM over the encrypted body + fixed AAD
     // which is the *original* header bytes that we already validated above).
-    //
-    // Implementation shortcut: emit the original bytes with just hop_count
-    // bumped. This is safe because AAD in on_rx() was computed over `in` which
-    // we copy verbatim, so downstream receivers verify against the same AAD.
     std::memcpy(forward_out, frame, frame_len);
     uint8_t& hops_byte = forward_out[kHopsByteOffset];
     const uint8_t hop_limit = (hops_byte >> 4) & 0xF;

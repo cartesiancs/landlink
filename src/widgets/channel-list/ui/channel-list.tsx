@@ -1,11 +1,13 @@
 import { useState } from "react";
 
 import {
-  removeSecondary,
+  landlinkChannelDelete,
+  useLandlinkDevice,
+} from "@/entities/landlink-device";
+import {
   useChannels,
   type Channel,
 } from "@/entities/meshtastic-channel";
-import { useLandlinkDevice } from "@/entities/landlink-device";
 import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
 import { hapticTick } from "@/shared/lib";
 import {
@@ -48,8 +50,15 @@ export function ChannelList() {
       return;
     }
     hapticTick();
-    removeSecondary(device.deviceId, pendingDelete.index);
+    const index = pendingDelete.index;
     setPendingDelete(null);
+    // Fire-and-forget: the sync feature observes the CHANNEL_RESULT EVT
+    // and removes the slot from the local cache. If the device rejects
+    // the delete (e.g. busy on another transaction), the row stays put
+    // and the user can retry.
+    void landlinkChannelDelete(index).catch((err: unknown) => {
+      console.warn("[channels] delete failed", index, err);
+    });
   };
 
   return (

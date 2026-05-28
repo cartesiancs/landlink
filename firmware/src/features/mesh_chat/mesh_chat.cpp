@@ -37,11 +37,12 @@ constexpr size_t   kMaxPendingAcks = 8;
 constexpr uint32_t kAckMaxJitterMs = 3000;
 
 struct PendingAck {
-    bool     active     = false;
-    bool     meshtastic = false;  // true => emit Routing ACK; false => Landlink KIND=ACK
-    uint32_t dst        = 0;
-    uint32_t pkt_id     = 0;
-    uint32_t due_ms     = 0;
+    bool     active        = false;
+    bool     meshtastic    = false;  // true => emit Routing ACK; false => Landlink KIND=ACK
+    uint8_t  channel_index = 0;
+    uint32_t dst           = 0;
+    uint32_t pkt_id        = 0;
+    uint32_t due_ms        = 0;
 };
 
 PendingAck         s_pending_acks[kMaxPendingAcks];
@@ -53,20 +54,23 @@ void ensure_pending_mtx() {
     }
 }
 
-void emit_recv_event(uint32_t src, uint32_t pkt_id,
+void emit_recv_event(uint8_t channel_index,
+                     uint32_t src, uint32_t pkt_id,
                      const uint8_t* text, size_t text_len) {
     const size_t cap = static_cast<size_t>(text_len > 200 ? 200 : text_len);
     uint8_t buf[240];
     landlink::TlvBuilder b(buf, sizeof(buf));
-    b.put_u32(TlvTag::NODE_ID,    src);
-    b.put_u32(TlvTag::ACK_PKT_ID, pkt_id);
-    b.put_u8 (TlvTag::KIND,       kKindChatText);
+    b.put_u32(TlvTag::NODE_ID,        src);
+    b.put_u32(TlvTag::ACK_PKT_ID,     pkt_id);
+    b.put_u8 (TlvTag::CHANNEL_INDEX,  channel_index);
+    b.put_u8 (TlvTag::KIND,           kKindChatText);
     b.put(TlvTag::CHAT_TEXT, text, static_cast<uint8_t>(cap));
     landlink::transport::ble::notify_evt(Opcode::MESH_RECV, 0,
                                          b.data(), b.size());
 }
 
-bool send_chat_landlink(uint32_t dst,
+bool send_chat_landlink(uint8_t channel_index,
+                        uint32_t dst,
                         const char* utf8, size_t utf8_len,
                         uint32_t reply_to_pkt_id,
                         uint32_t retry_pkt_id,
@@ -82,14 +86,15 @@ bool send_chat_landlink(uint32_t dst,
     uint8_t frame[landlink::mesh::kMaxFrame];
     uint32_t assigned = 0;
     const size_t frame_len = landlink::app::services::g_router.originate(
-        dst, 0, tlv, tlv_len, frame, sizeof(frame),
+        channel_index, dst, 0, tlv, tlv_len, frame, sizeof(frame),
         retry_pkt_id, &assigned);
     if (frame_len == 0) {
         LL_LOG_W(kTag, "send_chat originate failed");
         return false;
     }
     const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
-    LL_LOG_I(kTag, "send_chat[ll] dst=%08x tlv=%u frame=%u pkt_id=%u retry=%u tx=%d",
+    LL_LOG_I(kTag, "send_chat[ll] ch=%u dst=%08x tlv=%u frame=%u pkt_id=%u retry=%u tx=%d",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(tlv_len),
              static_cast<unsigned>(frame_len),
@@ -100,7 +105,8 @@ bool send_chat_landlink(uint32_t dst,
     return ok;
 }
 
-bool send_chat_meshtastic(uint32_t dst,
+bool send_chat_meshtastic(uint8_t channel_index,
+                          uint32_t dst,
                           const char* utf8, size_t utf8_len,
                           uint32_t* out_pkt_id) {
     using mesh::meshtastic::kMaxFrame;
@@ -116,7 +122,7 @@ bool send_chat_meshtastic(uint32_t dst,
     // worst case is a missing ACK for those peers — UX gracefully degrades.
     const bool want_ack = true;
     const size_t frame_len = mesh::protocol::meshtastic_router().originate(
-        dst, want_ack, kPortnumTextMessageApp,
+        channel_index, dst, want_ack, kPortnumTextMessageApp,
         reinterpret_cast<const uint8_t*>(utf8), utf8_len,
         frame, sizeof(frame), &assigned);
     if (frame_len == 0) {
@@ -124,7 +130,8 @@ bool send_chat_meshtastic(uint32_t dst,
         return false;
     }
     const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
-    LL_LOG_I(kTag, "send_chat[mt] dst=%08x text=%u frame=%u pkt_id=%u want_ack=%d tx=%d",
+    LL_LOG_I(kTag, "send_chat[mt] ch=%u dst=%08x text=%u frame=%u pkt_id=%u want_ack=%d tx=%d",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(utf8_len),
              static_cast<unsigned>(frame_len),
@@ -135,11 +142,10 @@ bool send_chat_meshtastic(uint32_t dst,
     return ok;
 }
 
-// Build + queue a Meshtastic Routing ACK back to the original sender.
-// Wire form: Data{ portnum=ROUTING_APP, request_id=<acked pkt_id>, payload=()
-// (an empty Routing message, which represents error_reason=NONE = ACK) }.
-// Always unicast — broadcasts are never ACKed.
-bool send_meshtastic_routing_ack(uint32_t dst, uint32_t ref_pkt_id) {
+// Build + queue a Meshtastic Routing ACK back to the original sender on the
+// channel the chat was received on.
+bool send_meshtastic_routing_ack(uint8_t channel_index,
+                                 uint32_t dst, uint32_t ref_pkt_id) {
     using mesh::meshtastic::kMaxFrame;
     using mesh::meshtastic::kMaxPayload;
     using mesh::meshtastic::kPortnumRoutingApp;
@@ -153,7 +159,7 @@ bool send_meshtastic_routing_ack(uint32_t dst, uint32_t ref_pkt_id) {
     uint8_t frame[kMaxFrame];
     uint32_t assigned = 0;
     const size_t frame_len = mesh::protocol::meshtastic_router().originate_data(
-        dst, /*want_ack=*/false, pb_buf, pb_len,
+        channel_index, dst, /*want_ack=*/false, pb_buf, pb_len,
         frame, sizeof(frame), &assigned);
     if (frame_len == 0) {
         LL_LOG_W(kTag, "send_mt_ack originate failed dst=%08x ref=%u",
@@ -162,7 +168,8 @@ bool send_meshtastic_routing_ack(uint32_t dst, uint32_t ref_pkt_id) {
         return false;
     }
     const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
-    LL_LOG_I(kTag, "send_mt_ack dst=%08x ref=%u pkt_id=%u tx=%d",
+    LL_LOG_I(kTag, "send_mt_ack ch=%u dst=%08x ref=%u pkt_id=%u tx=%d",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(ref_pkt_id),
              static_cast<unsigned>(assigned),
@@ -170,10 +177,9 @@ bool send_meshtastic_routing_ack(uint32_t dst, uint32_t ref_pkt_id) {
     return ok;
 }
 
-// Build + queue a KIND=ACK frame back to the original sender. No body; the
-// ACK_PKT_ID TLV identifies which message is being acknowledged. Unicast even
-// when the original message was broadcast.
-bool send_ack(uint32_t dst, uint32_t ack_pkt_id) {
+// Build + queue a KIND=ACK frame back to the original sender on the channel
+// the original chat arrived on.
+bool send_ack(uint8_t channel_index, uint32_t dst, uint32_t ack_pkt_id) {
     uint8_t tlv[16];
     landlink::TlvBuilder b(tlv, sizeof(tlv));
     if (!b.put_u8 (TlvTag::KIND,       kKindAck))     return false;
@@ -181,7 +187,8 @@ bool send_ack(uint32_t dst, uint32_t ack_pkt_id) {
 
     uint8_t frame[landlink::mesh::kMaxFrame];
     const size_t frame_len = landlink::app::services::g_router.originate(
-        dst, /*flags*/0, b.data(), b.size(), frame, sizeof(frame));
+        channel_index, dst, /*flags*/0, b.data(), b.size(),
+        frame, sizeof(frame));
     if (frame_len == 0) {
         LL_LOG_W(kTag, "send_ack originate failed dst=%08x ref=%u",
                  static_cast<unsigned>(dst),
@@ -189,7 +196,8 @@ bool send_ack(uint32_t dst, uint32_t ack_pkt_id) {
         return false;
     }
     const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
-    LL_LOG_I(kTag, "send_ack dst=%08x ref=%u tx=%d",
+    LL_LOG_I(kTag, "send_ack ch=%u dst=%08x ref=%u tx=%d",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(ack_pkt_id),
              ok ? 1 : 0);
@@ -199,9 +207,10 @@ bool send_ack(uint32_t dst, uint32_t ack_pkt_id) {
 // WHY: ACK from the RX task on a broadcast chat with N receivers would collide
 // on-air. Each receiver waits a random 0..3s before transmitting, which spaces
 // the bursts enough for the SX1262 CAD to find a quiet slot. Coalescing
-// duplicates (same dst+pkt_id+meshtastic already queued) avoids re-arming the
-// timer when retransmissions arrive in rapid succession.
-bool enqueue_ack_with_kind(uint32_t dst, uint32_t pkt_id, bool meshtastic) {
+// duplicates (same dst+pkt_id+meshtastic+channel already queued) avoids
+// re-arming the timer when retransmissions arrive in rapid succession.
+bool enqueue_ack_with_kind(uint8_t channel_index,
+                           uint32_t dst, uint32_t pkt_id, bool meshtastic) {
     ensure_pending_mtx();
     const uint32_t jitter = static_cast<uint32_t>(esp_random()) % kAckMaxJitterMs;
     const uint32_t now    = millis();
@@ -209,7 +218,8 @@ bool enqueue_ack_with_kind(uint32_t dst, uint32_t pkt_id, bool meshtastic) {
     xSemaphoreTake(s_pending_mtx, portMAX_DELAY);
     for (auto& slot : s_pending_acks) {
         if (slot.active && slot.dst == dst && slot.pkt_id == pkt_id &&
-            slot.meshtastic == meshtastic) {
+            slot.meshtastic == meshtastic &&
+            slot.channel_index == channel_index) {
             ok = true;  // already scheduled; keep earliest deadline
             break;
         }
@@ -217,11 +227,12 @@ bool enqueue_ack_with_kind(uint32_t dst, uint32_t pkt_id, bool meshtastic) {
     if (!ok) {
         for (auto& slot : s_pending_acks) {
             if (!slot.active) {
-                slot.active     = true;
-                slot.meshtastic = meshtastic;
-                slot.dst        = dst;
-                slot.pkt_id     = pkt_id;
-                slot.due_ms     = now + jitter;
+                slot.active        = true;
+                slot.meshtastic    = meshtastic;
+                slot.channel_index = channel_index;
+                slot.dst           = dst;
+                slot.pkt_id        = pkt_id;
+                slot.due_ms        = now + jitter;
                 ok = true;
                 break;
             }
@@ -237,12 +248,13 @@ bool enqueue_ack_with_kind(uint32_t dst, uint32_t pkt_id, bool meshtastic) {
     return ok;
 }
 
-bool enqueue_ack(uint32_t dst, uint32_t pkt_id) {
-    return enqueue_ack_with_kind(dst, pkt_id, /*meshtastic=*/false);
+bool enqueue_ack(uint8_t channel_index, uint32_t dst, uint32_t pkt_id) {
+    return enqueue_ack_with_kind(channel_index, dst, pkt_id, /*meshtastic=*/false);
 }
 
-bool enqueue_meshtastic_ack(uint32_t dst, uint32_t pkt_id) {
-    return enqueue_ack_with_kind(dst, pkt_id, /*meshtastic=*/true);
+bool enqueue_meshtastic_ack(uint8_t channel_index,
+                            uint32_t dst, uint32_t pkt_id) {
+    return enqueue_ack_with_kind(channel_index, dst, pkt_id, /*meshtastic=*/true);
 }
 
 } // namespace
@@ -259,7 +271,8 @@ size_t build_chat(uint32_t reply_to_pkt_id,
     return b.size();
 }
 
-bool send_chat(uint32_t dst,
+bool send_chat(uint8_t channel_index,
+               uint32_t dst,
                const char* utf8, size_t utf8_len,
                uint32_t reply_to_pkt_id,
                uint32_t retry_pkt_id,
@@ -274,16 +287,19 @@ bool send_chat(uint32_t dst,
         // Meshtastic mode ignores retry_pkt_id (no equivalent on the wire),
         // but does surface the assigned pkt_id so the host can resolve a
         // matching Routing ACK reply back into a "delivered" UI state.
-        return send_chat_meshtastic(dst, utf8, utf8_len, out_pkt_id);
+        return send_chat_meshtastic(channel_index, dst, utf8, utf8_len,
+                                    out_pkt_id);
     }
-    return send_chat_landlink(dst, utf8, utf8_len, reply_to_pkt_id,
-                              retry_pkt_id, out_pkt_id);
+    return send_chat_landlink(channel_index, dst, utf8, utf8_len,
+                              reply_to_pkt_id, retry_pkt_id, out_pkt_id);
 }
 
 void on_chat(const landlink::mesh::Header& h,
+             uint8_t channel_index,
              const uint8_t* tlv_payload, size_t tlv_len,
              bool duplicate) {
-    LL_LOG_I(kTag, "on_chat[ll] CHAT src=%08x pkt_id=%u tlv_len=%u dup=%d",
+    LL_LOG_I(kTag, "on_chat[ll] CHAT ch=%u src=%08x pkt_id=%u tlv_len=%u dup=%d",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(h.src),
              static_cast<unsigned>(h.pkt_id),
              static_cast<unsigned>(tlv_len),
@@ -294,8 +310,9 @@ void on_chat(const landlink::mesh::Header& h,
     if (!duplicate) {
         uint8_t buf[240];
         landlink::TlvBuilder b(buf, sizeof(buf));
-        b.put_u32(TlvTag::NODE_ID,    h.src);
-        b.put_u32(TlvTag::ACK_PKT_ID, h.pkt_id);
+        b.put_u32(TlvTag::NODE_ID,       h.src);
+        b.put_u32(TlvTag::ACK_PKT_ID,    h.pkt_id);
+        b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
         for (size_t i = 0; i + 2 <= tlv_len; ) {
             const uint8_t tag = tlv_payload[i];
             const uint8_t len = tlv_payload[i + 1];
@@ -311,20 +328,20 @@ void on_chat(const landlink::mesh::Header& h,
     // ACK was lost re-sends with the same pkt_id, and we want to re-ACK so it
     // can stop retrying. The caller (sink adapter) is responsible for skipping
     // self-loops by checking h.src against the local node_id.
-    enqueue_ack(h.src, h.pkt_id);
+    enqueue_ack(channel_index, h.src, h.pkt_id);
 }
 
 void on_ack(const landlink::mesh::Header& h,
+            uint8_t channel_index,
             const uint8_t* tlv_payload, size_t tlv_len) {
-    LL_LOG_I(kTag, "on_ack[ll] src=%08x pkt_id=%u",
+    LL_LOG_I(kTag, "on_ack[ll] ch=%u src=%08x pkt_id=%u",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(h.src),
              static_cast<unsigned>(h.pkt_id));
-    // Forward NODE_ID + the original ACK payload TLVs (KIND=ACK, ACK_PKT_ID=ref).
-    // Do not prepend an outer ACK_PKT_ID here: the ACK frame's own pkt_id is
-    // not interesting and emitting both makes the host parser ambiguous.
     uint8_t buf[240];
     landlink::TlvBuilder b(buf, sizeof(buf));
-    b.put_u32(TlvTag::NODE_ID, h.src);
+    b.put_u32(TlvTag::NODE_ID,       h.src);
+    b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
     for (size_t i = 0; i + 2 <= tlv_len; ) {
         const uint8_t tag = tlv_payload[i];
         const uint8_t len = tlv_payload[i + 1];
@@ -336,17 +353,19 @@ void on_ack(const landlink::mesh::Header& h,
                                          b.data(), b.size());
 }
 
-void on_meshtastic_chat(uint32_t src, uint32_t dst, uint32_t pkt_id,
+void on_meshtastic_chat(uint8_t channel_index,
+                        uint32_t src, uint32_t dst, uint32_t pkt_id,
                         bool want_ack,
                         const uint8_t* text, size_t text_len) {
     using mesh::meshtastic::kBroadcastAddr;
-    LL_LOG_I(kTag, "on_chat[mt] src=%08x dst=%08x pkt_id=%u want_ack=%d len=%u",
+    LL_LOG_I(kTag, "on_chat[mt] ch=%u src=%08x dst=%08x pkt_id=%u want_ack=%d len=%u",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(src),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(pkt_id),
              want_ack ? 1 : 0,
              static_cast<unsigned>(text_len));
-    emit_recv_event(src, pkt_id, text, text_len);
+    emit_recv_event(channel_index, src, pkt_id, text, text_len);
 
     // ACK any chat that requested one. For broadcasts we jitter (multiple
     // receivers reply, so back-to-back transmits would collide on-air);
@@ -355,15 +374,17 @@ void on_meshtastic_chat(uint32_t src, uint32_t dst, uint32_t pkt_id,
     // (src == self_id) check, so we don't need to guard against them here.
     if (want_ack) {
         if (dst == kBroadcastAddr) {
-            enqueue_meshtastic_ack(src, pkt_id);
+            enqueue_meshtastic_ack(channel_index, src, pkt_id);
         } else {
-            (void)send_meshtastic_routing_ack(src, pkt_id);
+            (void)send_meshtastic_routing_ack(channel_index, src, pkt_id);
         }
     }
 }
 
-void on_meshtastic_routing(uint32_t src, uint32_t request_id) {
-    LL_LOG_I(kTag, "on_routing[mt] src=%08x ref=%u",
+void on_meshtastic_routing(uint8_t channel_index,
+                           uint32_t src, uint32_t request_id) {
+    LL_LOG_I(kTag, "on_routing[mt] ch=%u src=%08x ref=%u",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(src),
              static_cast<unsigned>(request_id));
     // Mirror the wire shape that on_ack[landlink] produces so the host's
@@ -371,15 +392,17 @@ void on_meshtastic_routing(uint32_t src, uint32_t request_id) {
     // pending entry into "delivered".
     uint8_t buf[16];
     landlink::TlvBuilder b(buf, sizeof(buf));
-    b.put_u32(TlvTag::NODE_ID,    src);
-    b.put_u8 (TlvTag::KIND,       kKindAck);
-    b.put_u32(TlvTag::ACK_PKT_ID, request_id);
+    b.put_u32(TlvTag::NODE_ID,       src);
+    b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
+    b.put_u8 (TlvTag::KIND,          kKindAck);
+    b.put_u32(TlvTag::ACK_PKT_ID,    request_id);
     landlink::transport::ble::notify_evt(Opcode::MESH_RECV, 0,
                                          b.data(), b.size());
 }
 
-void on_meshtastic_own_echo(uint32_t pkt_id) {
-    LL_LOG_I(kTag, "on_echo[mt] pkt_id=%u (implicit ACK)",
+void on_meshtastic_own_echo(uint8_t channel_index, uint32_t pkt_id) {
+    LL_LOG_I(kTag, "on_echo[mt] ch=%u pkt_id=%u (implicit ACK)",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(pkt_id));
     // NODE_ID = self_id so the host can attribute the implicit ACK to a real
     // node (us, by way of "we heard the relay carry our own frame"). The host
@@ -388,9 +411,10 @@ void on_meshtastic_own_echo(uint32_t pkt_id) {
     const uint32_t self_id = mesh::protocol::meshtastic_router().self_id();
     uint8_t buf[16];
     landlink::TlvBuilder b(buf, sizeof(buf));
-    b.put_u32(TlvTag::NODE_ID,    self_id);
-    b.put_u8 (TlvTag::KIND,       kKindAck);
-    b.put_u32(TlvTag::ACK_PKT_ID, pkt_id);
+    b.put_u32(TlvTag::NODE_ID,       self_id);
+    b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
+    b.put_u8 (TlvTag::KIND,          kKindAck);
+    b.put_u32(TlvTag::ACK_PKT_ID,    pkt_id);
     landlink::transport::ble::notify_evt(Opcode::MESH_RECV, 0,
                                          b.data(), b.size());
 }
@@ -401,21 +425,23 @@ void ack_tick() {
     uint32_t dst = 0, pkt_id = 0;
     bool have = false;
     bool meshtastic = false;
+    uint8_t channel_index = 0;
     xSemaphoreTake(s_pending_mtx, portMAX_DELAY);
     for (auto& slot : s_pending_acks) {
         if (slot.active && static_cast<int32_t>(now - slot.due_ms) >= 0) {
-            dst        = slot.dst;
-            pkt_id     = slot.pkt_id;
-            meshtastic = slot.meshtastic;
-            slot.active = false;
+            dst           = slot.dst;
+            pkt_id        = slot.pkt_id;
+            meshtastic    = slot.meshtastic;
+            channel_index = slot.channel_index;
+            slot.active   = false;
             have = true;
             break;
         }
     }
     xSemaphoreGive(s_pending_mtx);
     if (have) {
-        if (meshtastic) (void)send_meshtastic_routing_ack(dst, pkt_id);
-        else            (void)send_ack(dst, pkt_id);
+        if (meshtastic) (void)send_meshtastic_routing_ack(channel_index, dst, pkt_id);
+        else            (void)send_ack(channel_index, dst, pkt_id);
     }
 }
 

@@ -64,18 +64,13 @@ export function useSendMeshMessage(channelIndex = 0) {
       }
     }
 
-    // Landlink path: TLV/opcode framing. Only Primary (channelIndex 0) is
-    // meaningful on Landlink firmware — there's no on-wire channel concept
-    // beyond the single shared network key, so other indices are rejected
-    // here rather than silently misrouted.
-    if (channelIndex !== 0) {
-      setStatus("error");
-      setError("This device only supports the Primary channel");
-      return false;
-    }
-
+    // Landlink path: TLV/opcode framing. The firmware's channel registry
+    // selects the per-channel key for both Landlink-native (trial decrypt
+    // on RX) and Meshtastic-compatible (header byte 13) frames, so any
+    // 0..7 index that resolves to a configured slot works.
     const tlvs: Tlv[] = [
       { tag: TlvTag.KIND, value: Uint8Array.of(MeshKind.CHAT_TEXT) },
+      { tag: TlvTag.CHANNEL_INDEX, value: Uint8Array.of(channelIndex) },
       { tag: TlvTag.CHAT_TEXT, value: encoded },
     ];
 
@@ -91,7 +86,7 @@ export function useSendMeshMessage(channelIndex = 0) {
       let registeredPending = false;
       await sendLandlinkCommand(Opcode.MESH_SEND, tlvs, (seq) => {
         if (protocolMode !== null) {
-          appendOutgoingPending(trimmed, seq);
+          appendOutgoingPending(trimmed, seq, channelIndex);
           trackPendingChat(seq, trimmed, encoded, {
             noRetry: protocolMode === 1,
           });
@@ -99,7 +94,7 @@ export function useSendMeshMessage(channelIndex = 0) {
         }
       });
       if (!registeredPending) {
-        appendOutgoingMessage(trimmed);
+        appendOutgoingMessage(trimmed, channelIndex);
       }
       setStatus("sent");
       return true;

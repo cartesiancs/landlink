@@ -3,12 +3,23 @@ export {
   appendOutgoingPending,
   attachLandlinkClient,
   detachLandlinkClient,
+  onLandlinkEvt,
   onLandlinkPeerFound,
   sendLandlinkCommand,
   setLandlinkProtocolMode,
   trackPendingChat,
+  type LandlinkEvtFrame,
   type PeerFoundFrame,
 } from "./api/client";
+export {
+  landlinkChannelDelete,
+  landlinkChannelList,
+  landlinkChannelSet,
+  parseChannelResult,
+  type DeviceChannel,
+  type DeviceChannelResult,
+  type DeviceChannelRole,
+} from "./api/channel";
 export { parseLandlinkInfo } from "./lib/parse-info";
 export { useLandlinkDevice } from "./model/use-landlink-device";
 // Connected-device store surface used by transport adapters (Landlink TLV

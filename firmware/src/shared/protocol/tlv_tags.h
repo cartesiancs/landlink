@@ -50,6 +50,10 @@ enum class TlvTag : uint8_t {
     PROTOCOL = 0xa1,  // Active radio protocol: 0=Landlink, 1=Meshtastic
     MESH_KEY = 0xb0,
     MESH_SALT = 0xb1,
+    CHANNEL_INDEX = 0xc0,  // Channel index 0..7
+    CHANNEL_NAME = 0xc1,  // Channel name, <=12 B (Meshtastic cap)
+    CHANNEL_PSK = 0xc2,  // Pre-shared key, 1/16/32 B (Meshtastic PSK rules)
+    CHANNEL_ROLE = 0xc3,  // 0=primary, 1=secondary, 2=disabled
     ERR_CODE = 0xf0,
     ERR_CONTEXT = 0xf1,
 };

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { useLandlinkDevice } from "@/entities/landlink-device";
 import {
+  displayChannelName,
   findChannel,
   useChannels,
 } from "@/entities/meshtastic-channel";
@@ -51,7 +52,7 @@ export function ChannelChatPage() {
                 <Hash className="size-4 text-muted-foreground" aria-hidden />
               )
             ) : null}
-            {channel?.name ?? "Channel"}
+            {channel ? displayChannelName(channel) : "Channel"}
           </span>
         }
         fallback={ROUTES.channels}

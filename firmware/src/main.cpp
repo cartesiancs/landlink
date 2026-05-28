@@ -24,6 +24,7 @@
 #include "hal/led/led.h"
 #include "hal/pmu/pmu.h"
 #include "hal/storage/storage.h"
+#include "mesh/channel/registry.h"
 #include "mesh/frame/frame.h"
 #include "mesh/meshtastic/data_pb.h"
 #include "mesh/meshtastic/frame.h"
@@ -63,16 +64,6 @@ landlink::proto::Region load_region() {
     return static_cast<landlink::proto::Region>(r);
 }
 
-void load_network_key(uint8_t out[32]) {
-    size_t n = 32;
-    if (!landlink::hal::storage::get_wrapped("ll.net", "key", out, n) || n != 32) {
-        // Unprovisioned: use an all-zero placeholder key. The router will not
-        // accept frames from peers until a real key is installed via MESH_JOIN
-        // or LoRa pairing, because CCM tag won't match.
-        for (int i = 0; i < 32; ++i) out[i] = 0;
-    }
-}
-
 // Mesh router decrypted-payload sink: read the KIND TLV and dispatch to the
 // matching feature handler. Without this hook, MESH_RECV BLE events never fire.
 //
@@ -80,6 +71,7 @@ void load_network_key(uint8_t out[32]) {
 // CHAT_TEXT we still dispatch (mesh_chat re-ACKs duplicates so a sender whose
 // ACK was lost can recover); for all other kinds we drop duplicates.
 void landlink_payload_sink(const landlink::mesh::Header& h,
+                           uint8_t channel_index,
                            const uint8_t* payload, size_t payload_len,
                            bool duplicate) {
     landlink::TlvReader r(payload, payload_len);
@@ -89,7 +81,8 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
                  static_cast<unsigned>(h.src));
         return;
     }
-    LL_LOG_I(kTag, "rx sink: src=%08x kind=0x%02x len=%u dup=%d",
+    LL_LOG_I(kTag, "rx sink: ch=%u src=%08x kind=0x%02x len=%u dup=%d",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(h.src),
              static_cast<unsigned>(kind.data[0]),
              static_cast<unsigned>(payload_len),
@@ -103,11 +96,13 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
 
     switch (kind.data[0]) {
     case 0x01:  // MeshKind::CHAT_TEXT
-        landlink::features::mesh_chat::on_chat(h, payload, payload_len, duplicate);
+        landlink::features::mesh_chat::on_chat(h, channel_index,
+                                               payload, payload_len, duplicate);
         break;
     case 0x04:  // MeshKind::ACK
         if (!duplicate) {
-            landlink::features::mesh_chat::on_ack(h, payload, payload_len);
+            landlink::features::mesh_chat::on_ack(h, channel_index,
+                                                  payload, payload_len);
         }
         break;
     case 0x05:  // MeshKind::BEACON
@@ -122,10 +117,12 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
 }
 
 // Meshtastic router sink. Dispatches by Data.portnum.
-void meshtastic_payload_sink(const landlink::mesh::meshtastic::Header& h,
+void meshtastic_payload_sink(uint8_t channel_index,
+                             const landlink::mesh::meshtastic::Header& h,
                              const landlink::mesh::meshtastic::DataMessage& data) {
     using namespace landlink::mesh::meshtastic;
-    LL_LOG_I(kTag, "mt rx: src=%08x dst=%08x pkt_id=%u portnum=%u want_ack=%d len=%u",
+    LL_LOG_I(kTag, "mt rx: ch=%u src=%08x dst=%08x pkt_id=%u portnum=%u want_ack=%d len=%u",
+             static_cast<unsigned>(channel_index),
              static_cast<unsigned>(h.src),
              static_cast<unsigned>(h.dst),
              static_cast<unsigned>(h.pkt_id),
@@ -134,6 +131,7 @@ void meshtastic_payload_sink(const landlink::mesh::meshtastic::Header& h,
              static_cast<unsigned>(data.payload_len));
     if (data.portnum == kPortnumTextMessageApp && data.payload != nullptr) {
         landlink::features::mesh_chat::on_meshtastic_chat(
+            channel_index,
             h.src, h.dst, h.pkt_id, h.want_ack,
             data.payload, data.payload_len);
     } else if (data.portnum == kPortnumRoutingApp && data.has_request_id) {
@@ -142,7 +140,7 @@ void meshtastic_payload_sink(const landlink::mesh::meshtastic::Header& h,
         // the Routing body is empty). NACKs with explicit error_reason are
         // out-of-scope for now and treated as "no ACK arrived".
         landlink::features::mesh_chat::on_meshtastic_routing(
-            h.src, data.request_id);
+            channel_index, h.src, data.request_id);
     }
 }
 }
@@ -190,8 +188,15 @@ void setup() {
         landlink::app::services::handle_ota_chunk);
     landlink::transport::ble::start_advertising();
 
-    uint8_t net_key[32];
-    load_network_key(net_key);
+    // Channel registry must be initialized before the routers — both pull
+    // per-channel keys/hashes from it. Migration: if `ll.net/key` (legacy
+    // 32-B Landlink network key) is present and slot 0 is empty, it is
+    // copied into slot 0 with name "Primary"; otherwise slot 0 is seeded
+    // with the canonical Meshtastic default ("LongFast", PSK index 1).
+    if (!landlink::mesh::channel::init_from_nvs()) {
+        LL_LOG_E(kTag, "channel registry init failed");
+    }
+
     uint16_t mesh_id = 0;
     {
         uint8_t raw[2] = { 0, 0 };
@@ -204,7 +209,7 @@ void setup() {
     cfg.mesh_id           = mesh_id;
     cfg.self_id           = node_id;
     cfg.default_hop_limit = 5;
-    landlink::app::services::g_router.init(cfg, net_key);
+    landlink::app::services::g_router.init(cfg);
     landlink::app::services::g_router.set_sink(&landlink_payload_sink);
 
     landlink::mesh::protocol::InitContext pcx{};

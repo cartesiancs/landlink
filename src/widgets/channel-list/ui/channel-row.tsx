@@ -1,7 +1,7 @@
 import { ChevronRight, Hash, Lock, MoreVertical, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { type Channel } from "@/entities/meshtastic-channel";
+import { displayChannelName, type Channel } from "@/entities/meshtastic-channel";
 import { ROUTES } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
 import {
@@ -51,7 +51,7 @@ export function ChannelRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">{channel.name}</p>
+          <p className="truncate text-sm font-medium">{displayChannelName(channel)}</p>
         </div>
       </div>
       {!showDelete ? (

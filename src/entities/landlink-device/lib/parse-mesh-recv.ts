@@ -25,12 +25,14 @@ export type ParsedMeshRecv =
       senderNodeId: string;
       text: string;
       pktId: number | null;
+      channelIndex: number;
       receivedAt: number;
     }
   | {
       kind: "ack";
       senderNodeId: string;
       ackPktId: number;
+      channelIndex: number;
       receivedAt: number;
     };
 
@@ -39,6 +41,9 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
   let text: string | null = null;
   let kindValue: number | null = null;
   let ackPktId: number | null = null;
+  // Firmware predating multi-channel support omits the CHANNEL_INDEX TLV;
+  // missing channel means Primary so legacy messages still render.
+  let channelIndex = 0;
   const decoder = new TextDecoder();
   for (const tlv of decodeTlvs(payload)) {
     if (tlv.tag === TlvTag.NODE_ID && tlv.value.byteLength === 4) {
@@ -49,6 +54,8 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
       kindValue = tlv.value[0] ?? null;
     } else if (tlv.tag === TlvTag.ACK_PKT_ID) {
       ackPktId = readU32LE(tlv.value);
+    } else if (tlv.tag === TlvTag.CHANNEL_INDEX && tlv.value.byteLength === 1) {
+      channelIndex = tlv.value[0] ?? 0;
     }
   }
   if (senderNodeId === null) return null;
@@ -63,6 +70,7 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
       kind: "ack",
       senderNodeId,
       ackPktId,
+      channelIndex,
       receivedAt: Date.now(),
     };
   }
@@ -72,6 +80,7 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
     senderNodeId,
     text,
     pktId: ackPktId,
+    channelIndex,
     receivedAt: Date.now(),
   };
 }

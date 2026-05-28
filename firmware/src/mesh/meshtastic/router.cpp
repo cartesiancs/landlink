@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "crypto.h"
+#include "mesh/channel/registry.h"
 #include "shared/util/log.h"
 
 namespace landlink::mesh::meshtastic {
@@ -19,13 +20,13 @@ void MeshtasticRouter::init(const RouterConfig& cfg) {
     dedup_.clear();
 }
 
-size_t MeshtasticRouter::originate(uint32_t dst, bool want_ack, uint32_t portnum,
+size_t MeshtasticRouter::originate(uint8_t channel_index,
+                                   uint32_t dst, bool want_ack, uint32_t portnum,
                                    const uint8_t* payload, size_t payload_len,
                                    uint8_t* out, size_t out_cap,
                                    uint32_t* out_pkt_id) {
     if (out_cap < kHeaderLen + 4) return 0;
 
-    // Step 1: encode the Data protobuf into a scratch buffer.
     uint8_t pb_buf[kMaxPayload];
     const size_t pb_len = encode_data(portnum, payload, payload_len,
                                       pb_buf, sizeof(pb_buf));
@@ -33,11 +34,12 @@ size_t MeshtasticRouter::originate(uint32_t dst, bool want_ack, uint32_t portnum
         LL_LOG_W(kTag, "originate: encode_data overflow");
         return 0;
     }
-    return originate_data(dst, want_ack, pb_buf, pb_len, out, out_cap,
-                          out_pkt_id);
+    return originate_data(channel_index, dst, want_ack, pb_buf, pb_len,
+                          out, out_cap, out_pkt_id);
 }
 
-size_t MeshtasticRouter::originate_data(uint32_t dst, bool want_ack,
+size_t MeshtasticRouter::originate_data(uint8_t channel_index,
+                                        uint32_t dst, bool want_ack,
                                         const uint8_t* data_pb,
                                         size_t data_pb_len,
                                         uint8_t* out, size_t out_cap,
@@ -49,6 +51,13 @@ size_t MeshtasticRouter::originate_data(uint32_t dst, bool want_ack,
         return 0;
     }
 
+    const channel::Slot* slot = channel::get(channel_index);
+    if (slot == nullptr) {
+        LL_LOG_W(kTag, "originate_data: channel %u empty",
+                 static_cast<unsigned>(channel_index));
+        return 0;
+    }
+
     Header h;
     h.dst        = dst;
     h.src        = cfg_.self_id;
@@ -57,16 +66,15 @@ size_t MeshtasticRouter::originate_data(uint32_t dst, bool want_ack,
     h.want_ack   = want_ack;
     h.via_mqtt   = false;
     h.hop_start  = cfg_.default_hop_limit;
-    h.channel    = cfg_.channel_hash;
+    h.channel    = slot->mt_hash;
     h.next_hop   = 0;
     h.relay_node = static_cast<uint8_t>(cfg_.self_id & 0xFF);
 
     if (!pack_header(h, out, out_cap)) return 0;
 
-    // Copy protobuf into output buffer (post-header) and encrypt in place.
     uint8_t* ct = out + kHeaderLen;
     std::memcpy(ct, data_pb, data_pb_len);
-    if (!crypt(cfg_.channel_key, h.pkt_id, h.src, ct, data_pb_len)) {
+    if (!crypt(slot->key, h.pkt_id, h.src, ct, data_pb_len)) {
         LL_LOG_W(kTag, "originate_data: crypt failed");
         return 0;
     }
@@ -86,56 +94,55 @@ void MeshtasticRouter::on_rx(const uint8_t* frame, size_t frame_len,
     Header h;
     if (!unpack_header(frame, frame_len, h)) return;
 
-    if (h.channel != cfg_.channel_hash) return;       // not our channel
+    // Find which channel this frame belongs to. With 8 slots the 1-byte
+    // mt_hash collision probability is ~3%, so we collect all candidates
+    // whose hash matches and attempt to decode each in order. The Data
+    // protobuf decode succeeding is a strong oracle: random AES-CTR output
+    // almost never produces a well-formed Data message.
+    const size_t ct_len = frame_len - kHeaderLen;
+    if (ct_len == 0 || ct_len > kMaxPayload) return;
+
+    uint8_t plain[kMaxPayload];
+    DataMessage data;
+    uint8_t matched_index = 0;
+    bool     matched      = false;
+    for (uint8_t i = 0; i < channel::kMaxSlots; ++i) {
+        const channel::Slot* slot = channel::get(i);
+        if (slot == nullptr) continue;
+        if (slot->mt_hash != h.channel) continue;
+        std::memcpy(plain, frame + kHeaderLen, ct_len);
+        if (!crypt(slot->key, h.pkt_id, h.src, plain, ct_len)) continue;
+        DataMessage candidate;
+        if (!decode_data(plain, ct_len, candidate)) continue;
+        data          = candidate;
+        matched_index = i;
+        matched       = true;
+        break;
+    }
+    if (!matched) return;
 
     // Hearing our own (self_id, pkt_id) being relayed back is the implicit-ACK
-    // signal upstream Meshtastic clients use to confirm broadcast delivery —
-    // real Meshtastic firmware never sends Routing ACKs for broadcasts, but
-    // every node forwards them. Fire the callback (host turns it into a
-    // KIND=ACK MESH_RECV that resolves the pending send) then drop. The
-    // pending-send dedup at the host handles repeats across multiple hops.
+    // signal upstream Meshtastic clients use to confirm broadcast delivery.
+    // Fire the callback and drop. The pending-send dedup at the host handles
+    // repeats across multiple hops.
     if (h.src == cfg_.self_id) {
-        if (own_echo_cb_) own_echo_cb_(h.pkt_id);
+        if (own_echo_cb_) own_echo_cb_(matched_index, h.pkt_id);
         return;
     }
     if (dedup_.seen_or_insert(h.src, h.pkt_id)) return;
 
-    const size_t ct_len = frame_len - kHeaderLen;
-    if (ct_len == 0 || ct_len > kMaxPayload) return;
-
-    // Decrypt into a scratch buffer so the original frame stays intact for
-    // forwarding.
-    uint8_t plain[kMaxPayload];
-    std::memcpy(plain, frame + kHeaderLen, ct_len);
-    if (!crypt(cfg_.channel_key, h.pkt_id, h.src, plain, ct_len)) {
-        LL_LOG_W(kTag, "rx decrypt failed src=%08x id=%08x",
-                 static_cast<unsigned>(h.src),
-                 static_cast<unsigned>(h.pkt_id));
-        return;
-    }
-
-    DataMessage data;
-    if (!decode_data(plain, ct_len, data)) {
-        LL_LOG_W(kTag, "rx decode_data failed src=%08x id=%08x len=%u",
-                 static_cast<unsigned>(h.src),
-                 static_cast<unsigned>(h.pkt_id),
-                 static_cast<unsigned>(ct_len));
-        return;
-    }
-
     const bool for_us = (h.dst == cfg_.self_id || h.dst == kBroadcastAddr);
     if (for_us && sink_) {
-        sink_(h, data);
+        sink_(matched_index, h, data);
     }
 
     // Forward if there is hop budget and the packet is not uniquely for us.
+    // Re-emit the original ciphertext verbatim — AES-CTR has no auth tag, so
+    // byte-identical ciphertext continues to decrypt at the next hop.
     const bool should_forward = (h.hop_limit > 0) && (h.dst != cfg_.self_id);
     if (!should_forward) return;
     if (forward_cap < frame_len) return;
 
-    // Rebuild header with hop_limit decremented and relay_node updated. Keep
-    // the encrypted body verbatim — AES-CTR has no auth tag, so byte-identical
-    // ciphertext continues to decrypt to the same plaintext at the next hop.
     Header fwd = h;
     fwd.hop_limit  = static_cast<uint8_t>(h.hop_limit - 1);
     fwd.relay_node = static_cast<uint8_t>(cfg_.self_id & 0xFF);

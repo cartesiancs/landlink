@@ -4,17 +4,17 @@ export {
   makeDefaultPrimaryPsk,
   makePrimary,
 } from "./lib/defaults";
+export { displayChannelName } from "./lib/display-name";
 export { generatePsk } from "./lib/generate-psk";
 export { pskFromBase64, pskToBase64 } from "./lib/encode-psk";
 export {
-  addSecondary,
-  clearDeviceChannels,
-  getDeviceChannels,
-  getSecondaries,
+  clearChannels,
+  getChannels,
   nextFreeIndex,
-  removeSecondary,
-  setDeviceChannels,
+  removeChannel,
+  setChannels,
   subscribe as subscribeChannels,
+  upsertChannel,
 } from "./model/store";
 export { findChannel, useChannels } from "./model/use-channels";
 export {
