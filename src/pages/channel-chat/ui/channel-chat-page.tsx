@@ -7,10 +7,6 @@ import {
   findChannel,
   useChannels,
 } from "@/entities/meshtastic-channel";
-import {
-  findDevice,
-  useRegisteredDevices,
-} from "@/entities/registered-device";
 import { SendMeshForm } from "@/features/send-mesh-message";
 import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
@@ -23,22 +19,19 @@ export function ChannelChatPage() {
   const navigate = useNavigate();
   const channels = useChannels();
   const device = useLandlinkDevice();
-  const registeredDevices = useRegisteredDevices();
-  const registered = device
-    ? findDevice(registeredDevices, device.deviceId)
-    : null;
-  const adapter = registered?.protocol ?? "landlink";
   const indexParam = params["index"];
   const parsedIndex =
     indexParam && /^[0-7]$/.test(indexParam) ? Number(indexParam) : null;
   const channel = findChannel(channels, parsedIndex ?? -1);
   const isPrimary = channel?.role === "primary";
   const isConnected = device?.status === "connected";
-  // Send/receive on this channel is supported when:
-  //   • Meshtastic — every configured channel (Primary + secondaries)
-  //   • Landlink — Primary only (no on-wire channel concept)
-  const chatSupported =
-    channel !== null && isConnected && (adapter === "meshtastic" || isPrimary);
+  // Firmware (both Landlink-native and Meshtastic-compatible modes) now
+  // routes every configured channel through the same registry. The Landlink
+  // wire format stays unchanged because per-channel session keys are
+  // derived from each channel's PSK and RX trial-decrypts against every
+  // configured slot. So any channel that resolves through useChannels() on
+  // a connected device is chattable.
+  const chatSupported = channel !== null && isConnected;
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -87,18 +80,8 @@ export function ChannelChatPage() {
               Connect a device
             </Button>
           </div>
-        ) : chatSupported && channel ? (
-          <MeshMessageFeed channelIndex={channel.index} />
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-            <p className="text-sm text-muted-foreground">
-              This channel isn't supported on the connected device.
-            </p>
-            <p className="max-w-[280px] text-xs text-muted-foreground">
-              Landlink firmware only exposes the Primary channel. Connect a
-              Meshtastic device to chat on secondary channels.
-            </p>
-          </div>
+          <MeshMessageFeed channelIndex={channel.index} />
         )}
       </main>
       {chatSupported && channel ? (

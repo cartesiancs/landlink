@@ -7,6 +7,7 @@ export {
 export { displayChannelName } from "./lib/display-name";
 export { generatePsk } from "./lib/generate-psk";
 export { pskFromBase64, pskToBase64 } from "./lib/encode-psk";
+export { buildMeshtasticChannelUrl, pskToHex } from "./lib/meshtastic-url";
 export {
   clearChannels,
   getChannels,

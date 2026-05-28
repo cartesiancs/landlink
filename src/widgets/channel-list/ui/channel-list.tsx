@@ -9,6 +9,7 @@ import {
   type Channel,
 } from "@/entities/meshtastic-channel";
 import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
+import { ShareChannelDrawer } from "@/features/share-channel";
 import { hapticTick } from "@/shared/lib";
 import {
   Button,
@@ -35,6 +36,7 @@ export function ChannelList() {
   // would reappear on the next FromRadio refresh.
   const rowsDeletable = registered?.protocol !== "meshtastic";
   const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
+  const [pendingShare, setPendingShare] = useState<Channel | null>(null);
 
   if (!channels) {
     return (
@@ -70,6 +72,7 @@ export function ChannelList() {
             channel={c}
             deletable={rowsDeletable}
             onRequestDelete={setPendingDelete}
+            onRequestShare={setPendingShare}
           />
         ))}
       </ul>
@@ -106,6 +109,12 @@ export function ChannelList() {
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+      <ShareChannelDrawer
+        channel={pendingShare}
+        onOpenChange={(open) => {
+          if (!open) setPendingShare(null);
+        }}
+      />
     </>
   );
 }

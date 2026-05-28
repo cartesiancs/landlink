@@ -160,16 +160,20 @@ bool handle_cmd(Opcode op, uint8_t seq,
 
     case Opcode::CHANNEL_LIST: {
         // Stream one EVT per occupied slot. Mirrors the WIFI_SCAN_RESULT
-        // pattern so we never need fragmentation. PSK is included only when
-        // the BLE session has cleared pair-confirm (same bar as KEY_EXPORT),
-        // letting authed phones build share-channel QR codes while denying
-        // unauthed sniffers the secret.
+        // pattern so we never need fragmentation.
+        //
+        // PSK is always included. The original design gated readback on
+        // authed() so a casual BLE sniffer couldn't lift keys, but CHANNEL_SET
+        // is ungated (matching MESH_JOIN), so the same sniffer could already
+        // overwrite the channel anyway — the asymmetric gate gave a false
+        // sense of security and prevented the phone from rebuilding Meshtastic
+        // share URLs on reconnect (the phone's local cache gets the empty PSK
+        // back and discards the real one).
         //
         // Iterate directly via channel::get() rather than snapshotting into a
         // Slot[8] on the stack: each Slot is ~120 bytes, so the array form
         // overflowed the NimBLE host task stack (~3 KB) once the cmd handler
         // also frame/tlv-buffered on the same frame.
-        const bool include_psk = authed();
         for (uint8_t i = 0; i < mesh::channel::kMaxSlots; ++i) {
             const auto* s = mesh::channel::get(i);
             if (s == nullptr) continue;
@@ -180,10 +184,8 @@ bool handle_cmd(Opcode op, uint8_t seq,
                   reinterpret_cast<const uint8_t*>(s->name),
                   static_cast<uint8_t>(std::strlen(s->name)));
             b.put_u8(TlvTag::CHANNEL_ROLE, s->role);
-            if (include_psk) {
-                b.put(TlvTag::CHANNEL_PSK, s->psk_raw,
-                      static_cast<uint8_t>(s->psk_raw_len));
-            }
+            b.put(TlvTag::CHANNEL_PSK, s->psk_raw,
+                  static_cast<uint8_t>(s->psk_raw_len));
             transport::ble::notify_evt(Opcode::CHANNEL_LIST_RESULT, seq,
                                        b.data(), b.size());
         }

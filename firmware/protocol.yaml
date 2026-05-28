@@ -71,7 +71,7 @@ opcodes:
   # be deleted). Both Landlink and Meshtastic protocol modes use the same
   # channel registry. CHANNEL_LIST_RESULT streams one EVT per occupied slot.
   CHANNEL_LIST:          { code: 0x35, dir: C_TO_F }
-  CHANNEL_LIST_RESULT:   { code: 0x36, dir: F_TO_C, note: "One EVT per occupied slot; PSK included only on authed sessions." }
+  CHANNEL_LIST_RESULT:   { code: 0x36, dir: F_TO_C, note: "One EVT per occupied slot. PSK always included so the phone can rebuild Meshtastic share URLs across reconnects (the SET path is ungated, so asymmetric readback gating provided no real security)." }
   CHANNEL_SET:           { code: 0x37, dir: C_TO_F, note: "Not gated on authed(); mirrors MESH_JOIN's posture so unprovisioned devices can still receive channel config." }
   CHANNEL_DELETE:        { code: 0x38, dir: C_TO_F }
   CHANNEL_RESULT:        { code: 0x39, dir: F_TO_C, note: "Emitted after SET (carries new slot TLVs) and DELETE (CHANNEL_INDEX only)." }
