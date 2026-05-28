@@ -6,10 +6,7 @@ import {
   type Channel,
 } from "@/entities/meshtastic-channel";
 import { useLandlinkDevice } from "@/entities/landlink-device";
-import {
-  findDevice,
-  useRegisteredDevices,
-} from "@/entities/registered-device";
+import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
 import { hapticTick } from "@/shared/lib";
 import {
   Button,
@@ -41,9 +38,6 @@ export function ChannelList() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
         <p className="text-sm text-muted-foreground">No device connected.</p>
-        <p className="max-w-[280px] text-xs text-muted-foreground">
-          Connect a device to view and manage its channels.
-        </p>
       </div>
     );
   }

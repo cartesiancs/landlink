@@ -52,10 +52,7 @@ export function CreateChannelDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New channel</DialogTitle>
-          <DialogDescription>
-            Each channel has its own encryption key. The PSK is generated for
-            you. You can share the channel later via a QR or link.
-          </DialogDescription>
+          <DialogDescription></DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
@@ -94,9 +91,7 @@ export function CreateChannelDialog({
           <DialogFooter className="mt-2">
             <Button
               type="submit"
-              disabled={
-                !canCreate || tooLong || name.trim().length === 0
-              }
+              disabled={!canCreate || tooLong || name.trim().length === 0}
             >
               Create channel
             </Button>

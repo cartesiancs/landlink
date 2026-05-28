@@ -42,7 +42,7 @@ export function ChannelsPage() {
       </div>
       <main
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-4 pt-6",
+          "min-h-0 flex-1 overflow-y-auto px-4 pt-0",
           navVisible
             ? "pb-[calc(max(env(safe-area-inset-bottom),0.75rem)+4.5rem)]"
             : "pb-[max(env(safe-area-inset-bottom),1.5rem)]",
