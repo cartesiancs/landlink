@@ -18,6 +18,11 @@ type SerializedChannel = {
 type SerializedMap = Record<string, SerializedChannel[]>;
 
 let secondariesByDevice = new Map<string, Channel[]>();
+// Device-synced channel lists (Meshtastic adapter pushes the full set,
+// including Primary, after the want_config_id flow). Kept in-memory only —
+// the device is the source of truth, so we re-fetch on reconnect rather
+// than risk stale persistence.
+const deviceSyncedByDevice = new Map<string, Channel[]>();
 const listeners = new Set<() => void>();
 
 // Stable reference for "no secondary channels" so useSyncExternalStore
@@ -118,4 +123,29 @@ export function removeSecondary(deviceId: string, index: number): void {
   }
   persist();
   emit();
+}
+
+// Device-synced API ---------------------------------------------------------
+// Used by the Meshtastic adapter to push the full channel set (including
+// Primary at index 0) from the connected device's FromRadio.channel stream.
+
+export function setDeviceChannels(
+  deviceId: string,
+  channels: readonly Channel[],
+): void {
+  const sorted = [...channels].sort((a, b) => a.index - b.index);
+  deviceSyncedByDevice.set(deviceId, sorted);
+  emit();
+}
+
+export function clearDeviceChannels(deviceId: string): void {
+  if (!deviceSyncedByDevice.has(deviceId)) return;
+  deviceSyncedByDevice.delete(deviceId);
+  emit();
+}
+
+export function getDeviceChannels(
+  deviceId: string,
+): readonly Channel[] | null {
+  return deviceSyncedByDevice.get(deviceId) ?? null;
 }

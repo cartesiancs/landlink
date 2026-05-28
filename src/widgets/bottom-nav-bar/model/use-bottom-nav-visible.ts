@@ -9,6 +9,7 @@ const IS_NATIVE_APP = Capacitor.isNativePlatform();
 const NAV_ROUTES: ReadonlySet<string> = new Set([
   ROUTES.home,
   ROUTES.lists,
+  ROUTES.channels,
   ROUTES.settings,
 ]);
 

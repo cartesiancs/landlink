@@ -6,14 +6,21 @@ import {
   detachLandlinkClient,
 } from "@/entities/landlink-device";
 import {
+  attachMeshtasticClient,
+  detachMeshtasticClient,
+} from "@/entities/meshtastic-device";
+import {
   getPrimaryDeviceId,
   registerDevice,
   setPrimaryDeviceId,
+  updateRegisteredDevice,
 } from "@/entities/registered-device";
 import {
   connectLandlinkDevice,
+  detectDeviceProtocolKind,
   isBlePairingSupported,
   PairingCancelledError,
+  PairingPinRequiredError,
   requestLandlinkDevice,
 } from "@/shared/api";
 
@@ -48,6 +55,7 @@ function detectInitial(): State {
 }
 
 function describe(err: unknown): string {
+  if (err instanceof PairingPinRequiredError) return err.message;
   if (err instanceof Error && err.message) return err.message;
   return "Couldn't connect to the device.";
 }
@@ -62,18 +70,22 @@ export function useBluetoothPairing() {
       return;
     }
 
+    console.log("[pairing] start");
     posthog.capture("bluetooth_pairing_started");
     setState({ status: "scanning", device: null, error: null });
 
     let paired;
     try {
       paired = await requestLandlinkDevice();
+      console.log("[pairing] device picked", paired);
     } catch (err) {
       if (err instanceof PairingCancelledError) {
+        console.log("[pairing] cancelled by user");
         posthog.capture("bluetooth_pairing_cancelled");
         setState(INITIAL);
         return;
       }
+      console.warn("[pairing] requestDevice failed", err);
       posthog.capture("bluetooth_pairing_failed", { error: describe(err) });
       setState({ status: "error", device: null, error: describe(err) });
       return;
@@ -84,8 +96,26 @@ export function useBluetoothPairing() {
     try {
       await connectLandlinkDevice(paired.id);
     } catch (err) {
+      console.warn("[pairing] connect failed", err);
       posthog.capture("bluetooth_pairing_failed", { error: describe(err) });
       setState({ status: "error", device: null, error: describe(err) });
+      return;
+    }
+
+    // Detect which protocol family this device speaks based on advertised
+    // GATT primary services. Done post-connect (pre-attach) so we can route
+    // to the matching adapter without a UI step.
+    const kind = await detectDeviceProtocolKind(paired.id);
+    console.log("[pairing] protocol detect result", kind);
+    if (kind === null) {
+      posthog.capture("bluetooth_pairing_failed", {
+        error: "Unsupported device — no Landlink or Meshtastic service.",
+      });
+      setState({
+        status: "error",
+        device: null,
+        error: "Unsupported device. Make sure it's a Landlink or Meshtastic device.",
+      });
       return;
     }
 
@@ -95,16 +125,33 @@ export function useBluetoothPairing() {
     setPrimaryDeviceId(paired.id);
 
     try {
-      await attachLandlinkClient(paired.id, paired.name);
+      if (kind === "meshtastic") {
+        await attachMeshtasticClient(paired.id, paired.name);
+      } else {
+        await attachLandlinkClient(paired.id, paired.name);
+      }
     } catch (err) {
       setPrimaryDeviceId(previousPrimary);
-      await detachLandlinkClient(paired.id).catch(() => undefined);
-      posthog.capture("bluetooth_pairing_failed", { error: describe(err) });
-      setState({ status: "error", device: null, error: describe(err) });
+      if (kind === "meshtastic") {
+        await detachMeshtasticClient(paired.id).catch(() => undefined);
+      } else {
+        await detachLandlinkClient(paired.id).catch(() => undefined);
+      }
+      // Attach can fail with a pairing error when the device's encrypted
+      // characteristics aren't accessible yet (PIN dialog not completed).
+      // Surface the explicit "enter 123456" hint instead of a generic
+      // GATT error string the user can't act on.
+      const reported =
+        err instanceof PairingPinRequiredError
+          ? err.message
+          : describe(err);
+      posthog.capture("bluetooth_pairing_failed", { error: reported });
+      setState({ status: "error", device: null, error: reported });
       return;
     }
 
     registerDevice({ id: paired.id, name: paired.name, source: "ble" });
+    updateRegisteredDevice(paired.id, { protocol: kind });
 
     posthog.capture("bluetooth_pairing_succeeded", {
       device_id: paired.id,

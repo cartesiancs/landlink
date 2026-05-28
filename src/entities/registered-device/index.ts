@@ -1,5 +1,6 @@
 export type {
   RegisteredDevice,
+  RegisteredDeviceProtocol,
   RegisteredDeviceSource,
   RegisteredDeviceStatus,
 } from "./model/types";

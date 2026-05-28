@@ -7,17 +7,29 @@ import {
   trackPendingChat,
   useLandlinkDevice,
 } from "@/entities/landlink-device";
+import { sendMeshtasticText } from "@/entities/meshtastic-device";
+import {
+  findDevice,
+  useRegisteredDevices,
+} from "@/entities/registered-device";
 import { MeshKind, Opcode, TlvTag, type Tlv } from "@/shared/protocol";
 
 export type SendMeshMessageStatus = "idle" | "sending" | "sent" | "error";
 
 const MAX_TEXT_BYTES = 200;
 
-export function useSendMeshMessage() {
+export function useSendMeshMessage(channelIndex = 0) {
   const [status, setStatus] = useState<SendMeshMessageStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const device = useLandlinkDevice();
   const protocolMode = device?.protocol ?? null;
+  const registeredDevices = useRegisteredDevices();
+  const registered = device
+    ? findDevice(registeredDevices, device.deviceId)
+    : null;
+  // Connected-device protocol family (Landlink TLV vs Meshtastic). Falls
+  // back to "landlink" for legacy registered entries that predate the field.
+  const adapter = registered?.protocol ?? "landlink";
 
   const send = useCallback(async (text: string): Promise<boolean> => {
     const trimmed = text.trim();
@@ -34,13 +46,39 @@ export function useSendMeshMessage() {
       return false;
     }
 
+    setStatus("sending");
+    setError(null);
+
+    if (adapter === "meshtastic") {
+      try {
+        await sendMeshtasticText(trimmed, channelIndex);
+        // The device echoes our packet back via FromRadio so the message
+        // shows up in the feed without an optimistic append (which would
+        // double-render). See sendMeshtasticText's comment for context.
+        setStatus("sent");
+        return true;
+      } catch (err) {
+        setStatus("error");
+        setError(err instanceof Error ? err.message : "Send failed");
+        return false;
+      }
+    }
+
+    // Landlink path: TLV/opcode framing. Only Primary (channelIndex 0) is
+    // meaningful on Landlink firmware — there's no on-wire channel concept
+    // beyond the single shared network key, so other indices are rejected
+    // here rather than silently misrouted.
+    if (channelIndex !== 0) {
+      setStatus("error");
+      setError("This device only supports the Primary channel");
+      return false;
+    }
+
     const tlvs: Tlv[] = [
       { tag: TlvTag.KIND, value: Uint8Array.of(MeshKind.CHAT_TEXT) },
       { tag: TlvTag.CHAT_TEXT, value: encoded },
     ];
 
-    setStatus("sending");
-    setError(null);
     try {
       // Both protocols surface MESH_SEND_RESULT with the assigned pkt_id, so
       // the host can wait for an ACK (landlink: KIND=ACK frame; meshtastic:
@@ -50,17 +88,17 @@ export function useSendMeshMessage() {
       // new messages on the receiver. The pre-seq hook registers the pending
       // entry synchronously, before the BLE write, because MESH_SEND_RESULT
       // can race past the await on a fast link.
-      let registered = false;
+      let registeredPending = false;
       await sendLandlinkCommand(Opcode.MESH_SEND, tlvs, (seq) => {
         if (protocolMode !== null) {
           appendOutgoingPending(trimmed, seq);
           trackPendingChat(seq, trimmed, encoded, {
             noRetry: protocolMode === 1,
           });
-          registered = true;
+          registeredPending = true;
         }
       });
-      if (!registered) {
+      if (!registeredPending) {
         appendOutgoingMessage(trimmed);
       }
       setStatus("sent");
@@ -70,12 +108,20 @@ export function useSendMeshMessage() {
       setError(err instanceof Error ? err.message : "Send failed");
       return false;
     }
-  }, [protocolMode]);
+  }, [adapter, channelIndex, protocolMode]);
 
   const reset = useCallback(() => {
     setStatus("idle");
     setError(null);
   }, []);
 
-  return { status, error, send, reset, maxBytes: MAX_TEXT_BYTES };
+  return {
+    status,
+    error,
+    send,
+    reset,
+    maxBytes: MAX_TEXT_BYTES,
+    adapter,
+    channelIndex,
+  };
 }

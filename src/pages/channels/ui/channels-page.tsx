@@ -1,6 +1,8 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
+import { useLandlinkDevice } from "@/entities/landlink-device";
+import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
 import { CreateChannelDialog } from "@/features/create-channel";
 import { cn, hapticTick } from "@/shared/lib";
 import { Button } from "@/shared/ui";
@@ -15,6 +17,15 @@ export function ChannelsPage() {
   const [supportOpen, setSupportOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const navVisible = useBottomNavVisible();
+  const device = useLandlinkDevice();
+  const registeredDevices = useRegisteredDevices();
+  const registered = device
+    ? findDevice(registeredDevices, device.deviceId)
+    : null;
+  // Meshtastic channels are device-managed (added/removed via admin_message
+  // writes to NVS). Local-only creation would lie to the user about what's
+  // configured on-device, so we hide the affordance for that family.
+  const canCreateLocally = registered?.protocol !== "meshtastic";
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -26,6 +37,9 @@ export function ChannelsPage() {
           setSupportOpen(true);
         }}
       />
+      <div className="px-4 pt-1 pb-3">
+        <h1 className="text-base font-medium">Channels</h1>
+      </div>
       <main
         className={cn(
           "min-h-0 flex-1 overflow-y-auto px-4 pt-6",
@@ -34,20 +48,26 @@ export function ChannelsPage() {
             : "pb-[max(env(safe-area-inset-bottom),1.5rem)]",
         )}
       >
-        <h1 className="mb-4 text-lg font-semibold tracking-tight">Channels</h1>
         <ChannelList />
-        <Button
-          variant="outline"
-          size="lg"
-          className="mt-4 h-12 w-full justify-start gap-2"
-          onClick={() => {
-            hapticTick();
-            setCreateOpen(true);
-          }}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          Create new channel
-        </Button>
+        {canCreateLocally ? (
+          <Button
+            variant="outline"
+            size="lg"
+            className="mt-4 h-12 w-full justify-start gap-2"
+            onClick={() => {
+              hapticTick();
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Create new channel
+          </Button>
+        ) : (
+          <p className="mt-4 rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
+            Channels are managed on the Meshtastic device. Use the official
+            Meshtastic app to add or remove channels.
+          </p>
+        )}
       </main>
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />

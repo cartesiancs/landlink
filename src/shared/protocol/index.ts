@@ -5,6 +5,11 @@ export {
   type LandlinkCharacteristicName,
 } from "./uuids";
 export {
+  MESHTASTIC_CHARACTERISTIC,
+  MESHTASTIC_DEVICE_NAME_PREFIX,
+  MESHTASTIC_SERVICE_UUID,
+} from "./meshtastic";
+export {
   decodeFrame,
   decodeTlvs,
   encodeFrame,

@@ -13,19 +13,24 @@ import {
 
 type ChannelRowProps = {
   channel: Channel;
+  // When false, the row never shows the delete affordance — used in
+  // Meshtastic mode where channels are device-managed.
+  deletable?: boolean;
   onRequestDelete: (channel: Channel) => void;
 };
 
-export function ChannelRow({ channel, onRequestDelete }: ChannelRowProps) {
+export function ChannelRow({
+  channel,
+  deletable = true,
+  onRequestDelete,
+}: ChannelRowProps) {
   const navigate = useNavigate();
   const isPrimary = channel.role === "primary";
+  const showDelete = deletable && !isPrimary;
 
   const handleClick = () => {
     hapticTick();
-    const path = ROUTES.channelChat.replace(
-      ":index",
-      channel.index.toString(),
-    );
+    const path = ROUTES.channelChat.replace(":index", channel.index.toString());
     void navigate(path, { viewTransition: true });
   };
 
@@ -47,17 +52,9 @@ export function ChannelRow({ channel, onRequestDelete }: ChannelRowProps) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium">{channel.name}</p>
-          {isPrimary ? (
-            <span className="shrink-0 rounded-sm border border-border px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-muted-foreground">
-              Default
-            </span>
-          ) : null}
         </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          Channel #{channel.index}
-        </p>
       </div>
-      {isPrimary ? (
+      {!showDelete ? (
         <ChevronRight
           className="size-4 shrink-0 text-muted-foreground"
           aria-hidden="true"

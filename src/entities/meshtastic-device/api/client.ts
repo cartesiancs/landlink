@@ -1,0 +1,406 @@
+import {
+  appendMessage,
+  failAllOutgoingPending,
+  getState,
+  setConnected,
+  setConnecting,
+  setDisconnected,
+  setInfo,
+} from "@/entities/landlink-device";
+import {
+  findDevice,
+  getRegisteredDevices,
+  updateRegisteredDevice,
+} from "@/entities/registered-device";
+import {
+  clearDeviceChannels,
+  setDeviceChannels,
+  type Channel as ChannelStoreEntry,
+} from "@/entities/meshtastic-channel";
+import {
+  disconnectLandlinkDevice,
+  onLandlinkDisconnect,
+  readCharacteristic,
+  startNotifications,
+  writeCharacteristic,
+} from "@/shared/api";
+import {
+  CHANNEL_ROLE,
+  MESHTASTIC_CHARACTERISTIC,
+  MESHTASTIC_SERVICE_UUID,
+  PORTNUM,
+  BROADCAST_ADDR,
+  decodeFromRadio,
+  encodeToRadio,
+  type MeshtasticChannel,
+} from "@/shared/protocol/meshtastic";
+
+let activeDeviceId: string | null = null;
+let activeStoppers: (() => Promise<void>)[] = [];
+let activeUnsubDisconnect: (() => void) | null = null;
+// Channels arrive one at a time via FromRadio; accumulate until
+// config_complete_id, then push the full set to the channel store.
+let pendingChannels: ChannelStoreEntry[] = [];
+// Cached self node id from FromRadio.my_info.my_node_num. Used by sendText so
+// we can attribute outgoing messages to a stable id (matches incoming RX
+// dedup keying by senderNodeId).
+let selfNodeNum = 0;
+
+function nodeIdHex(n: number): string {
+  // Meshtastic node ids are 32-bit, conventionally displayed as 8-hex (no 0x).
+  return (n >>> 0).toString(16).padStart(8, "0");
+}
+
+function pskRefToBytes(psk: Uint8Array): Uint8Array {
+  // Meshtastic encodes Primary's "default" key as a single byte 0x01. The
+  // device-side firmware expands that to the documented 32-byte AES-256
+  // key when actually encrypting. For our local representation we mirror
+  // the bytes the device sent verbatim; STEP 3 (channel sharing) is where
+  // exact key material matters and we'd expand client-side too. For now
+  // we keep raw to preserve round-trip fidelity.
+  return psk;
+}
+
+function toStoreChannel(mc: MeshtasticChannel): ChannelStoreEntry | null {
+  if (mc.role === CHANNEL_ROLE.DISABLED) return null;
+  const name =
+    mc.settings?.name && mc.settings.name.length > 0
+      ? mc.settings.name
+      : mc.role === CHANNEL_ROLE.PRIMARY
+        ? "Primary"
+        : `Channel ${mc.index.toString()}`;
+  return {
+    index: mc.index,
+    name,
+    psk: pskRefToBytes(mc.settings?.psk ?? new Uint8Array(0)),
+    role: mc.role === CHANNEL_ROLE.PRIMARY ? "primary" : "secondary",
+    createdAt: 0,
+  };
+}
+
+async function runStoppers(): Promise<void> {
+  const stoppers = activeStoppers;
+  activeStoppers = [];
+  for (const stop of stoppers) {
+    try {
+      await stop();
+    } catch {
+      // best effort
+    }
+  }
+}
+
+function clearActive(): void {
+  activeUnsubDisconnect?.();
+  activeUnsubDisconnect = null;
+  if (activeDeviceId) clearDeviceChannels(activeDeviceId);
+  activeDeviceId = null;
+  activeStoppers = [];
+  pendingChannels = [];
+  selfNodeNum = 0;
+}
+
+function bytesToHexPreview(data: Uint8Array, max = 32): string {
+  const len = Math.min(data.byteLength, max);
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    out += (data[i] ?? 0).toString(16).padStart(2, "0");
+    if (i + 1 < len) out += " ";
+  }
+  if (data.byteLength > max) out += " ...";
+  return out;
+}
+
+function dispatchFromRadio(data: Uint8Array): void {
+  if (data.byteLength === 0) return;
+  let msg;
+  try {
+    msg = decodeFromRadio(data);
+  } catch (err) {
+    console.warn("[meshtastic] FromRadio decode failed", {
+      bytes: data.byteLength,
+      hex: bytesToHexPreview(data),
+      err,
+    });
+    return;
+  }
+  console.log("[meshtastic] rx", msg.kind, {
+    bytes: data.byteLength,
+    hex: bytesToHexPreview(data),
+  });
+  switch (msg.kind) {
+    case "my_info":
+      selfNodeNum = msg.myInfo.myNodeNum;
+      console.log("[meshtastic] my_info", {
+        myNodeNum: selfNodeNum,
+        hex: nodeIdHex(selfNodeNum),
+      });
+      if (activeDeviceId !== null) {
+        const hex = nodeIdHex(selfNodeNum);
+        setInfo({
+          nodeId: hex,
+          nodeName: null,
+          meshId: null,
+          region: null,
+        });
+        const registered = findDevice(getRegisteredDevices(), activeDeviceId);
+        if (registered && registered.nodeId !== hex) {
+          updateRegisteredDevice(activeDeviceId, { nodeId: hex });
+        }
+      }
+      return;
+    case "channel": {
+      const entry = toStoreChannel(msg.channel);
+      console.log("[meshtastic] channel", {
+        index: msg.channel.index,
+        role: msg.channel.role,
+        name: msg.channel.settings?.name,
+        kept: entry !== null,
+      });
+      if (entry) pendingChannels.push(entry);
+      return;
+    }
+    case "config_complete_id":
+      console.log("[meshtastic] config_complete_id", {
+        id: msg.id,
+        channels: pendingChannels.length,
+      });
+      if (activeDeviceId) {
+        setDeviceChannels(activeDeviceId, pendingChannels);
+        pendingChannels = [];
+      }
+      setConnected();
+      return;
+    case "packet": {
+      const p = msg.packet;
+      console.log("[meshtastic] packet", {
+        from: nodeIdHex(p.from),
+        to: nodeIdHex(p.to),
+        channel: p.channel,
+        portnum: p.decoded?.portnum,
+        payloadBytes: p.decoded?.payload.byteLength,
+        rxTime: p.rxTime,
+      });
+      if (!p.decoded) return;
+      if (p.decoded.portnum !== PORTNUM.TEXT_MESSAGE_APP) return;
+      const text = new TextDecoder().decode(p.decoded.payload);
+      const senderHex = nodeIdHex(p.from);
+      // Receiver-stamped rx_time is epoch seconds. When 0 (device clock
+      // unset) fall back to "now" so the UI shows a real timestamp instead
+      // of 1970-01-01.
+      const receivedAt =
+        p.rxTime > 0 ? p.rxTime * 1000 : Date.now();
+      const isOurs = selfNodeNum !== 0 && p.from === selfNodeNum;
+      appendMessage({
+        senderNodeId: senderHex,
+        text,
+        direction: isOurs ? "outgoing" : "incoming",
+        receivedAt,
+        channelIndex: p.channel,
+      });
+      return;
+    }
+    case "node_info":
+    case "unknown":
+      // node_info: not surfaced in STEP 2 MVP — peer NodeDB is a future task.
+      // unknown: any FromRadio variant we didn't decode (newer firmware
+      // fields, config/module_config, etc.). Safe to ignore.
+      return;
+  }
+}
+
+async function drainFromRadio(deviceId: string): Promise<void> {
+  // Read until the device returns an empty buffer (queue drained). This
+  // is the standard Meshtastic phone-API contract: each read pops one
+  // FromRadio off the device's outbound queue.
+  console.log("[meshtastic] drain start", { deviceId });
+  let reads = 0;
+  for (let i = 0; i < 256; i++) {
+    let chunk: Uint8Array;
+    try {
+      chunk = await readCharacteristic(
+        deviceId,
+        MESHTASTIC_SERVICE_UUID,
+        MESHTASTIC_CHARACTERISTIC.FROM_RADIO,
+      );
+    } catch (err) {
+      console.warn("[meshtastic] drain read failed, stopping", {
+        reads,
+        err,
+      });
+      return;
+    }
+    if (chunk.byteLength === 0) {
+      console.log("[meshtastic] drain done (empty)", { reads });
+      return;
+    }
+    reads++;
+    dispatchFromRadio(chunk);
+  }
+  console.warn("[meshtastic] drain hit safety cap", { reads });
+}
+
+export async function attachMeshtasticClient(
+  deviceId: string,
+  name: string,
+): Promise<void> {
+  console.log("[meshtastic] attach", { deviceId, name });
+  if (activeDeviceId === deviceId && getState()?.status === "connected") {
+    console.log("[meshtastic] attach: already attached, skipping");
+    return;
+  }
+  if (activeDeviceId && activeDeviceId !== deviceId) {
+    await detachMeshtasticClient(activeDeviceId);
+  }
+
+  setConnecting({ deviceId, name });
+  activeDeviceId = deviceId;
+  pendingChannels = [];
+
+  activeUnsubDisconnect = onLandlinkDisconnect(deviceId, () => {
+    console.warn("[meshtastic] disconnect callback", { deviceId });
+    failAllOutgoingPending();
+    void runStoppers().finally(() => {
+      clearActive();
+      setDisconnected();
+    });
+  });
+
+  try {
+    // Meshtastic's BLE phone API uses TWO notification channels:
+    //   • fromRadio — READ only; one FromRadio message per read, empty when
+    //     the device's outbound queue is drained.
+    //   • fromNum   — NOTIFY; a uint32 counter the device increments after
+    //     pushing new data, used as a wake hint so phones can sleep instead
+    //     of polling.
+    // Subscribing to fromRadio itself throws NotSupportedError (it has no
+    // NOTIFY property). We subscribe to fromNum and drain fromRadio on each
+    // hint.
+    console.log("[meshtastic] subscribe fromNum (wake hint)");
+    let draining = false;
+    const wake = () => {
+      if (draining) return;
+      draining = true;
+      void drainFromRadio(deviceId).finally(() => {
+        draining = false;
+      });
+    };
+    const stopFromNum = await startNotifications(
+      deviceId,
+      MESHTASTIC_SERVICE_UUID,
+      MESHTASTIC_CHARACTERISTIC.FROM_NUM,
+      (data) => {
+        // The notification payload is the uint32 counter; we don't actually
+        // need its value — the change itself is the signal.
+        console.log("[meshtastic] fromNum notify", {
+          bytes: data.byteLength,
+        });
+        wake();
+      },
+    );
+    activeStoppers.push(stopFromNum);
+
+    // Kick off the configuration flow. The id is just a tag we'd recognize in
+    // FromRadio.config_complete_id; any non-zero value works for one-shot use.
+    const wantConfigId = (Math.random() * 0x7fffffff) | 0 || 1;
+    const toRadio = encodeToRadio({
+      kind: "want_config_id",
+      id: wantConfigId,
+    });
+    console.log("[meshtastic] write want_config_id", {
+      id: wantConfigId,
+      bytes: toRadio.byteLength,
+    });
+    await writeCharacteristic(
+      deviceId,
+      MESHTASTIC_SERVICE_UUID,
+      MESHTASTIC_CHARACTERISTIC.TO_RADIO,
+      toRadio,
+    );
+
+    // Drain the initial config burst (channels, my_info, node_info, then
+    // config_complete_id which flips us to "connected" via dispatchFromRadio).
+    // The fromNum notification will also fire and trigger another drain via
+    // wake(), but the in-flight guard prevents overlap.
+    await drainFromRadio(deviceId);
+    console.log("[meshtastic] attach complete");
+  } catch (err) {
+    console.warn("[meshtastic] attach failed", { deviceId, err });
+    await runStoppers();
+    clearActive();
+    setDisconnected();
+    throw err;
+  }
+}
+
+export async function detachMeshtasticClient(deviceId: string): Promise<void> {
+  console.log("[meshtastic] detach", { deviceId });
+  await runStoppers();
+  try {
+    await disconnectLandlinkDevice(deviceId);
+  } catch {
+    // device may already be gone
+  }
+  clearActive();
+  setDisconnected();
+}
+
+export async function sendMeshtasticText(
+  text: string,
+  channelIndex: number,
+  dest: number = BROADCAST_ADDR,
+): Promise<void> {
+  const dev = getState();
+  if (dev?.status !== "connected") {
+    throw new Error("Meshtastic device not connected");
+  }
+  const trimmed = text.trim();
+  if (trimmed.length === 0) throw new Error("Message is empty");
+  const payload = new TextEncoder().encode(trimmed);
+  if (payload.byteLength > 200) {
+    throw new Error("Message exceeds 200 bytes");
+  }
+  // Random 32-bit packet id. The receiving Meshtastic devices use this for
+  // dedup; reusing an id within ~minutes would suppress the duplicate.
+  const id = ((Math.random() * 0x7fffffff) | 0) || 1;
+  const frame = encodeToRadio({
+    kind: "packet",
+    packet: {
+      to: dest,
+      channel: channelIndex,
+      id,
+      decoded: {
+        portnum: PORTNUM.TEXT_MESSAGE_APP,
+        payload,
+      },
+      wantAck: dest !== BROADCAST_ADDR,
+    },
+  });
+  console.log("[meshtastic] sendText", {
+    channelIndex,
+    dest: nodeIdHex(dest),
+    bytes: payload.byteLength,
+    pktId: id,
+    frameBytes: frame.byteLength,
+  });
+  try {
+    await writeCharacteristic(
+      dev.deviceId,
+      MESHTASTIC_SERVICE_UUID,
+      MESHTASTIC_CHARACTERISTIC.TO_RADIO,
+      frame,
+    );
+  } catch (err) {
+    console.warn("[meshtastic] sendText write failed", err);
+    throw err;
+  }
+  // The Meshtastic firmware echoes self-originated packets back to the phone
+  // via FromRadio so the chat UI on the same phone shows the message in
+  // history. dispatchFromRadio handles that path; we don't optimistically
+  // append here to avoid duplicates. Latency is one BLE roundtrip — short
+  // enough that the user shouldn't notice.
+}
+
+export function isMeshtasticActive(): boolean {
+  return activeDeviceId !== null;
+}

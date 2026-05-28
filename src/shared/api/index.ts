@@ -1,5 +1,6 @@
 export {
   connectLandlinkDevice,
+  detectDeviceProtocol,
   disconnect as disconnectLandlinkDevice,
   isBlePairingSupported,
   listPermittedDevices,
@@ -10,5 +11,10 @@ export {
   startNotifications,
   writeCharacteristic,
   PairingCancelledError,
+  PairingPinRequiredError,
   type PairedDeviceInfo,
 } from "./ble";
+export {
+  detectDeviceProtocolKind,
+  type DeviceProtocolKind,
+} from "./protocol-detect";

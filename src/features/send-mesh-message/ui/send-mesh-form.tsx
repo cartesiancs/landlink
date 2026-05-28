@@ -7,8 +7,15 @@ import { Button, toast } from "@/shared/ui";
 
 import { useSendMeshMessage } from "../model/use-send-mesh-message";
 
-export function SendMeshForm() {
-  const { send, status, maxBytes } = useSendMeshMessage();
+type SendMeshFormProps = {
+  // Channel to address. Default 0 = Primary. On Landlink devices only
+  // Primary works (the hook errors on other indices); on Meshtastic the
+  // index routes via MeshPacket.channel.
+  channelIndex?: number;
+};
+
+export function SendMeshForm({ channelIndex = 0 }: SendMeshFormProps = {}) {
+  const { send, status, maxBytes } = useSendMeshMessage(channelIndex);
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const posthog = usePostHog();

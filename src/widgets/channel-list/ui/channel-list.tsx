@@ -6,6 +6,10 @@ import {
   type Channel,
 } from "@/entities/meshtastic-channel";
 import { useLandlinkDevice } from "@/entities/landlink-device";
+import {
+  findDevice,
+  useRegisteredDevices,
+} from "@/entities/registered-device";
 import { hapticTick } from "@/shared/lib";
 import {
   Button,
@@ -23,6 +27,14 @@ import { ChannelRow } from "./channel-row";
 export function ChannelList() {
   const channels = useChannels();
   const device = useLandlinkDevice();
+  const registeredDevices = useRegisteredDevices();
+  const registered = device
+    ? findDevice(registeredDevices, device.deviceId)
+    : null;
+  // Meshtastic channel rows are read-only locally — deleting would only drop
+  // the row from the in-memory mirror, not from the device's NVS, so the row
+  // would reappear on the next FromRadio refresh.
+  const rowsDeletable = registered?.protocol !== "meshtastic";
   const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
 
   if (!channels) {
@@ -53,6 +65,7 @@ export function ChannelList() {
           <ChannelRow
             key={c.index}
             channel={c}
+            deletable={rowsDeletable}
             onRequestDelete={setPendingDelete}
           />
         ))}

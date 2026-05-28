@@ -2,7 +2,18 @@ import {
   attachLandlinkClient,
   detachLandlinkClient,
 } from "@/entities/landlink-device";
-import { reconnectLandlinkDevice } from "@/shared/api";
+import {
+  attachMeshtasticClient,
+  detachMeshtasticClient,
+} from "@/entities/meshtastic-device";
+import {
+  findDevice,
+  getRegisteredDevices,
+} from "@/entities/registered-device";
+import {
+  detectDeviceProtocolKind,
+  reconnectLandlinkDevice,
+} from "@/shared/api";
 
 type Attempt = {
   promise: Promise<void>;
@@ -17,10 +28,23 @@ async function runAttempt(deviceId: string, name: string): Promise<void> {
     inFlight.delete(deviceId);
     throw err;
   }
+  // Prefer the persisted protocol tag for fast-path reconnect; fall back to
+  // re-probing GATT services when the tag is missing (legacy entries).
+  const registered = findDevice(getRegisteredDevices(), deviceId);
+  let kind = registered?.protocol ?? null;
+  kind ??= (await detectDeviceProtocolKind(deviceId)) ?? "landlink";
   try {
-    await attachLandlinkClient(deviceId, name);
+    if (kind === "meshtastic") {
+      await attachMeshtasticClient(deviceId, name);
+    } else {
+      await attachLandlinkClient(deviceId, name);
+    }
   } catch (err) {
-    await detachLandlinkClient(deviceId).catch(() => undefined);
+    if (kind === "meshtastic") {
+      await detachMeshtasticClient(deviceId).catch(() => undefined);
+    } else {
+      await detachLandlinkClient(deviceId).catch(() => undefined);
+    }
     inFlight.delete(deviceId);
     throw err;
   }
