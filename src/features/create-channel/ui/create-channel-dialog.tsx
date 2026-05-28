@@ -72,7 +72,7 @@ export function CreateChannelDialog({
               placeholder="e.g. Family"
               maxLength={32}
               className={cn(
-                "h-10 rounded-md border border-border bg-muted px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                "h-10 rounded-md border border-border bg-muted px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
                 tooLong &&
                   "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/50",
               )}
