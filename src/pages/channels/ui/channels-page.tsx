@@ -27,6 +27,7 @@ export function ChannelsPage() {
   // Stock Meshtastic devices speak admin_message instead, which we don't
   // implement on this app — they stay read-only here, managed via the
   // official Meshtastic app.
+  const isDeviceConnected = device !== null;
   const canCreateOnDevice = registered?.protocol !== "meshtastic";
 
   return (
@@ -51,25 +52,26 @@ export function ChannelsPage() {
         )}
       >
         <ChannelList />
-        {canCreateOnDevice ? (
-          <Button
-            variant="outline"
-            size="lg"
-            className="mt-4 h-12 w-full justify-start gap-2"
-            onClick={() => {
-              hapticTick();
-              setCreateOpen(true);
-            }}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-            Create new channel
-          </Button>
-        ) : (
-          <p className="mt-4 rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
-            Channels are managed on the Meshtastic device. Use the official
-            Meshtastic app to add or remove channels.
-          </p>
-        )}
+        {isDeviceConnected &&
+          (canCreateOnDevice ? (
+            <Button
+              variant="outline"
+              size="lg"
+              className="mt-4 h-12 w-full justify-start gap-2"
+              onClick={() => {
+                hapticTick();
+                setCreateOpen(true);
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Create new channel
+            </Button>
+          ) : (
+            <p className="mt-4 rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
+              Channels are managed on the Meshtastic device. Use the official
+              Meshtastic app to add or remove channels.
+            </p>
+          ))}
       </main>
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />
