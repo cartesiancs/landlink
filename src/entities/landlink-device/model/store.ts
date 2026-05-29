@@ -157,6 +157,21 @@ export function setProtocol(protocol: ProtocolMode): void {
   emit();
 }
 
+// A RADIO_REGION_RESULT EVT can arrive before the INFO characteristic read
+// finishes, so fabricate a blank ParsedInfo when info is still null rather
+// than no-op'ing — otherwise the live region update would be lost.
+export function setRegion(region: number): void {
+  if (!state) return;
+  const baseInfo: ParsedInfo = state.info ?? {
+    nodeId: null,
+    nodeName: null,
+    meshId: null,
+    region: null,
+  };
+  state = { ...state, info: { ...baseInfo, region } };
+  emit();
+}
+
 export type AppendMessageInput =
   & Omit<MeshMessage, "id">
   & Partial<Pick<MeshMessage, "id">>;

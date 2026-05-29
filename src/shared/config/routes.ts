@@ -23,6 +23,7 @@ export const ROUTES = {
   settingsDebug: "/settings/debug",
   settingsReset: "/settings/reset",
   settingsProtocol: "/settings/protocol",
+  settingsRegion: "/settings/region",
   error: "/error",
   notFound: "*",
 } as const;

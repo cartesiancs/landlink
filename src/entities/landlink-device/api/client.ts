@@ -22,8 +22,10 @@ import {
   TlvTag,
   type FsmStateValue,
   type OpcodeValue,
+  type RegionValue,
   type Tlv,
 } from "@/shared/protocol";
+import { isRegionValue } from "@/shared/config";
 
 import { parseLandlinkInfo } from "../lib/parse-info";
 import { parseMeshRecv } from "../lib/parse-mesh-recv";
@@ -39,6 +41,7 @@ import {
   setInfo,
   setLastEvtFrame,
   setProtocol,
+  setRegion,
   setTelemetry,
   subscribe as subscribeStore,
   type AppendMessageInput,
@@ -261,6 +264,15 @@ export async function attachLandlinkClient(
               break;
             }
           }
+        } else if (op === Opcode.RADIO_REGION_RESULT) {
+          const tlvs = decodeTlvs(frame.payload);
+          for (const t of tlvs) {
+            if (t.tag === TlvTag.REGION && t.value.byteLength === 1) {
+              const v = t.value[0];
+              if (v !== undefined && isRegionValue(v)) setRegion(v);
+              break;
+            }
+          }
         } else if (op === Opcode.ERROR) {
           // Firmware reports a per-command rejection (BAD_ARG, NOT_FOUND,
           // BUSY, UNAUTHED, ...). The payload is the legacy 3-byte tuple
@@ -325,6 +337,11 @@ export async function attachLandlinkClient(
       await sendLandlinkCommand(Opcode.RADIO_GET_PROTOCOL);
     } catch (err) {
       console.warn("[landlink] RADIO_GET_PROTOCOL failed", err);
+    }
+    try {
+      await sendLandlinkCommand(Opcode.RADIO_GET_REGION);
+    } catch (err) {
+      console.warn("[landlink] RADIO_GET_REGION failed", err);
     }
   } catch (err) {
     await runStoppers();
@@ -414,6 +431,12 @@ subscribeStore(() => {
 export async function setLandlinkProtocolMode(mode: ProtocolMode): Promise<void> {
   await sendLandlinkCommand(Opcode.RADIO_SET_PROTOCOL, [
     { tag: TlvTag.PROTOCOL, value: new Uint8Array([mode]) },
+  ]);
+}
+
+export async function setLandlinkRegion(region: RegionValue): Promise<void> {
+  await sendLandlinkCommand(Opcode.RADIO_SET_REGION, [
+    { tag: TlvTag.REGION, value: new Uint8Array([region]) },
   ]);
 }
 

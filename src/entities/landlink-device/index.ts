@@ -7,6 +7,7 @@ export {
   onLandlinkPeerFound,
   sendLandlinkCommand,
   setLandlinkProtocolMode,
+  setLandlinkRegion,
   trackPendingChat,
   type LandlinkEvtFrame,
   type PeerFoundFrame,
