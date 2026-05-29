@@ -14,6 +14,7 @@ import {
 } from "@/entities/registered-device";
 
 vi.mock("@/entities/landlink-device", () => ({
+  clearAllMessages: vi.fn(() => Promise.resolve()),
   detachLandlinkClient: vi.fn(() => Promise.resolve()),
   useLandlinkDevice: () => null,
 }));

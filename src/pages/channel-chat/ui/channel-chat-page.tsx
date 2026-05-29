@@ -1,7 +1,12 @@
 import { Hash, Lock } from "lucide-react";
+import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { useLandlinkDevice } from "@/entities/landlink-device";
+import {
+  loadMessages,
+  replaceChannelMessages,
+  useLandlinkDevice,
+} from "@/entities/landlink-device";
 import {
   displayChannelName,
   findChannel,
@@ -25,6 +30,24 @@ export function ChannelChatPage() {
   const channel = findChannel(channels, parsedIndex ?? -1);
   const isPrimary = channel?.role === "primary";
   const isConnected = device?.status === "connected";
+
+  // Hydrate persisted history for this channel from IndexedDB whenever the
+  // device or channel changes. The in-memory store is empty on every page
+  // load until this fires; replaceChannelMessages merges any live messages
+  // already received by the BLE adapter so we don't drop in-flight traffic.
+  const deviceId = device?.deviceId;
+  const channelIndex = channel?.index;
+  useEffect(() => {
+    if (deviceId === undefined || channelIndex === undefined) return;
+    let cancelled = false;
+    void loadMessages(deviceId, channelIndex).then((persisted) => {
+      if (cancelled) return;
+      replaceChannelMessages(channelIndex, persisted);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, channelIndex]);
   // Firmware (both Landlink-native and Meshtastic-compatible modes) now
   // routes every configured channel through the same registry. The Landlink
   // wire format stays unchanged because per-channel session keys are

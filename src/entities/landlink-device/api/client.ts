@@ -40,7 +40,7 @@ import {
   setProtocol,
   setTelemetry,
   subscribe as subscribeStore,
-  type MeshMessage,
+  type AppendMessageInput,
   type ProtocolMode,
 } from "../model/store";
 import {
@@ -229,7 +229,7 @@ export async function attachLandlinkClient(
             ? `${parsed.senderNodeId}:${parsed.pktId}`
             : `${parsed.senderNodeId}:${parsed.receivedAt}`;
           if (chatSeen(dedupKey)) return;
-          const msg: MeshMessage = {
+          const msg: AppendMessageInput = {
             senderNodeId: parsed.senderNodeId,
             text: parsed.text,
             direction: "incoming",

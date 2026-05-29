@@ -30,12 +30,14 @@ export {
   appendMessage,
   failAllOutgoingPending,
   getState,
+  replaceChannelMessages,
   setConnected,
   setConnecting,
   setDisconnected,
   setInfo,
 } from "./model/store";
 export type {
+  AppendMessageInput,
   ChargeState,
   DeviceTelemetry,
   GpsFix,
@@ -47,3 +49,8 @@ export type {
   ParsedInfo,
   ProtocolMode,
 } from "./model/store";
+// Persistent message history surface (IndexedDB). loadMessages is consumed
+// by pages to hydrate channel chat history; clearAllMessages is wired into
+// reset-app-data. Mutation helpers (persist/attach/patch) stay private to
+// the slice — adapters reach them via the store mutators.
+export { clearAllMessages, loadMessages } from "./api/message-store";

@@ -18,3 +18,10 @@ export {
   detectDeviceProtocolKind,
   type DeviceProtocolKind,
 } from "./protocol-detect";
+export {
+  isIdbAvailable,
+  openDb,
+  requestToPromise,
+  tx,
+  type IdbUpgradeContext,
+} from "./idb";

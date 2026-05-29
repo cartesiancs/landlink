@@ -1,5 +1,11 @@
 import type { BleFrame, FsmStateValue } from "@/shared/protocol";
 
+import {
+  attachPktIdToMessage,
+  patchMessageByPktId,
+  persistMessage,
+} from "../api/message-store";
+
 export type LandlinkStatus = "disconnected" | "connecting" | "connected";
 
 export type ParsedInfo = {
@@ -37,6 +43,10 @@ export type MeshMessageDirection = "incoming" | "outgoing";
 export type MeshMessageStatus = "sending" | "delivered" | "failed";
 
 export type MeshMessage = {
+  // Stable per-message identifier used to correlate the in-memory entry with
+  // its persisted IndexedDB row when status updates (ACK delivery, retries)
+  // arrive after the initial write.
+  id: string;
   senderNodeId: string;
   text: string;
   direction: MeshMessageDirection;
@@ -64,13 +74,19 @@ export type LandlinkDevice = {
   protocol: ProtocolMode | null;
 };
 
-const MAX_MESSAGES = 50;
-
 let state: LandlinkDevice | null = null;
 const listeners = new Set<() => void>();
 
 function emit(): void {
   for (const l of listeners) l();
+}
+
+function newMessageId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback for environments without crypto.randomUUID (older test runners).
+  return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function getState(): LandlinkDevice | null {
@@ -141,32 +157,45 @@ export function setProtocol(protocol: ProtocolMode): void {
   emit();
 }
 
-export function appendMessage(message: MeshMessage): void {
+export type AppendMessageInput =
+  & Omit<MeshMessage, "id">
+  & Partial<Pick<MeshMessage, "id">>;
+
+export function appendMessage(input: AppendMessageInput): void {
   if (!state) return;
-  const next = state.messages.length >= MAX_MESSAGES
-    ? [...state.messages.slice(1), message]
-    : [...state.messages, message];
-  state = { ...state, messages: next };
+  const message: MeshMessage = {
+    ...input,
+    id: input.id ?? newMessageId(),
+  };
+  state = { ...state, messages: [...state.messages, message] };
   emit();
+  // Best-effort durable write. The connected deviceId is the per-device key
+  // we use to scope history; if the state has gone missing between emit and
+  // here, skip persistence.
+  const deviceId = state.deviceId;
+  void persistMessage(message, deviceId);
 }
 
 export function attachPktIdToOutgoing(bleSeq: number, pktId: number): void {
   if (!state) return;
-  let changed = false;
+  const affectedIds: string[] = [];
   const next = state.messages.map((m) => {
     if (
       m.direction === "outgoing" &&
       m.bleSeq === bleSeq &&
       m.pktId === undefined
     ) {
-      changed = true;
+      affectedIds.push(m.id);
       return { ...m, pktId };
     }
     return m;
   });
-  if (!changed) return;
+  if (affectedIds.length === 0) return;
   state = { ...state, messages: next };
   emit();
+  for (const id of affectedIds) {
+    void attachPktIdToMessage(id, pktId);
+  }
 }
 
 export function updateOutgoingByPktId(
@@ -183,21 +212,66 @@ export function updateOutgoingByPktId(
     return m;
   });
   if (!changed) return;
+  const deviceId = state.deviceId;
   state = { ...state, messages: next };
   emit();
+  void patchMessageByPktId(deviceId, pktId, patch);
 }
 
 export function failAllOutgoingPending(): void {
   if (!state) return;
   let changed = false;
+  const affected: { id: string; pktId: number | undefined }[] = [];
   const next = state.messages.map((m) => {
     if (m.direction === "outgoing" && m.status === "sending") {
       changed = true;
+      affected.push({ id: m.id, pktId: m.pktId });
       return { ...m, status: "failed" as const };
     }
     return m;
   });
   if (!changed) return;
+  const deviceId = state.deviceId;
   state = { ...state, messages: next };
+  emit();
+  for (const a of affected) {
+    if (a.pktId !== undefined) {
+      void patchMessageByPktId(deviceId, a.pktId, { status: "failed" });
+    }
+  }
+}
+
+// Merge persisted history for a channel into the in-memory store, preserving
+// any live messages (matched by id) that arrived during hydration. Used by
+// the channel-chat page on mount/connect so history survives reloads.
+export function replaceChannelMessages(
+  channelIndex: number,
+  persisted: readonly MeshMessage[],
+): void {
+  if (!state) return;
+  const liveById = new Map<string, MeshMessage>();
+  const others: MeshMessage[] = [];
+  for (const m of state.messages) {
+    if ((m.channelIndex ?? 0) === channelIndex) {
+      liveById.set(m.id, m);
+    } else {
+      others.push(m);
+    }
+  }
+  const merged: MeshMessage[] = [];
+  const seen = new Set<string>();
+  for (const p of persisted) {
+    // Live entries (with updated status/pktId) take precedence over the
+    // disk snapshot, which may be stale relative to in-flight ACK updates.
+    merged.push(liveById.get(p.id) ?? p);
+    seen.add(p.id);
+  }
+  // Live messages that aren't on disk yet (just appended, persist still in
+  // flight) need to stay in the rendered list.
+  for (const [id, m] of liveById) {
+    if (!seen.has(id)) merged.push(m);
+  }
+  merged.sort((a, b) => a.receivedAt - b.receivedAt);
+  state = { ...state, messages: [...others, ...merged] };
   emit();
 }

@@ -1,4 +1,5 @@
 import { _resetDebugModeStore, setDebugMode } from "@/entities/debug-mode";
+import { clearAllMessages } from "@/entities/landlink-device";
 import {
   _resetRegisteredDevicesStore,
   clearRegisteredDevices,
@@ -36,6 +37,11 @@ export function resetAppData(): { keysRemoved: number } {
   setDebugMode(false);
   _resetRegisteredDevicesStore();
   _resetDebugModeStore();
+  // Persisted channel-chat history lives in IndexedDB, not localStorage,
+  // so the prefix sweep above doesn't reach it. Fire-and-forget: any IDB
+  // error is warn-logged inside clearAllMessages and must not block the
+  // synchronous reset (the button caller already toasts success).
+  void clearAllMessages();
 
   return { keysRemoved };
 }
