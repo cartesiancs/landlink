@@ -12,9 +12,16 @@ type SendMeshFormProps = {
   // Primary works (the hook errors on other indices); on Meshtastic the
   // index routes via MeshPacket.channel.
   channelIndex?: number;
+  // When true the textarea and submit button are both disabled — used by the
+  // channel chat page to keep the form mounted (for layout stability and
+  // history viewing) while no device is connected to deliver writes.
+  disabled?: boolean;
 };
 
-export function SendMeshForm({ channelIndex = 0 }: SendMeshFormProps = {}) {
+export function SendMeshForm({
+  channelIndex = 0,
+  disabled = false,
+}: SendMeshFormProps = {}) {
   const { send, status, maxBytes } = useSendMeshMessage(channelIndex);
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -26,7 +33,7 @@ export function SendMeshForm({ channelIndex = 0 }: SendMeshFormProps = {}) {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
-    if (sending || text.trim().length === 0) return;
+    if (disabled || sending || text.trim().length === 0) return;
     if (tooLong) {
       toast.error(`Messages over ${maxBytes.toString()} bytes are not allowed`);
       return;
@@ -72,8 +79,9 @@ export function SendMeshForm({ channelIndex = 0 }: SendMeshFormProps = {}) {
           }}
           placeholder="Message"
           rows={1}
+          disabled={disabled}
           className={cn(
-            "max-h-32 min-h-9 flex-1 resize-none rounded-2xl border border-border bg-muted px-4 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+            "max-h-32 min-h-9 flex-1 resize-none rounded-2xl border border-border bg-muted px-4 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60",
             tooLong &&
               "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/50",
           )}
@@ -82,7 +90,7 @@ export function SendMeshForm({ channelIndex = 0 }: SendMeshFormProps = {}) {
           type="submit"
           size="icon-lg"
           aria-label="Send"
-          disabled={sending || text.trim().length === 0}
+          disabled={disabled || sending || text.trim().length === 0}
           // WHY: preventing the default mousedown/pointerdown keeps focus on
           // the textarea so the mobile soft keyboard does not collapse when
           // the user taps Send. The click event still fires and submits.

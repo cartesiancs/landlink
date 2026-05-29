@@ -23,6 +23,7 @@ export {
 } from "./api/channel";
 export { parseLandlinkInfo } from "./lib/parse-info";
 export { useLandlinkDevice } from "./model/use-landlink-device";
+export { useChannelMessages } from "./model/use-channel-messages";
 // Connected-device store surface used by transport adapters (Landlink TLV
 // adapter lives in api/client.ts; the Meshtastic adapter sits in its own
 // entity and writes to this store too). Exposed here as the public API so

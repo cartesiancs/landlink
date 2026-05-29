@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   landlinkChannelDelete,
@@ -8,8 +9,13 @@ import {
   useChannels,
   type Channel,
 } from "@/entities/meshtastic-channel";
-import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
+import {
+  findDevice,
+  useActiveDeviceId,
+  useRegisteredDevices,
+} from "@/entities/registered-device";
 import { ShareChannelDrawer } from "@/features/share-channel";
+import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
 import {
   Button,
@@ -25,23 +31,41 @@ import {
 import { ChannelRow } from "./channel-row";
 
 export function ChannelList() {
+  const navigate = useNavigate();
   const channels = useChannels();
   const device = useLandlinkDevice();
+  const activeDeviceId = useActiveDeviceId();
   const registeredDevices = useRegisteredDevices();
-  const registered = device
-    ? findDevice(registeredDevices, device.deviceId)
+  const registered = activeDeviceId
+    ? findDevice(registeredDevices, activeDeviceId)
     : null;
-  // Meshtastic channel rows are read-only locally — deleting would only drop
-  // the row from the in-memory mirror, not from the device's NVS, so the row
-  // would reappear on the next FromRadio refresh.
-  const rowsDeletable = registered?.protocol !== "meshtastic";
+  const isConnected = device?.status === "connected";
+  // Channel rows stay deletable only while the device is online and speaks
+  // the Landlink protocol — Meshtastic channels are managed via the official
+  // app, and offline deletes would only drop the local mirror while the
+  // device's NVS still holds the slot, so the row would reappear on the
+  // next sync.
+  const rowsDeletable = isConnected && registered?.protocol !== "meshtastic";
   const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
   const [pendingShare, setPendingShare] = useState<Channel | null>(null);
 
-  if (!channels) {
+  if (channels === null) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-        <p className="text-sm text-muted-foreground">No device connected.</p>
+        <p className="text-sm text-muted-foreground">
+          {activeDeviceId === null
+            ? "Pair a device to view channels."
+            : "Connect your device to load channels."}
+        </p>
+        <Button
+          variant="outline"
+          onClick={() => {
+            hapticTick();
+            void navigate(ROUTES.connectBluetooth);
+          }}
+        >
+          {activeDeviceId === null ? "Pair a device" : "Connect a device"}
+        </Button>
       </div>
     );
   }

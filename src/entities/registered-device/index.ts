@@ -23,6 +23,15 @@ export {
 } from "./model/primary-store";
 export { useRegisteredDevices } from "./model/use-registered-devices";
 export {
+  SELECTED_DEVICE_STORAGE_KEY,
+  getSelectedDeviceId,
+  setSelectedDeviceId,
+  subscribeSelectedDevice,
+  useActiveDeviceId,
+  useSelectedDeviceId,
+  _resetSelectedDeviceStore,
+} from "./model/active-device";
+export {
   registerDevice,
   type RegisterDeviceInput,
 } from "./model/register";

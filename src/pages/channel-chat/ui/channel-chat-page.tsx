@@ -1,10 +1,8 @@
 import { Hash, Lock } from "lucide-react";
-import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
-  loadMessages,
-  replaceChannelMessages,
+  useChannelMessages,
   useLandlinkDevice,
 } from "@/entities/landlink-device";
 import {
@@ -12,6 +10,7 @@ import {
   findChannel,
   useChannels,
 } from "@/entities/meshtastic-channel";
+import { useActiveDeviceId } from "@/entities/registered-device";
 import { SendMeshForm } from "@/features/send-mesh-message";
 import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
@@ -24,6 +23,7 @@ export function ChannelChatPage() {
   const navigate = useNavigate();
   const channels = useChannels();
   const device = useLandlinkDevice();
+  const activeDeviceId = useActiveDeviceId();
   const indexParam = params["index"];
   const parsedIndex =
     indexParam && /^[0-7]$/.test(indexParam) ? Number(indexParam) : null;
@@ -31,30 +31,10 @@ export function ChannelChatPage() {
   const isPrimary = channel?.role === "primary";
   const isConnected = device?.status === "connected";
 
-  // Hydrate persisted history for this channel from IndexedDB whenever the
-  // device or channel changes. The in-memory store is empty on every page
-  // load until this fires; replaceChannelMessages merges any live messages
-  // already received by the BLE adapter so we don't drop in-flight traffic.
-  const deviceId = device?.deviceId;
-  const channelIndex = channel?.index;
-  useEffect(() => {
-    if (deviceId === undefined || channelIndex === undefined) return;
-    let cancelled = false;
-    void loadMessages(deviceId, channelIndex).then((persisted) => {
-      if (cancelled) return;
-      replaceChannelMessages(channelIndex, persisted);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [deviceId, channelIndex]);
-  // Firmware (both Landlink-native and Meshtastic-compatible modes) now
-  // routes every configured channel through the same registry. The Landlink
-  // wire format stays unchanged because per-channel session keys are
-  // derived from each channel's PSK and RX trial-decrypts against every
-  // configured slot. So any channel that resolves through useChannels() on
-  // a connected device is chattable.
-  const chatSupported = channel !== null && isConnected;
+  // Pulls live messages when connected to the active device, otherwise reads
+  // the persisted snapshot from IndexedDB so history stays viewable offline.
+  // -1 short-circuits to an empty list when the channel can't be resolved.
+  const messages = useChannelMessages(activeDeviceId, channel?.index ?? -1);
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -88,26 +68,11 @@ export function ChannelChatPage() {
               Back to Channels
             </Button>
           </div>
-        ) : !isConnected ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <p className="text-sm text-muted-foreground">
-              No device connected.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                hapticTick();
-                void navigate(ROUTES.connectBluetooth);
-              }}
-            >
-              Connect a device
-            </Button>
-          </div>
         ) : (
-          <MeshMessageFeed channelIndex={channel.index} />
+          <MeshMessageFeed messages={messages} />
         )}
       </main>
-      {chatSupported && channel ? (
+      {channel ? (
         <div
           className="bg-background px-4 pt-3 transition-[padding-bottom] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{
@@ -115,7 +80,7 @@ export function ChannelChatPage() {
               "calc(max(env(safe-area-inset-bottom), 0.75rem) + var(--keyboard-inset, 0px))",
           }}
         >
-          <SendMeshForm channelIndex={channel.index} />
+          <SendMeshForm channelIndex={channel.index} disabled={!isConnected} />
         </div>
       ) : null}
     </div>

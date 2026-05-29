@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLandlinkDevice } from "@/entities/landlink-device";
 import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
 import { CreateChannelDialog } from "@/features/create-channel";
+import { ActiveDevicePicker } from "@/features/select-active-device";
 import { cn, hapticTick } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 import { AppHeader } from "@/widgets/app-header";
@@ -29,6 +30,10 @@ export function ChannelsPage() {
   // official Meshtastic app.
   const isDeviceConnected = device !== null;
   const canCreateOnDevice = registered?.protocol !== "meshtastic";
+  // The picker only adds value offline with 2+ registered devices — when
+  // connected, the active device is locked to the connection; with 0–1
+  // devices there's nothing to switch between.
+  const showDevicePicker = !isDeviceConnected && registeredDevices.length >= 2;
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
@@ -40,8 +45,9 @@ export function ChannelsPage() {
           setSupportOpen(true);
         }}
       />
-      <div className="px-4 pt-1 pb-3">
+      <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-3">
         <h1 className="text-base font-medium">Channels</h1>
+        {showDevicePicker ? <ActiveDevicePicker /> : null}
       </div>
       <main
         className={cn(

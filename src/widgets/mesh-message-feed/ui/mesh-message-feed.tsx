@@ -1,10 +1,7 @@
 import { Check, CheckCheck } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import {
-  useLandlinkDevice,
-  type MeshMessage,
-} from "@/entities/landlink-device";
+import type { MeshMessage } from "@/entities/landlink-device";
 import { cn } from "@/shared/lib";
 
 type GroupedMessage = {
@@ -87,17 +84,13 @@ function MessageRow({
 }
 
 type MeshMessageFeedProps = {
-  // Filter messages to a specific Meshtastic channel index. Undefined channels
-  // on legacy MeshMessage entries are treated as Primary (0).
-  channelIndex?: number;
+  // Pre-filtered, ordered messages for the channel being rendered. Owners
+  // (channel-chat page) decide whether to source these from the live BLE
+  // store or from the IndexedDB snapshot for read-only/offline viewing.
+  messages: readonly MeshMessage[];
 };
 
-export function MeshMessageFeed({ channelIndex = 0 }: MeshMessageFeedProps = {}) {
-  const device = useLandlinkDevice();
-  const allMessages = device?.messages ?? [];
-  const messages = allMessages.filter(
-    (m) => (m.channelIndex ?? 0) === channelIndex,
-  );
+export function MeshMessageFeed({ messages }: MeshMessageFeedProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastCount = useRef(0);
 
