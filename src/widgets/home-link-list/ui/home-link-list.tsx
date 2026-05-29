@@ -14,7 +14,7 @@ const LINKS: readonly LinkEntry[] = [
   {
     id: "github",
     label: "GitHub",
-    href: "https://github.com/cartesiancs",
+    href: "https://github.com/cartesiancs/landlink",
     kind: "external",
   },
   {
