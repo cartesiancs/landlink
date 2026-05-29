@@ -6,6 +6,7 @@ export const ROUTES = {
   connecting: "/connecting",
   about: "/about",
   faq: "/faq",
+  support: "/support",
   landlinkOne: "/landlink-one",
   landlinkModuleI: "/landlink-module-i",
   landlinkModuleIBuy: "/landlink-module-i/buy",

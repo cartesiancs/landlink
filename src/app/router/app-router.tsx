@@ -28,6 +28,7 @@ import { SettingsDebugPage } from "@/pages/settings-debug";
 import { SettingsProtocolPage } from "@/pages/settings-protocol";
 import { SettingsResetPage } from "@/pages/settings-reset";
 import { SettingsThemePage } from "@/pages/settings-theme";
+import { SupportPage } from "@/pages/support";
 import { TermsPage } from "@/pages/terms";
 import { ROUTES } from "@/shared/config";
 import { AppLayout } from "@/app/layout/app-layout";
@@ -54,6 +55,7 @@ const routes: RouteObject[] = [
     children: [
       { path: ROUTES.about, element: <AboutPage /> },
       { path: ROUTES.faq, element: <FaqPage /> },
+      { path: ROUTES.support, element: <SupportPage /> },
       { path: ROUTES.landlinkOne, element: <LandlinkOnePage /> },
       { path: ROUTES.landlinkModuleI, element: <LandlinkModuleIPage /> },
       { path: ROUTES.landlinkModuleIBuy, element: <LandlinkModuleIBuyPage /> },
