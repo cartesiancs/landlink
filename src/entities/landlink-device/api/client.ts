@@ -10,6 +10,7 @@ import {
   startNotifications,
   writeCharacteristic,
 } from "@/shared/api";
+import { notifyIncomingChat } from "@/shared/lib";
 import {
   decodeFrame,
   decodeTlvs,
@@ -238,6 +239,11 @@ export async function attachLandlinkClient(
           };
           if (parsed.pktId !== null) msg.pktId = parsed.pktId;
           appendMessage(msg);
+          notifyIncomingChat({
+            senderNodeId: parsed.senderNodeId,
+            text: parsed.text,
+            pktId: parsed.pktId,
+          });
         } else if (op === Opcode.LORA_PEER_FOUND) {
           for (const handler of peerFoundHandlers) {
             try {

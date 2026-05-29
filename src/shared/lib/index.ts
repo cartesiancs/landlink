@@ -1,5 +1,10 @@
 export { cn } from "./utils";
 export { hapticTick } from "./haptics";
+export { isAppActive, subscribeAppState } from "./app-state";
+export {
+  notifyIncomingChat,
+  requestNotificationPermission,
+} from "./notifications";
 export { useKeyboardInset } from "./keyboard-inset";
 export { installViewTransitionFlag } from "./install-view-transition-flag";
 export { useOverlayOpenFlag } from "./overlay-flag";

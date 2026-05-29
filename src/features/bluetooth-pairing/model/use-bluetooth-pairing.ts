@@ -23,6 +23,7 @@ import {
   PairingPinRequiredError,
   requestLandlinkDevice,
 } from "@/shared/api";
+import { requestNotificationPermission } from "@/shared/lib";
 
 export type BluetoothPairingStatus =
   | "idle"
@@ -157,6 +158,12 @@ export function useBluetoothPairing() {
       device_id: paired.id,
       device_name: paired.name,
     });
+
+    // WHY: ask for notification permission only after a successful pair, so the
+    // OS prompt arrives with clear context ("you just connected a device that
+    // will deliver chat in the background"). Result is intentionally ignored —
+    // denial does not break the chat flow.
+    void requestNotificationPermission();
 
     // WHY: hold the connecting state briefly so the transition to "connected" is perceivable even on fast connects.
     await new Promise((resolve) => setTimeout(resolve, 500));
