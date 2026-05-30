@@ -1,26 +1,37 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { useActiveDeviceId } from "@/entities/registered-device";
 
+import { makePrimary } from "../lib/defaults";
 import { getChannels, subscribe } from "./store";
 import type { Channel } from "./types";
 
-// Returns the cached channel list for the active device (connected, or the
-// most recently used registered device when offline), or null when no device
-// is registered at all. The device sync feature is responsible for populating
-// the store on connect; until that completes the UI sees either:
-//   * an empty/missing cache → null (UI shows a brief loading affordance)
-//   * a previously-cached snapshot from localStorage → that snapshot, then
-//     the fresh device-supplied list overwrites it.
-// When BLE drops, the cache for the last-connected device remains readable
-// so channels stay viewable in a read-only state.
+// Returns the cached channel list for the active device, with Primary (index
+// 0) guaranteed to be present.
+//
+// WHY the guarantee: Primary is mandatory firmware-side on every supported
+// device, so the UI must show it unconditionally. Synthesising a placeholder
+// here keeps the Channels screen non-empty during the gap between BLE attach
+// and the CHANNEL_LIST round-trip, on a freshly paired device with no cache
+// yet, and on devices whose firmware omits CHANNEL_NAME for Primary (a known
+// Landlink-side shorthand that would otherwise drop the slot in parseChannel).
+// The device-supplied Primary overwrites the placeholder on the next sync.
+//
+// Null is reserved for "no device registered at all" so the channel-list
+// widget can still surface its "Pair a device" CTA.
 export function useChannels(): readonly Channel[] | null {
   const deviceId = useActiveDeviceId();
-  return useSyncExternalStore(
+  const raw = useSyncExternalStore(
     subscribe,
     () => (deviceId ? getChannels(deviceId) : null),
     () => (deviceId ? getChannels(deviceId) : null),
   );
+  return useMemo(() => {
+    if (deviceId === null) return null;
+    if (raw === null) return [makePrimary()];
+    if (raw.some((c) => c.index === 0)) return raw;
+    return [makePrimary(), ...raw];
+  }, [deviceId, raw]);
 }
 
 export function findChannel(
