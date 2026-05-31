@@ -16,6 +16,7 @@ import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
 import { Button } from "@/shared/ui";
 import { MeshMessageFeed } from "@/widgets/mesh-message-feed";
+import { NodeListSheet } from "@/widgets/node-list";
 import { PageHeader } from "@/widgets/page-header";
 
 export function ChannelChatPage() {
@@ -53,7 +54,9 @@ export function ChannelChatPage() {
         }
         fallback={ROUTES.channels}
         backLabel="Back to Channels"
-      />
+      >
+        <NodeListSheet />
+      </PageHeader>
       <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4">
         {!channel ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
