@@ -12,15 +12,20 @@ type SendMeshFormProps = {
   // Primary works (the hook errors on other indices); on Meshtastic the
   // index routes via MeshPacket.channel.
   channelIndex?: number;
-  // When true the textarea and submit button are both disabled — used by the
+  // When true the textarea and submit button are both disabled, used by the
   // channel chat page to keep the form mounted (for layout stability and
   // history viewing) while no device is connected to deliver writes.
   disabled?: boolean;
+  // Human-readable explanation surfaced via toast when the user taps the
+  // form while it is disabled. Without it, taps on the disabled controls
+  // are silently swallowed and the affordance feels broken.
+  disabledReason?: string;
 };
 
 export function SendMeshForm({
   channelIndex = 0,
   disabled = false,
+  disabledReason,
 }: SendMeshFormProps = {}) {
   const { send, status, maxBytes } = useSendMeshMessage(channelIndex);
   const [text, setText] = useState("");
@@ -52,12 +57,28 @@ export function SendMeshForm({
     textareaRef.current?.focus();
   }
 
+  const showDisabledReason = (): void => {
+    if (disabled && disabledReason) {
+      toast.info(disabledReason);
+    }
+  };
+
   return (
     <form
       className="flex flex-col gap-1"
       onSubmit={(e) => void handleSubmit(e)}
+      // WHY: native `disabled` on <button>/<textarea> swallows click events, so
+      // taps on the inactive form never reach a handler. The pointer-events:none
+      // wrapper below routes the click up to the form, where we surface the
+      // reason as a toast instead of leaving the interaction silent.
+      onClick={showDisabledReason}
     >
-      <div className="flex items-end gap-2">
+      <div
+        className={cn(
+          "flex items-end gap-2",
+          disabled && disabledReason && "pointer-events-none",
+        )}
+      >
         <textarea
           ref={textareaRef}
           aria-label="Mesh message"

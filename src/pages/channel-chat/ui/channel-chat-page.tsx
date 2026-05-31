@@ -80,7 +80,11 @@ export function ChannelChatPage() {
               "calc(max(env(safe-area-inset-bottom), 0.75rem) + var(--keyboard-inset, 0px))",
           }}
         >
-          <SendMeshForm channelIndex={channel.index} disabled={!isConnected} />
+          <SendMeshForm
+            channelIndex={channel.index}
+            disabled={!isConnected}
+            disabledReason="Connect to a device to send messages."
+          />
         </div>
       ) : null}
     </div>
