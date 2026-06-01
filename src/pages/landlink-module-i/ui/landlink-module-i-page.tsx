@@ -106,6 +106,7 @@ export function LandlinkModuleIPage() {
           size="lg"
           className="mt-4 h-12 w-full text-base"
           aria-label="Buy Landlink Module I"
+          disabled
           onClick={() => {
             // WHY: checkout must run in the system browser. Apple disallows
             // external-goods payment inside the in-app WKWebView, so on native
