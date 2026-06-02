@@ -3,12 +3,12 @@
     "version": "0.1.0",
     "tag": "fw-v0.1.0",
     "channel": "stable",
-    "releasedAt": "2026-05-24",
-    "notes": "Initial Landlink Module I firmware build for LILYGO T-Beam V1.1 (ESP32 + SX1262, 923 MHz).",
+    "releasedAt": "2026-06-02",
+    "notes": "Landlink Module I firmware build for LILYGO T-Beam V1.1 (ESP32 + SX1262, 923 MHz).",
     "assets": {
       "firmware": {
         "name": "firmware.bin",
-        "size": 1161744,
+        "size": 1170384,
         "downloadUrl": "/firmware/0.1.0/firmware.bin"
       },
       "bootloader": {
