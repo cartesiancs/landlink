@@ -1,7 +1,8 @@
 import { Users } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 
 import { useLoraPeers } from "@/entities/lora-peer";
-import { hapticTick } from "@/shared/lib";
+import { cn, hapticTick } from "@/shared/lib";
 import {
   Button,
   Sheet,
@@ -13,6 +14,8 @@ import {
 } from "@/shared/ui";
 
 import { NodeListRow } from "./node-list-row";
+
+const IS_NATIVE_APP = Capacitor.isNativePlatform();
 
 export function NodeListSheet() {
   const peers = useLoraPeers();
@@ -32,7 +35,13 @@ export function NodeListSheet() {
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="gap-0">
-        <SheetHeader>
+        <SheetHeader
+          className={cn(
+            IS_NATIVE_APP
+              ? "pt-[calc(max(env(safe-area-inset-top),1rem)+18px)]"
+              : "pt-[max(env(safe-area-inset-top),1rem)]",
+          )}
+        >
           <SheetTitle>Nodes</SheetTitle>
           <SheetDescription></SheetDescription>
         </SheetHeader>
