@@ -157,12 +157,19 @@ async function requestViaWeb(): Promise<PairedDeviceInfo> {
     // Multiple filter entries → OR semantics. Devices advertising either
     // service UUID show up; the namePrefix narrows each family to its known
     // advertised name pattern to avoid showing every BLE peripheral nearby.
+    // WHY service-UUID-only fallbacks: with a 128-bit service UUID (18 bytes)
+    // plus AD flags, the "Landlink-XXXX" complete local name overflows the
+    // 31-byte adv packet and NimBLE moves it to the scan response. Chrome's
+    // namePrefix matching against scan-response names is unreliable across
+    // versions/platforms — the bare service filter ensures the device still
+    // appears in the chooser when the name match misses.
     const device = await navigator.bluetooth.requestDevice({
       filters: [
         {
           services: [LANDLINK_SERVICE_UUID],
           namePrefix: LANDLINK_DEVICE_NAME_PREFIX,
         },
+        { services: [LANDLINK_SERVICE_UUID] },
         {
           services: [MESHTASTIC_SERVICE_UUID],
           namePrefix: MESHTASTIC_DEVICE_NAME_PREFIX,
