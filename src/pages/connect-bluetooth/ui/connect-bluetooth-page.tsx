@@ -19,7 +19,7 @@ function toAction(
 ): StepAction {
   switch (status) {
     case "idle":
-      return { label: "Connect", onAction: start };
+      return { label: "Continue", onAction: start };
     case "error":
       return { label: "Retry", onAction: start };
     case "scanning":

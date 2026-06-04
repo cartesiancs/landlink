@@ -37,7 +37,7 @@ type StepMeta = {
 
 const STEP_META: Record<StepPath, StepMeta> = {
   [ROUTES.home]: { label: "Get started", next: ROUTES.connectBluetooth },
-  [ROUTES.connectBluetooth]: { label: "Connect", next: ROUTES.connectWifi },
+  [ROUTES.connectBluetooth]: { label: "Continue", next: ROUTES.connectWifi },
   [ROUTES.connectUnsupported]: { label: "Back", next: ROUTES.home },
   [ROUTES.connectWifi]: { label: "Connect", next: ROUTES.connecting },
   [ROUTES.connecting]: { label: "Cancel", next: ROUTES.home },
