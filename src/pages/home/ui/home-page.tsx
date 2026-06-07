@@ -20,6 +20,10 @@ const HOME_MAIN_TOP = "calc(env(safe-area-inset-top) + 3.5rem)";
 const HOME_MAIN_BOTTOM = Capacitor.isNativePlatform()
   ? "calc(4.5rem + max(env(safe-area-inset-bottom), 0.75rem))"
   : "calc(3.75rem + max(env(safe-area-inset-bottom), 0.75rem))";
+// WHY: Apple App Store brand-policy review flagged the Starlink mark. Swap
+// the headline copy on iOS only; web and Android keep the original wording.
+// The carousel itself swaps its own assets internally for iOS.
+const IS_IOS_APP = Capacitor.getPlatform() === "ios";
 
 function GroundStationMedia() {
   const [ref, inView] = useInView<HTMLDivElement>({
@@ -154,7 +158,15 @@ export function HomePage() {
             <div className="mx-auto flex h-full w-full max-w-[430px] flex-col">
               <div className="shrink-0 px-4 pt-4 pb-3">
                 <h1 className="font-display text-3xl font-normal leading-tight tracking-tight">
-                  Alternatives <br /> to Starlink
+                  {IS_IOS_APP ? (
+                    <>
+                      Alternatives <br /> to Satellites
+                    </>
+                  ) : (
+                    <>
+                      Alternatives <br /> to Starlink
+                    </>
+                  )}
                 </h1>
               </div>
 

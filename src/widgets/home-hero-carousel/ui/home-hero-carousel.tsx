@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -8,6 +9,7 @@ import {
 } from "@/shared/ui";
 import { cn } from "@/shared/lib";
 
+import bannerSrc from "../assets/banner.jpg";
 import starlinkDishSrc from "../assets/starlink-dish.webp";
 import groundStationSrc from "../assets/ground-station.webp";
 import constellationSrc from "../assets/constellation.webp";
@@ -20,23 +22,35 @@ type Slide = {
   alt: string;
 };
 
-const SLIDES: readonly Slide[] = [
-  {
-    id: "starlink-dish",
-    src: starlinkDishSrc,
-    alt: "Satellite dish against a night sky",
-  },
-  {
-    id: "ground-station",
-    src: groundStationSrc,
-    alt: "Earth from orbit with communication links",
-  },
-  {
-    id: "constellation",
-    src: constellationSrc,
-    alt: "Low-earth-orbit satellite constellation rendering",
-  },
-];
+// WHY: Apple App Store brand review flagged the Starlink assets. iOS gets a
+// single brand-safe banner slide; web and Android keep the original three.
+const IS_IOS_APP = Capacitor.getPlatform() === "ios";
+
+const SLIDES: readonly Slide[] = IS_IOS_APP
+  ? [
+      {
+        id: "banner",
+        src: bannerSrc,
+        alt: "Landlink connectivity banner",
+      },
+    ]
+  : [
+      {
+        id: "starlink-dish",
+        src: starlinkDishSrc,
+        alt: "Satellite dish against a night sky",
+      },
+      {
+        id: "ground-station",
+        src: groundStationSrc,
+        alt: "Earth from orbit with communication links",
+      },
+      {
+        id: "constellation",
+        src: constellationSrc,
+        alt: "Low-earth-orbit satellite constellation rendering",
+      },
+    ];
 
 const loadedSources = new Set<string>();
 
