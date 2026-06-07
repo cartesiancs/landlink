@@ -52,9 +52,9 @@ export function useSendMeshMessage(channelIndex = 0) {
     if (adapter === "meshtastic") {
       try {
         await sendMeshtasticText(trimmed, channelIndex);
-        // The device echoes our packet back via FromRadio so the message
-        // shows up in the feed without an optimistic append (which would
-        // double-render). See sendMeshtasticText's comment for context.
+        // sendMeshtasticText optimistically appends the outgoing message into
+        // the local feed (stock Meshtastic firmware does not echo it back via
+        // FromRadio), so the UI updates without waiting on a roundtrip.
         setStatus("sent");
         return true;
       } catch (err) {

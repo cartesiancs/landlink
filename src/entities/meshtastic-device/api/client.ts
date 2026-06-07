@@ -1,5 +1,6 @@
 import {
   appendMessage,
+  appendOutgoingMessage,
   failAllOutgoingPending,
   getState,
   setConnected,
@@ -190,11 +191,17 @@ function dispatchFromRadio(data: Uint8Array): void {
       // of 1970-01-01.
       const receivedAt =
         p.rxTime > 0 ? p.rxTime * 1000 : Date.now();
-      const isOurs = selfNodeNum !== 0 && p.from === selfNodeNum;
+      // Defense in depth: drop any TEXT_MESSAGE_APP frame that purports to
+      // come from us. Stock Meshtastic firmware does not echo self-originated
+      // packets back to the originating BLE phone, but some firmware variants
+      // (e.g. Landlink in Meshtastic-compat mode hearing its own relayed
+      // broadcast) do. The optimistic append in sendMeshtasticText is the
+      // source of truth for our own outgoing messages.
+      if (selfNodeNum !== 0 && p.from === selfNodeNum) return;
       appendMessage({
         senderNodeId: senderHex,
         text,
-        direction: isOurs ? "outgoing" : "incoming",
+        direction: "incoming",
         receivedAt,
         channelIndex: p.channel,
       });
@@ -394,11 +401,11 @@ export async function sendMeshtasticText(
     console.warn("[meshtastic] sendText write failed", err);
     throw err;
   }
-  // The Meshtastic firmware echoes self-originated packets back to the phone
-  // via FromRadio so the chat UI on the same phone shows the message in
-  // history. dispatchFromRadio handles that path; we don't optimistically
-  // append here to avoid duplicates. Latency is one BLE roundtrip — short
-  // enough that the user shouldn't notice.
+  // Stock Meshtastic firmware does not echo self-originated TEXT_MESSAGE_APP
+  // packets back to the originating BLE phone, so we must append locally for
+  // the message to appear in our own feed. dispatchFromRadio drops any
+  // echoed copy from firmware variants that do re-emit it.
+  appendOutgoingMessage(trimmed, channelIndex);
 }
 
 export function isMeshtasticActive(): boolean {
