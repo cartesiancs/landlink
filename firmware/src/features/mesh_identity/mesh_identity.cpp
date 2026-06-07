@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "features/pki_identity/pki_identity.h"
 #include "hal/gps/gps.h"
 #include "mesh/meshtastic/data_pb.h"
 #include "mesh/meshtastic/frame.h"
@@ -75,11 +76,18 @@ bool send_nodeinfo() {
     using mesh::meshtastic::kMaxPayload;
     using mesh::meshtastic::kPortnumNodeInfoApp;
 
-    // Encode the User payload.
-    uint8_t user_buf[96];
+    // Encode the User payload. Always carry the device public_key when
+    // available — peers cache it from NodeInfo for future PKI DMs. When PKI
+    // identity is uninitialized (very early boot or NVS fault) we omit the
+    // field and degrade to PSK-only operation.
+    uint8_t pki_pub[features::pki_identity::kKeyLen];
+    const bool have_pki = features::pki_identity::public_key(pki_pub);
+    uint8_t user_buf[128];
     const size_t user_len = mesh::meshtastic::encode_user(
         s_id, s_long_name, s_short_name, s_macaddr,
-        kHwModelTBeam, user_buf, sizeof(user_buf));
+        kHwModelTBeam,
+        have_pki ? pki_pub : nullptr,
+        user_buf, sizeof(user_buf));
     if (user_len == 0) {
         LL_LOG_W(kTag, "nodeinfo: encode_user failed");
         return false;

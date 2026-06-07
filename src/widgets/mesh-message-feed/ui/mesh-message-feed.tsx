@@ -1,4 +1,4 @@
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Lock } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import type { MeshMessage } from "@/entities/landlink-device";
@@ -76,6 +76,12 @@ function MessageRow({
           !outgoing && !isLastInGroup && "rounded-bl-md",
         )}
       >
+        {message.pkiEncrypted ? (
+          <Lock
+            aria-label="End-to-end encrypted"
+            className="mr-1 inline-block size-3 align-[-0.125em] opacity-70"
+          />
+        ) : null}
         {message.text}
       </div>
       {outgoing && isLastInGroup ? <DeliveryIndicator message={message} /> : null}

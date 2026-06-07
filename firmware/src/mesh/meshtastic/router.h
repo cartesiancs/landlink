@@ -33,9 +33,12 @@ namespace landlink::mesh::meshtastic {
 
 // Sink callback. `channel_index` is the registry slot that decoded the
 // frame; callers use it to demux into the host's per-channel feed.
+// `pki_encrypted` is true when the frame was authenticated via the
+// Meshtastic PKI path (X25519 + AES-CCM-8) rather than the channel PSK.
 using MeshtasticSink = void (*)(uint8_t channel_index,
                                 const Header& h,
-                                const DataMessage& data);
+                                const DataMessage& data,
+                                bool pki_encrypted);
 
 // Called when the router hears its own packet being relayed back on-air.
 // Real Meshtastic firmware does not send Routing ACKs for broadcasts, but
@@ -65,11 +68,18 @@ public:
     // `out_pkt_id` is non-null and the frame is built successfully, the
     // assigned Meshtastic pkt_id is written so callers can correlate later
     // ACKs (Routing replies whose Data.request_id equals this value).
+    //
+    // When `try_pki` is true and `dst` is unicast and the recipient's
+    // X25519 public key is cached, the frame is encrypted with PKI
+    // (channel byte set to 0 per Meshtastic convention) instead of the
+    // channel PSK. Identity callbacks (NodeInfo / Routing / Position) must
+    // pass try_pki=false — they belong on the channel broadcast layer.
     size_t originate(uint8_t channel_index,
                      uint32_t dst, bool want_ack, uint32_t portnum,
                      const uint8_t* payload, size_t payload_len,
                      uint8_t* out, size_t out_cap,
-                     uint32_t* out_pkt_id = nullptr);
+                     uint32_t* out_pkt_id = nullptr,
+                     bool try_pki = false);
 
     // Build and encrypt an outbound frame on the given channel, carrying a
     // pre-encoded Data payload verbatim (used by Routing ACKs where the
@@ -78,7 +88,8 @@ public:
                           uint32_t dst, bool want_ack,
                           const uint8_t* data_pb, size_t data_pb_len,
                           uint8_t* out, size_t out_cap,
-                          uint32_t* out_pkt_id = nullptr);
+                          uint32_t* out_pkt_id = nullptr,
+                          bool try_pki = false);
 
     // Handle a raw RX frame. May fill `forward_out` for relay; sets
     // `forward_len` accordingly. Calls the registered sink for frames

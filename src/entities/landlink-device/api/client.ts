@@ -250,6 +250,7 @@ export async function attachLandlinkClient(
             direction: "incoming",
             receivedAt: parsed.receivedAt,
             channelIndex: parsed.channelIndex,
+            ...(parsed.pkiEncrypted ? { pkiEncrypted: true } : {}),
           };
           if (parsed.pktId !== null) msg.pktId = parsed.pktId;
           appendMessage(msg);
@@ -433,7 +434,11 @@ export async function setLandlinkRegion(region: RegionValue): Promise<void> {
   ]);
 }
 
-export function appendOutgoingMessage(text: string, channelIndex = 0): void {
+export function appendOutgoingMessage(
+  text: string,
+  channelIndex = 0,
+  options: { pkiEncrypted?: boolean } = {},
+): void {
   const dev = getState();
   appendMessage({
     senderNodeId: dev?.info?.nodeId ?? "self",
@@ -441,6 +446,7 @@ export function appendOutgoingMessage(text: string, channelIndex = 0): void {
     direction: "outgoing",
     receivedAt: Date.now(),
     channelIndex,
+    ...(options.pkiEncrypted === true ? { pkiEncrypted: true } : {}),
   });
 }
 

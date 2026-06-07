@@ -19,6 +19,8 @@
 #include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
+#include "features/pki_identity/pki_identity.h"
+#include "features/pki_keystore/pki_keystore.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
@@ -119,21 +121,24 @@ void landlink_payload_sink(const landlink::mesh::Header& h,
 // Meshtastic router sink. Dispatches by Data.portnum.
 void meshtastic_payload_sink(uint8_t channel_index,
                              const landlink::mesh::meshtastic::Header& h,
-                             const landlink::mesh::meshtastic::DataMessage& data) {
+                             const landlink::mesh::meshtastic::DataMessage& data,
+                             bool pki_encrypted) {
     using namespace landlink::mesh::meshtastic;
-    LL_LOG_I(kTag, "mt rx: ch=%u src=%08x dst=%08x pkt_id=%u portnum=%u want_ack=%d len=%u",
+    LL_LOG_I(kTag, "mt rx: ch=%u src=%08x dst=%08x pkt_id=%u portnum=%u want_ack=%d pki=%d len=%u",
              static_cast<unsigned>(channel_index),
              static_cast<unsigned>(h.src),
              static_cast<unsigned>(h.dst),
              static_cast<unsigned>(h.pkt_id),
              static_cast<unsigned>(data.portnum),
              h.want_ack ? 1 : 0,
+             pki_encrypted ? 1 : 0,
              static_cast<unsigned>(data.payload_len));
     if (data.portnum == kPortnumTextMessageApp && data.payload != nullptr) {
         landlink::features::mesh_chat::on_meshtastic_chat(
             channel_index,
             h.src, h.dst, h.pkt_id, h.want_ack,
-            data.payload, data.payload_len);
+            data.payload, data.payload_len,
+            pki_encrypted);
     } else if (data.portnum == kPortnumRoutingApp && data.has_request_id) {
         // Routing payload with a request_id is the Meshtastic ACK shape
         // (error_reason=NONE is encoded implicitly via the default value when
@@ -141,6 +146,16 @@ void meshtastic_payload_sink(uint8_t channel_index,
         // out-of-scope for now and treated as "no ACK arrived".
         landlink::features::mesh_chat::on_meshtastic_routing(
             channel_index, h.src, data.request_id);
+    } else if (data.portnum == kPortnumNodeInfoApp && data.payload != nullptr) {
+        // Cache the sender's X25519 public_key so future DMs to them can be
+        // PKI-encrypted (and so PKI DMs from them can be authenticated).
+        UserMessage user;
+        if (decode_user(data.payload, data.payload_len, user)
+            && user.has_public_key && user.public_key != nullptr) {
+            landlink::features::pki_keystore::record(h.src, user.public_key);
+            LL_LOG_I(kTag, "mt rx: cached pki pub for src=%08x",
+                     static_cast<unsigned>(h.src));
+        }
     }
 }
 }
@@ -224,6 +239,11 @@ void setup() {
 
     landlink::features::lora_pair::init(node_id);
     landlink::features::mesh_identity::init(node_id);
+    // Generate or load the device's persistent X25519 keypair. Must come
+    // before any NodeInfo broadcast so the public_key field is populated.
+    if (!landlink::features::pki_identity::init()) {
+        LL_LOG_W(kTag, "pki_identity init failed — DMs will degrade to PSK");
+    }
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

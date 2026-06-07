@@ -27,6 +27,7 @@ export type ParsedMeshRecv =
       pktId: number | null;
       channelIndex: number;
       receivedAt: number;
+      pkiEncrypted: boolean;
     }
   | {
       kind: "ack";
@@ -44,6 +45,10 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
   // Firmware predating multi-channel support omits the CHANNEL_INDEX TLV;
   // missing channel means Primary so legacy messages still render.
   let channelIndex = 0;
+  // Set by firmware only when the originating LoRa frame was Meshtastic
+  // PKI-encrypted (DM via X25519+AES-CCM). Absent for channel-PSK traffic
+  // and for the Landlink-native path entirely.
+  let pkiEncrypted = false;
   const decoder = new TextDecoder();
   for (const tlv of decodeTlvs(payload)) {
     if (tlv.tag === TlvTag.NODE_ID && tlv.value.byteLength === 4) {
@@ -56,6 +61,11 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
       ackPktId = readU32LE(tlv.value);
     } else if (tlv.tag === TlvTag.CHANNEL_INDEX && tlv.value.byteLength === 1) {
       channelIndex = tlv.value[0] ?? 0;
+    } else if (
+      tlv.tag === TlvTag.CHAT_PKI_ENCRYPTED &&
+      tlv.value.byteLength === 1
+    ) {
+      pkiEncrypted = (tlv.value[0] ?? 0) !== 0;
     }
   }
   if (senderNodeId === null) return null;
@@ -82,5 +92,6 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
     pktId: ackPktId,
     channelIndex,
     receivedAt: Date.now(),
+    pkiEncrypted,
   };
 }

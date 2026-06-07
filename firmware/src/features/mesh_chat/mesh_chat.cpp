@@ -56,7 +56,8 @@ void ensure_pending_mtx() {
 
 void emit_recv_event(uint8_t channel_index,
                      uint32_t src, uint32_t pkt_id,
-                     const uint8_t* text, size_t text_len) {
+                     const uint8_t* text, size_t text_len,
+                     bool pki_encrypted = false) {
     const size_t cap = static_cast<size_t>(text_len > 200 ? 200 : text_len);
     uint8_t buf[240];
     landlink::TlvBuilder b(buf, sizeof(buf));
@@ -64,6 +65,9 @@ void emit_recv_event(uint8_t channel_index,
     b.put_u32(TlvTag::ACK_PKT_ID,     pkt_id);
     b.put_u8 (TlvTag::CHANNEL_INDEX,  channel_index);
     b.put_u8 (TlvTag::KIND,           kKindChatText);
+    if (pki_encrypted) {
+        b.put_u8(TlvTag::CHAT_PKI_ENCRYPTED, 1);
+    }
     b.put(TlvTag::CHAT_TEXT, text, static_cast<uint8_t>(cap));
     landlink::transport::ble::notify_evt(Opcode::MESH_RECV, 0,
                                          b.data(), b.size());
@@ -121,10 +125,14 @@ bool send_chat_meshtastic(uint8_t channel_index,
     // Real Meshtastic devices on the mesh ignore broadcast want_ack, so the
     // worst case is a missing ACK for those peers — UX gracefully degrades.
     const bool want_ack = true;
+    // try_pki=true: chat text is the canonical PKI-eligible portnum. The
+    // router auto-falls-back to channel PSK when the recipient is broadcast
+    // or their public_key is not yet cached, matching upstream firmware.
     const size_t frame_len = mesh::protocol::meshtastic_router().originate(
         channel_index, dst, want_ack, kPortnumTextMessageApp,
         reinterpret_cast<const uint8_t*>(utf8), utf8_len,
-        frame, sizeof(frame), &assigned);
+        frame, sizeof(frame), &assigned,
+        /*try_pki=*/true);
     if (frame_len == 0) {
         LL_LOG_W(kTag, "send_chat[mt] originate failed");
         return false;
@@ -356,16 +364,18 @@ void on_ack(const landlink::mesh::Header& h,
 void on_meshtastic_chat(uint8_t channel_index,
                         uint32_t src, uint32_t dst, uint32_t pkt_id,
                         bool want_ack,
-                        const uint8_t* text, size_t text_len) {
+                        const uint8_t* text, size_t text_len,
+                        bool pki_encrypted) {
     using mesh::meshtastic::kBroadcastAddr;
-    LL_LOG_I(kTag, "on_chat[mt] ch=%u src=%08x dst=%08x pkt_id=%u want_ack=%d len=%u",
+    LL_LOG_I(kTag, "on_chat[mt] ch=%u src=%08x dst=%08x pkt_id=%u want_ack=%d pki=%d len=%u",
              static_cast<unsigned>(channel_index),
              static_cast<unsigned>(src),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(pkt_id),
              want_ack ? 1 : 0,
+             pki_encrypted ? 1 : 0,
              static_cast<unsigned>(text_len));
-    emit_recv_event(channel_index, src, pkt_id, text, text_len);
+    emit_recv_event(channel_index, src, pkt_id, text, text_len, pki_encrypted);
 
     // ACK any chat that requested one. For broadcasts we jitter (multiple
     // receivers reply, so back-to-back transmits would collide on-air);

@@ -17,6 +17,23 @@ export type SendMeshMessageStatus = "idle" | "sending" | "sent" | "error";
 
 const MAX_TEXT_BYTES = 200;
 
+// 8-char hex nodeId → u32. Inverse of the nodeIdHex(num) used by the
+// Meshtastic adapter when surfacing senders to the UI.
+function nodeIdHexToNum(hex: string): number | null {
+  if (hex.length !== 8) return null;
+  if (!/^[0-9a-f]{8}$/iu.test(hex)) return null;
+  const n = parseInt(hex, 16);
+  return Number.isFinite(n) ? n >>> 0 : null;
+}
+
+export type SendOptions = {
+  // Hex nodeId of the recipient. When set, the message is addressed as a
+  // unicast — firmware-side PKI (X25519+AES-CCM) kicks in transparently
+  // when the recipient's public_key has been heard via NodeInfo. Without
+  // a recipient key the firmware falls back to channel PSK.
+  recipientNodeId?: string;
+};
+
 export function useSendMeshMessage(channelIndex = 0) {
   const [status, setStatus] = useState<SendMeshMessageStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +46,8 @@ export function useSendMeshMessage(channelIndex = 0) {
   // back to "landlink" for legacy registered entries that predate the field.
   const adapter = registered?.protocol ?? "landlink";
 
-  const send = useCallback(async (text: string): Promise<boolean> => {
+  const send = useCallback(
+    async (text: string, opts: SendOptions = {}): Promise<boolean> => {
     const trimmed = text.trim();
     if (trimmed.length === 0) {
       setStatus("error");
@@ -49,7 +67,16 @@ export function useSendMeshMessage(channelIndex = 0) {
 
     if (adapter === "meshtastic") {
       try {
-        await sendMeshtasticText(trimmed, channelIndex);
+        // Firmware owns the X25519 keypair and runs PKI encryption when the
+        // recipient's public_key is cached (STEP 3+). The app only forwards
+        // plaintext + destination — picking PSK vs PKI happens device-side.
+        if (opts.recipientNodeId) {
+          const destNum = nodeIdHexToNum(opts.recipientNodeId);
+          if (destNum === null) throw new Error("Invalid recipient node id");
+          await sendMeshtasticText(trimmed, channelIndex, { dest: destNum });
+        } else {
+          await sendMeshtasticText(trimmed, channelIndex);
+        }
         // sendMeshtasticText optimistically appends the outgoing message into
         // the local feed (stock Meshtastic firmware does not echo it back via
         // FromRadio), so the UI updates without waiting on a roundtrip.

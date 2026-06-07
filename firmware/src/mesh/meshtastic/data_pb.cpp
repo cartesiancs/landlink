@@ -170,6 +170,7 @@ size_t encode_user(const char* id,
                    const char* short_name,
                    const uint8_t macaddr[6],
                    uint32_t hw_model,
+                   const uint8_t* public_key32,
                    uint8_t* out, size_t out_cap) {
     size_t off = 0;
     if (!put_string_field(out, out_cap, off, 1, id))            return 0;
@@ -178,7 +179,61 @@ size_t encode_user(const char* id,
     if (!put_bytes_field (out, out_cap, off, 4, macaddr, 6))    return 0;
     if (!put_key (out, out_cap, off, 5, kWireVarint))           return 0;
     if (!put_varint(out, out_cap, off, hw_model))               return 0;
+    if (public_key32 != nullptr) {
+        if (!put_bytes_field(out, out_cap, off, 8, public_key32, 32)) return 0;
+    }
     return off;
+}
+
+bool decode_user(const uint8_t* buf, size_t buf_len, UserMessage& out) {
+    out = UserMessage{};
+    size_t off = 0;
+    while (off < buf_len) {
+        uint64_t key;
+        if (!read_varint(buf, buf_len, off, key)) return false;
+        const uint32_t field = static_cast<uint32_t>(key >> 3);
+        const uint8_t  wire  = static_cast<uint8_t>(key & 0x7);
+        if (field == 1 && wire == kWireLenDelim) {
+            uint64_t len;
+            if (!read_varint(buf, buf_len, off, len)) return false;
+            if (off + len > buf_len) return false;
+            out.id     = reinterpret_cast<const char*>(buf + off);
+            out.id_len = static_cast<size_t>(len);
+            off += len;
+        } else if (field == 2 && wire == kWireLenDelim) {
+            uint64_t len;
+            if (!read_varint(buf, buf_len, off, len)) return false;
+            if (off + len > buf_len) return false;
+            out.long_name     = reinterpret_cast<const char*>(buf + off);
+            out.long_name_len = static_cast<size_t>(len);
+            off += len;
+        } else if (field == 3 && wire == kWireLenDelim) {
+            uint64_t len;
+            if (!read_varint(buf, buf_len, off, len)) return false;
+            if (off + len > buf_len) return false;
+            out.short_name     = reinterpret_cast<const char*>(buf + off);
+            out.short_name_len = static_cast<size_t>(len);
+            off += len;
+        } else if (field == 5 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out.hw_model = static_cast<uint32_t>(v);
+        } else if (field == 8 && wire == kWireLenDelim) {
+            uint64_t len;
+            if (!read_varint(buf, buf_len, off, len)) return false;
+            if (off + len > buf_len) return false;
+            // Reject keys with the wrong length silently to match the app's
+            // robust-parse convention. Field is treated as absent.
+            if (len == 32) {
+                out.public_key     = buf + off;
+                out.has_public_key = true;
+            }
+            off += len;
+        } else {
+            if (!skip_field(buf, buf_len, off, wire)) return false;
+        }
+    }
+    return true;
 }
 
 size_t encode_position(int32_t latitude_i, int32_t longitude_i,

@@ -2,6 +2,7 @@ import { StrictMode, type ReactNode } from "react";
 
 import { ThemeProvider, useTheme } from "@/entities/theme";
 import { useLoraDiscovery } from "@/features/lora-discovery";
+import { useMeshtasticPkiCache } from "@/features/meshtastic-pki-cache";
 import { useLiveDeviceSync } from "@/features/register-device";
 import { useSyncDeviceChannels } from "@/features/sync-device-channels";
 import { useKeyboardInset } from "@/shared/lib";
@@ -38,6 +39,11 @@ function ChannelSyncBridge() {
   return null;
 }
 
+function MeshtasticPkiCacheBridge() {
+  useMeshtasticPkiCache();
+  return null;
+}
+
 function KeyboardInsetBridge() {
   useKeyboardInset();
   return null;
@@ -50,6 +56,7 @@ export function AppProviders({ children }: AppProvidersProps) {
         <LiveDeviceSyncBridge />
         <LoraDiscoveryBridge />
         <ChannelSyncBridge />
+        <MeshtasticPkiCacheBridge />
         <KeyboardInsetBridge />
         {children}
         <ThemedToaster />

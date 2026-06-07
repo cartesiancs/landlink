@@ -47,6 +47,23 @@ let pendingChannels: ChannelStoreEntry[] = [];
 // dedup keying by senderNodeId).
 let selfNodeNum = 0;
 
+// External subscribers to NodeInfo events. Exposed so the meshtastic-pki
+// entity (same FSD layer) can be fed via a features-layer adapter, without
+// landlink/meshtastic-device having to import meshtastic-pki directly.
+export type MeshtasticNodeInfoEvent = {
+  nodeId: string; // 8-char hex
+  publicKey?: Uint8Array; // 32 B when present in User.public_key
+};
+type NodeInfoHandler = (event: MeshtasticNodeInfoEvent) => void;
+const nodeInfoHandlers = new Set<NodeInfoHandler>();
+
+export function onMeshtasticNodeInfo(handler: NodeInfoHandler): () => void {
+  nodeInfoHandlers.add(handler);
+  return () => {
+    nodeInfoHandlers.delete(handler);
+  };
+}
+
 function nodeIdHex(n: number): string {
   // Meshtastic node ids are 32-bit, conventionally displayed as 8-hex (no 0x).
   return (n >>> 0).toString(16).padStart(8, "0");
@@ -181,7 +198,12 @@ function dispatchFromRadio(data: Uint8Array): void {
         portnum: p.decoded?.portnum,
         payloadBytes: p.decoded?.payload.byteLength,
         rxTime: p.rxTime,
+        pkiEncrypted: p.pkiEncrypted,
       });
+      // The firmware (STEP 3+) decrypts PKI DMs on-device using its own
+      // X25519 keypair and forwards plaintext over BLE alongside the
+      // pki_encrypted flag — so we treat encrypted-but-decoded-absent as
+      // a packet we cannot read (firmware key mismatch / pre-NodeInfo).
       if (!p.decoded) return;
       if (p.decoded.portnum !== PORTNUM.TEXT_MESSAGE_APP) return;
       const text = new TextDecoder().decode(p.decoded.payload);
@@ -204,14 +226,27 @@ function dispatchFromRadio(data: Uint8Array): void {
         direction: "incoming",
         receivedAt,
         channelIndex: p.channel,
+        ...(p.pkiEncrypted === true ? { pkiEncrypted: true } : {}),
       });
       return;
     }
-    case "node_info":
+    case "node_info": {
+      const ni = msg.nodeInfo;
+      if (ni.num === 0) return;
+      const event: MeshtasticNodeInfoEvent = { nodeId: nodeIdHex(ni.num) };
+      if (ni.user?.publicKey) event.publicKey = ni.user.publicKey;
+      for (const handler of nodeInfoHandlers) {
+        try {
+          handler(event);
+        } catch {
+          // handlers must not break the FromRadio stream
+        }
+      }
+      return;
+    }
     case "unknown":
-      // node_info: not surfaced in STEP 2 MVP — peer NodeDB is a future task.
-      // unknown: any FromRadio variant we didn't decode (newer firmware
-      // fields, config/module_config, etc.). Safe to ignore.
+      // Any FromRadio variant we didn't decode (newer firmware fields,
+      // config/module_config, etc.). Safe to ignore.
       return;
   }
 }
@@ -352,11 +387,16 @@ export async function detachMeshtasticClient(deviceId: string): Promise<void> {
   setDisconnected();
 }
 
+export type SendMeshtasticTextOptions = {
+  dest?: number;
+};
+
 export async function sendMeshtasticText(
   text: string,
   channelIndex: number,
-  dest: number = BROADCAST_ADDR,
+  options: SendMeshtasticTextOptions = {},
 ): Promise<void> {
+  const dest = options.dest ?? BROADCAST_ADDR;
   const dev = getState();
   if (dev?.status !== "connected") {
     throw new Error("Meshtastic device not connected");
@@ -367,8 +407,9 @@ export async function sendMeshtasticText(
   if (payload.byteLength > 200) {
     throw new Error("Message exceeds 200 bytes");
   }
-  // Random 32-bit packet id. The receiving Meshtastic devices use this for
-  // dedup; reusing an id within ~minutes would suppress the duplicate.
+  // 32-bit packet id, non-zero. Receivers use this for dedup; PKI encryption
+  // (when the firmware decides to apply it) rebuilds its AES-CCM nonce from
+  // this exact value.
   const id = ((Math.random() * 0x7fffffff) | 0) || 1;
   const frame = encodeToRadio({
     kind: "packet",
@@ -404,7 +445,9 @@ export async function sendMeshtasticText(
   // Stock Meshtastic firmware does not echo self-originated TEXT_MESSAGE_APP
   // packets back to the originating BLE phone, so we must append locally for
   // the message to appear in our own feed. dispatchFromRadio drops any
-  // echoed copy from firmware variants that do re-emit it.
+  // echoed copy from firmware variants that do re-emit it. The firmware
+  // decides PKI vs PSK on-device; outgoing local echo is plaintext and
+  // doesn't carry the pki flag (no auth context to display anyway).
   appendOutgoingMessage(trimmed, channelIndex);
 }
 

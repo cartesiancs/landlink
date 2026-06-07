@@ -15,6 +15,7 @@ enum class TlvTag : uint8_t {
     TIMESTAMP_MS = 0x04,  // Unix time ms (best-effort)
     CHAT_TEXT = 0x10,  // UTF-8 chat text, <=200 B
     CHAT_REPLY_TO = 0x11,  // pkt_id being replied to
+    CHAT_PKI_ENCRYPTED = 0x12,  // 1 if the originating LoRa frame was Meshtastic PKI-encrypted (DM)
     LAT_E7 = 0x20,  // Latitude * 1e7
     LON_E7 = 0x21,  // Longitude * 1e7
     ALT_M = 0x22,  // Altitude meters

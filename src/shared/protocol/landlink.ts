@@ -69,6 +69,7 @@ export const TlvTag = {
   TIMESTAMP_MS: 0x04,
   CHAT_TEXT: 0x10,
   CHAT_REPLY_TO: 0x11,
+  CHAT_PKI_ENCRYPTED: 0x12,
   LAT_E7: 0x20,
   LON_E7: 0x21,
   ALT_M: 0x22,

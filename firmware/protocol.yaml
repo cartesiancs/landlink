@@ -126,6 +126,7 @@ tlv_tags:
   # Chat
   CHAT_TEXT:             { tag: 0x10, type: utf8, desc: "UTF-8 chat text, <=200 B" }
   CHAT_REPLY_TO:         { tag: 0x11, type: u32,  desc: "pkt_id being replied to" }
+  CHAT_PKI_ENCRYPTED:    { tag: 0x12, type: u8,   desc: "1 if the originating LoRa frame was Meshtastic PKI-encrypted (DM)" }
 
   # Location
   LAT_E7:                { tag: 0x20, type: i32,  desc: "Latitude * 1e7" }

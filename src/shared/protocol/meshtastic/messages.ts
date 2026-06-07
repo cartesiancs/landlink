@@ -103,6 +103,10 @@ export type MeshPacket = {
   hopStart: number;
   decoded?: Data;        // present when payload_variant = decoded (field 4)
   encrypted?: Uint8Array; // present when payload_variant = encrypted (field 5)
+  // PKI metadata (Meshtastic 2.5+). Always present when the firmware
+  // forwards a PKI-encrypted DM; absent on legacy or channel-PSK traffic.
+  publicKey?: Uint8Array; // sender's X25519 public key hint (field 16)
+  pkiEncrypted?: boolean; // field 17
 };
 
 export function decodeMeshPacket(buf: Uint8Array): MeshPacket {
@@ -150,6 +154,15 @@ export function decodeMeshPacket(buf: Uint8Array): MeshPacket {
       case 15:
         out.hopStart = sub.readVarint();
         return true;
+      case 16: {
+        const key = sub.readBytes();
+        // Silently ignore malformed hints — X25519 public keys are 32 B.
+        if (key.byteLength === 32) out.publicKey = key;
+        return true;
+      }
+      case 17:
+        out.pkiEncrypted = sub.readBool();
+        return true;
       default:
         return false;
     }
@@ -163,23 +176,44 @@ export type MeshPacketInit = {
   id: number;
   wantAck?: boolean;
   hopLimit?: number;
-  decoded: Data;
+  // payload_variant — exactly one of decoded or encrypted must be set.
+  // PKI DMs use the encrypted variant alongside pkiEncrypted=true and the
+  // sender's publicKey hint.
+  decoded?: Data;
+  encrypted?: Uint8Array;
+  publicKey?: Uint8Array; // sender's X25519 public key (32 B), pki only
+  pkiEncrypted?: boolean;
 };
 
-// Encode a MeshPacket for ToRadio. We only emit fields the device cares about
-// when receiving an outbound packet: to, channel, id, want_ack, hop_limit, and
-// the decoded Data. The device fills in `from` itself (it knows its own node
-// id) and sets rx_time / encrypted / via_mqtt on egress.
+// Encode a MeshPacket for ToRadio. The device fills in `from` itself (it
+// knows its own node id) and sets rx_time / via_mqtt on egress.
 export function encodeMeshPacket(p: MeshPacketInit): Uint8Array {
+  const hasDecoded = p.decoded !== undefined;
+  const hasEncrypted = p.encrypted !== undefined;
+  if (hasDecoded === hasEncrypted) {
+    throw new Error(
+      "encodeMeshPacket: exactly one of decoded or encrypted is required",
+    );
+  }
   const w = new PbWriter();
   if (p.to !== 0) w.writeFixed32(2, p.to);
   if (p.channel !== 0) w.writeUint32(3, p.channel);
-  w.writeBytes(4, encodeData(p.decoded));
+  if (hasDecoded) {
+    // `decoded` is non-undefined here due to the XOR guard above; the
+    // bang is safe and avoids restructuring the type signature.
+    w.writeBytes(4, encodeData(p.decoded!));
+  } else {
+    w.writeBytes(5, p.encrypted!);
+  }
   if (p.id !== 0) w.writeFixed32(6, p.id);
   if (p.wantAck === true) w.writeBool(10, true);
   if (p.hopLimit !== undefined && p.hopLimit !== 0) {
     w.writeUint32(9, p.hopLimit);
   }
+  if (p.publicKey?.byteLength === 32) {
+    w.writeBytes(16, p.publicKey);
+  }
+  if (p.pkiEncrypted === true) w.writeBool(17, true);
   return w.finish();
 }
 
@@ -270,6 +304,9 @@ export type User = {
   longName: string;
   shortName: string;
   hwModel: number;
+  // X25519 public key broadcast by a node for PKI DMs (Meshtastic 2.5+).
+  // 32 bytes when present; absent on legacy 2.4.x nodes.
+  publicKey?: Uint8Array;
 };
 
 export function decodeUser(buf: Uint8Array): User {
@@ -289,6 +326,11 @@ export function decodeUser(buf: Uint8Array): User {
       case 5:
         out.hwModel = sub.readVarint();
         return true;
+      case 8: {
+        const key = sub.readBytes();
+        if (key.byteLength === 32) out.publicKey = key;
+        return true;
+      }
       default:
         return false;
     }

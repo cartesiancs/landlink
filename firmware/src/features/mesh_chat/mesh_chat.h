@@ -56,7 +56,8 @@ void on_ack(const landlink::mesh::Header& h,
 void on_meshtastic_chat(uint8_t channel_index,
                         uint32_t src, uint32_t dst, uint32_t pkt_id,
                         bool want_ack,
-                        const uint8_t* text, size_t text_len);
+                        const uint8_t* text, size_t text_len,
+                        bool pki_encrypted);
 
 // Invoked by the Meshtastic sink when a ROUTING_APP `Data` packet arrives
 // carrying a request_id. Forwards to BLE as MESH_RECV(KIND=ACK,

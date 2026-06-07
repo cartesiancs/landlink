@@ -12,12 +12,6 @@ const SOURCE_DOT: Record<LoraPeerSource, string> = {
   history: "bg-muted-foreground/40",
 };
 
-const SOURCE_LABEL: Record<LoraPeerSource, string> = {
-  beacon: "Online",
-  chat: "Active",
-  history: "Offline",
-};
-
 export function NodeListRow({ peer }: NodeListRowProps) {
   return (
     <li className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">

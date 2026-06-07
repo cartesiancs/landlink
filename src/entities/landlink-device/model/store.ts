@@ -58,6 +58,10 @@ export type MeshMessage = {
   bleSeq?: number;
   status?: MeshMessageStatus;
   attempts?: number;
+  // True when the originating frame was a Meshtastic PKI-encrypted DM
+  // (MeshPacket.pki_encrypted = true). The plaintext is already decrypted
+  // by the firmware before reaching us; this flag only drives UI indicators.
+  pkiEncrypted?: boolean;
 };
 
 export type LandlinkDevice = {

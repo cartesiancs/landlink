@@ -60,14 +60,34 @@ bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out);
 
 // Encode a Meshtastic `User` protobuf (the payload of a NODEINFO_APP Data
 // message). Fields written: id (1), long_name (2), short_name (3),
-// macaddr (4, 6 bytes), hw_model (5, varint). Caller-provided strings must
-// stay alive only for the duration of this call.
+// macaddr (4, 6 bytes), hw_model (5, varint), public_key (8, 32 bytes,
+// optional — pass nullptr to omit). Caller-provided strings must stay
+// alive only for the duration of this call.
 size_t encode_user(const char* id,
                    const char* long_name,
                    const char* short_name,
                    const uint8_t macaddr[6],
                    uint32_t hw_model,
+                   const uint8_t* public_key32, // nullptr → omit field 8
                    uint8_t* out, size_t out_cap);
+
+// Decoded User message. Pointers reference the source buffer; caller must
+// keep that buffer alive while reading.
+struct UserMessage {
+    const char*    id            = nullptr;
+    size_t         id_len        = 0;
+    const char*    long_name     = nullptr;
+    size_t         long_name_len = 0;
+    const char*    short_name    = nullptr;
+    size_t         short_name_len = 0;
+    const uint8_t* public_key    = nullptr; // 32 B when has_public_key
+    bool           has_public_key = false;
+    uint32_t       hw_model      = 0;
+};
+
+// Decode a User protobuf carried in a NODEINFO_APP Data.payload. Returns
+// false on malformed input. Unknown fields are skipped.
+bool decode_user(const uint8_t* buf, size_t buf_len, UserMessage& out);
 
 // Encode a Meshtastic `Position` protobuf (the payload of a POSITION_APP
 // Data message). Fields written: latitude_i (1, sfixed32), longitude_i (2,
