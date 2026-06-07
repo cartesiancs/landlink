@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 
 import {
+  loadKnownSenderNodeIds,
+  onLandlinkChatRecv,
   onLandlinkPeerFound,
   sendLandlinkCommand,
   useLandlinkDevice,
@@ -60,6 +62,7 @@ function backfillNodeIdByName(
 export function useLoraDiscovery(): void {
   const device = useLandlinkDevice();
   const isConnected = device?.status === "connected";
+  const deviceId = device?.deviceId ?? null;
 
   useEffect(() => {
     // WHY: surface the registered nodeIds at startup so user can eyeball them
@@ -99,6 +102,21 @@ export function useLoraDiscovery(): void {
       }
     });
 
+    // Register chat senders as "chat" peers so the node list shows the people
+    // we're talking to, even when their beacon isn't being heard.
+    const unsubChat = onLandlinkChatRecv(({ senderNodeId, receivedAt }) => {
+      upsertLoraPeer({
+        nodeId: senderNodeId,
+        batteryPct: null,
+        batteryMv: null,
+        chargeState: null,
+        rssiDbm: null,
+        gps: null,
+        lastSeenAt: receivedAt,
+        source: "chat",
+      });
+    });
+
     const tickDiscover = (): void => {
       // WHY: firmware fires its own beacon every 30s, but explicitly asking
       // flushes its peer cache so newly-opened tabs catch up immediately.
@@ -113,8 +131,35 @@ export function useLoraDiscovery(): void {
 
     return () => {
       unsubscribe();
+      unsubChat();
       clearInterval(discoverTimer);
       clearInterval(pruneTimer);
     };
   }, [isConnected]);
+
+  useEffect(() => {
+    // Hydrate the peer list with nodes we've chatted with in the past, scoped
+    // to the currently-connected device. Promotion rules in the peer store
+    // keep history from overwriting live beacon/chat entries.
+    if (!deviceId) return;
+    let cancelled = false;
+    void loadKnownSenderNodeIds(deviceId).then((entries) => {
+      if (cancelled) return;
+      for (const e of entries) {
+        upsertLoraPeer({
+          nodeId: e.nodeId,
+          batteryPct: null,
+          batteryMv: null,
+          chargeState: null,
+          rssiDbm: null,
+          gps: null,
+          lastSeenAt: e.lastReceivedAt,
+          source: "history",
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId]);
 }

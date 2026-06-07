@@ -97,6 +97,20 @@ export function onLandlinkPeerFound(handler: PeerFoundHandler): () => void {
   };
 }
 
+// Fires for each accepted incoming chat frame after dedup/echo filtering.
+// Lets the lora-peer slice register the sender as a "chat" peer without
+// landlink-device having to depend on it (same entity layer).
+export type ChatRecvEvent = { senderNodeId: string; receivedAt: number };
+type ChatRecvHandler = (event: ChatRecvEvent) => void;
+const chatRecvHandlers = new Set<ChatRecvHandler>();
+
+export function onLandlinkChatRecv(handler: ChatRecvHandler): () => void {
+  chatRecvHandlers.add(handler);
+  return () => {
+    chatRecvHandlers.delete(handler);
+  };
+}
+
 // Generic EVT bus. Fires for every decoded EVT frame after the client's
 // built-in handlers (telemetry, mesh-recv, ack-tracking, etc.) have run, so
 // downstream consumers can subscribe to opcodes the client does not own
@@ -239,6 +253,16 @@ export async function attachLandlinkClient(
           };
           if (parsed.pktId !== null) msg.pktId = parsed.pktId;
           appendMessage(msg);
+          for (const handler of chatRecvHandlers) {
+            try {
+              handler({
+                senderNodeId: parsed.senderNodeId,
+                receivedAt: parsed.receivedAt,
+              });
+            } catch {
+              // handlers must not break the EVT stream
+            }
+          }
           notifyIncomingChat({
             senderNodeId: parsed.senderNodeId,
             text: parsed.text,

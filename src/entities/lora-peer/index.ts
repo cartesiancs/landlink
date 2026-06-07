@@ -1,4 +1,4 @@
-export type { LoraPeer } from "./model/types";
+export type { LoraPeer, LoraPeerSource } from "./model/types";
 export {
   PEER_TTL_MS,
   findLoraPeer,

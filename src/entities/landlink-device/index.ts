@@ -3,11 +3,13 @@ export {
   appendOutgoingPending,
   attachLandlinkClient,
   detachLandlinkClient,
+  onLandlinkChatRecv,
   onLandlinkEvt,
   onLandlinkPeerFound,
   sendLandlinkCommand,
   setLandlinkRegion,
   trackPendingChat,
+  type ChatRecvEvent,
   type LandlinkEvtFrame,
   type PeerFoundFrame,
 } from "./api/client";
@@ -53,4 +55,8 @@ export type {
 // by pages to hydrate channel chat history; clearAllMessages is wired into
 // reset-app-data. Mutation helpers (persist/attach/patch) stay private to
 // the slice — adapters reach them via the store mutators.
-export { clearAllMessages, loadMessages } from "./api/message-store";
+export {
+  clearAllMessages,
+  loadKnownSenderNodeIds,
+  loadMessages,
+} from "./api/message-store";

@@ -98,6 +98,45 @@ export async function loadMessages(
   }
 }
 
+// Aggregate every distinct senderNodeId of incoming messages stored for the
+// given device, keyed to the latest receivedAt we have for it. Used to seed
+// the LoRa peer store with "history" entries so the node list shows nodes
+// we've talked to even when no beacon is currently heard.
+export async function loadKnownSenderNodeIds(
+  deviceId: string,
+): Promise<readonly { nodeId: string; lastReceivedAt: number }[]> {
+  try {
+    const db = await getDb();
+    return await tx(db, STORE_NAME, "readonly", async (store) => {
+      const index = store.index(INDEX_BY_DEVICE_CHANNEL);
+      const range = IDBKeyRange.bound(
+        [deviceId, -Infinity, -Infinity],
+        [deviceId, Infinity, Infinity],
+      );
+      const records = await requestToPromise(
+        index.getAll(range) as IDBRequest<PersistedMeshMessage[]>,
+      );
+      const latest = new Map<string, number>();
+      for (const r of records) {
+        if (r.direction !== "incoming") continue;
+        const prev = latest.get(r.senderNodeId);
+        if (prev === undefined || r.receivedAt > prev) {
+          latest.set(r.senderNodeId, r.receivedAt);
+        }
+      }
+      const out: { nodeId: string; lastReceivedAt: number }[] = [];
+      for (const [nodeId, lastReceivedAt] of latest) {
+        out.push({ nodeId, lastReceivedAt });
+      }
+      out.sort((a, b) => b.lastReceivedAt - a.lastReceivedAt);
+      return out;
+    });
+  } catch (err) {
+    console.warn("[message-store] loadKnownSenderNodeIds failed", err);
+    return [];
+  }
+}
+
 export async function attachPktIdToMessage(
   id: string,
   pktId: number,

@@ -91,5 +91,6 @@ export function parsePeerFound(payload: Uint8Array): LoraPeer | null {
       rssi && rssi.value.byteLength >= 2 ? readI16LE(rssi.value) : null,
     gps,
     lastSeenAt: Date.now(),
+    source: "beacon",
   };
 }
