@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 
 import {
-  appendOutgoingMessage,
   appendOutgoingPending,
   sendLandlinkCommand,
   trackPendingChat,
@@ -22,7 +21,6 @@ export function useSendMeshMessage(channelIndex = 0) {
   const [status, setStatus] = useState<SendMeshMessageStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const device = useLandlinkDevice();
-  const protocolMode = device?.protocol ?? null;
   const registeredDevices = useRegisteredDevices();
   const registered = device
     ? findDevice(registeredDevices, device.deviceId)
@@ -64,10 +62,10 @@ export function useSendMeshMessage(channelIndex = 0) {
       }
     }
 
-    // Landlink path: TLV/opcode framing. The firmware's channel registry
-    // selects the per-channel key for both Landlink-native (trial decrypt
-    // on RX) and Meshtastic-compatible (header byte 13) frames, so any
-    // 0..7 index that resolves to a configured slot works.
+    // Landlink path: TLV/opcode framing. The firmware always runs in
+    // Meshtastic-compatible mode (LongFast), so the per-channel key on
+    // header byte 13 selects the slot — any 0..7 index that resolves to a
+    // configured channel works.
     const tlvs: Tlv[] = [
       { tag: TlvTag.KIND, value: Uint8Array.of(MeshKind.CHAT_TEXT) },
       { tag: TlvTag.CHANNEL_INDEX, value: Uint8Array.of(channelIndex) },
@@ -75,27 +73,17 @@ export function useSendMeshMessage(channelIndex = 0) {
     ];
 
     try {
-      // Both protocols surface MESH_SEND_RESULT with the assigned pkt_id, so
-      // the host can wait for an ACK (landlink: KIND=ACK frame; meshtastic:
-      // Routing reply with matching request_id) and flip the message to
-      // "delivered". Meshtastic mode disables retry — there's no on-wire
-      // equivalent of RETRY_PKT_ID and duplicate sends would be rendered as
-      // new messages on the receiver. The pre-seq hook registers the pending
-      // entry synchronously, before the BLE write, because MESH_SEND_RESULT
-      // can race past the await on a fast link.
-      let registeredPending = false;
+      // Firmware surfaces MESH_SEND_RESULT with the assigned pkt_id, so the
+      // host can wait for the Meshtastic Routing ACK (matching request_id)
+      // and flip the message to "delivered". Retry is disabled — there's no
+      // on-wire RETRY_PKT_ID in Meshtastic and duplicate sends would render
+      // as new messages on the receiver. The pre-seq hook registers the
+      // pending entry synchronously, before the BLE write, because
+      // MESH_SEND_RESULT can race past the await on a fast link.
       await sendLandlinkCommand(Opcode.MESH_SEND, tlvs, (seq) => {
-        if (protocolMode !== null) {
-          appendOutgoingPending(trimmed, seq, channelIndex);
-          trackPendingChat(seq, trimmed, encoded, {
-            noRetry: protocolMode === 1,
-          });
-          registeredPending = true;
-        }
+        appendOutgoingPending(trimmed, seq, channelIndex);
+        trackPendingChat(seq, trimmed, encoded, { noRetry: true });
       });
-      if (!registeredPending) {
-        appendOutgoingMessage(trimmed, channelIndex);
-      }
       setStatus("sent");
       return true;
     } catch (err) {
@@ -103,7 +91,7 @@ export function useSendMeshMessage(channelIndex = 0) {
       setError(err instanceof Error ? err.message : "Send failed");
       return false;
     }
-  }, [adapter, channelIndex, protocolMode]);
+  }, [adapter, channelIndex]);
 
   const reset = useCallback(() => {
     setStatus("idle");

@@ -60,8 +60,6 @@ export type MeshMessage = {
   attempts?: number;
 };
 
-export type ProtocolMode = 0 | 1;
-
 export type LandlinkDevice = {
   deviceId: string;
   name: string;
@@ -71,7 +69,6 @@ export type LandlinkDevice = {
   lastEvtFrame: BleFrame | null;
   telemetry: DeviceTelemetry | null;
   messages: readonly MeshMessage[];
-  protocol: ProtocolMode | null;
 };
 
 let state: LandlinkDevice | null = null;
@@ -110,7 +107,6 @@ export function setConnecting(d: { deviceId: string; name: string }): void {
     lastEvtFrame: null,
     telemetry: null,
     messages: [],
-    protocol: null,
   };
   emit();
 }
@@ -148,12 +144,6 @@ export function setLastEvtFrame(frame: BleFrame): void {
 export function setTelemetry(telemetry: DeviceTelemetry): void {
   if (!state) return;
   state = { ...state, telemetry };
-  emit();
-}
-
-export function setProtocol(protocol: ProtocolMode): void {
-  if (!state) return;
-  state = { ...state, protocol };
   emit();
 }
 

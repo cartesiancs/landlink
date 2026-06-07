@@ -40,12 +40,9 @@ import {
   setFsmState,
   setInfo,
   setLastEvtFrame,
-  setProtocol,
   setRegion,
   setTelemetry,
-  subscribe as subscribeStore,
   type AppendMessageInput,
-  type ProtocolMode,
 } from "../model/store";
 import {
   attachPktId,
@@ -255,15 +252,6 @@ export async function attachLandlinkClient(
               // handlers must not break the EVT stream
             }
           }
-        } else if (op === Opcode.RADIO_PROTOCOL_RESULT) {
-          const tlvs = decodeTlvs(frame.payload);
-          for (const t of tlvs) {
-            if (t.tag === TlvTag.PROTOCOL && t.value.byteLength === 1) {
-              const v = t.value[0];
-              if (v === 0 || v === 1) setProtocol(v);
-              break;
-            }
-          }
         } else if (op === Opcode.RADIO_REGION_RESULT) {
           const tlvs = decodeTlvs(frame.payload);
           for (const t of tlvs) {
@@ -332,11 +320,15 @@ export async function attachLandlinkClient(
     }
 
     setConnected();
-    // Fetch current protocol mode after the link is up. Non-fatal on failure.
+    // Pin firmware to Meshtastic-compatible mode. Landlink-native wire
+    // protocol is deprecated — every connection must run on the LongFast
+    // modulation so traffic is interoperable with stock Meshtastic nodes.
     try {
-      await sendLandlinkCommand(Opcode.RADIO_GET_PROTOCOL);
+      await sendLandlinkCommand(Opcode.RADIO_SET_PROTOCOL, [
+        { tag: TlvTag.PROTOCOL, value: Uint8Array.of(1) },
+      ]);
     } catch (err) {
-      console.warn("[landlink] RADIO_GET_PROTOCOL failed", err);
+      console.warn("[landlink] RADIO_SET_PROTOCOL failed", err);
     }
     try {
       await sendLandlinkCommand(Opcode.RADIO_GET_REGION);
@@ -365,7 +357,7 @@ export async function detachLandlinkClient(deviceId: string): Promise<void> {
 // Web Bluetooth serializes GATT ops per-device but throws synchronously when
 // a second op starts before the first completes ("GATT operation already in
 // progress"). When the device first connects we have multiple callers
-// queuing writes back-to-back (RADIO_GET_PROTOCOL from attachLandlinkClient,
+// queuing writes back-to-back (RADIO_SET_PROTOCOL from attachLandlinkClient,
 // CHANNEL_LIST from useSyncDeviceChannels, future channel reads), so we
 // serialize at this layer via a per-process chain rather than asking each
 // caller to coordinate. A single FIFO is fine because we only ever talk to
@@ -411,29 +403,6 @@ setRetrySender((opcode, retryTlvs) =>
   sendLandlinkCommand(opcode as OpcodeValue, retryTlvs),
 );
 
-// Watch for protocol-mode transitions. Switching radios re-tunes the SX1262
-// and (in Meshtastic) flips encryption keys, so any in-flight pending chat
-// must be abandoned in either direction — its ACK can never round-trip.
-let lastSeenProtocol: ProtocolMode | null = null;
-subscribeStore(() => {
-  const next = getState()?.protocol ?? null;
-  if (
-    lastSeenProtocol !== null &&
-    next !== null &&
-    lastSeenProtocol !== next
-  ) {
-    cancelAllRetries();
-    failAllOutgoingPending();
-  }
-  lastSeenProtocol = next;
-});
-
-export async function setLandlinkProtocolMode(mode: ProtocolMode): Promise<void> {
-  await sendLandlinkCommand(Opcode.RADIO_SET_PROTOCOL, [
-    { tag: TlvTag.PROTOCOL, value: new Uint8Array([mode]) },
-  ]);
-}
-
 export async function setLandlinkRegion(region: RegionValue): Promise<void> {
   await sendLandlinkCommand(Opcode.RADIO_SET_REGION, [
     { tag: TlvTag.REGION, value: new Uint8Array([region]) },
@@ -473,9 +442,10 @@ export function appendOutgoingPending(
   });
 }
 
-// Hand the retry tracker the bytes it needs for retransmit/ACK matching.
-// Pass { noRetry: true } in Meshtastic mode — that path has no RETRY_PKT_ID
-// equivalent so the tracker should only listen for the ACK, never retransmit.
+// Hand the retry tracker the bytes it needs for ACK matching. Meshtastic
+// mode (the only mode now) has no RETRY_PKT_ID equivalent, so callers must
+// pass { noRetry: true } — the tracker only listens for the ACK, never
+// retransmits.
 export function trackPendingChat(
   bleSeq: number,
   text: string,

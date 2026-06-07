@@ -6,7 +6,6 @@ export {
   onLandlinkEvt,
   onLandlinkPeerFound,
   sendLandlinkCommand,
-  setLandlinkProtocolMode,
   setLandlinkRegion,
   trackPendingChat,
   type LandlinkEvtFrame,
@@ -49,7 +48,6 @@ export type {
   MeshMessageDirection,
   MeshMessageStatus,
   ParsedInfo,
-  ProtocolMode,
 } from "./model/store";
 // Persistent message history surface (IndexedDB). loadMessages is consumed
 // by pages to hydrate channel chat history; clearAllMessages is wired into

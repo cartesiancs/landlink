@@ -22,7 +22,6 @@ export const ROUTES = {
   settingsTheme: "/settings/theme",
   settingsDebug: "/settings/debug",
   settingsReset: "/settings/reset",
-  settingsProtocol: "/settings/protocol",
   settingsRegion: "/settings/region",
   error: "/error",
   notFound: "*",
