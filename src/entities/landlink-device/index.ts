@@ -57,6 +57,8 @@ export type {
 // the slice — adapters reach them via the store mutators.
 export {
   clearAllMessages,
+  loadDmMessages,
+  loadKnownDmPeers,
   loadKnownSenderNodeIds,
   loadMessages,
 } from "./api/message-store";

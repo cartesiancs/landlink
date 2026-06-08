@@ -3,9 +3,16 @@
 #include <cstring>
 
 #include "mesh/meshtastic/data_pb.h"
+#include "shared/protocol/tlv_tags.h"
 #include "../../src/mesh/meshtastic/data_pb.cpp"
 
 using namespace landlink::mesh::meshtastic;
+
+// Codegen drift sentinel: NODE_DST must stay at 0x05 so host parseMeshRecv
+// can demux DM unicast frames from channel broadcasts. If protocol.yaml
+// reassigns this tag the static_assert fires at compile time.
+static_assert(static_cast<uint8_t>(landlink::proto::TlvTag::NODE_DST) == 0x05,
+              "TlvTag::NODE_DST must remain 0x05 for host DM demux");
 
 void setUp() {}
 void tearDown() {}

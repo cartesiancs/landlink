@@ -1,4 +1,13 @@
 export { cn } from "./utils";
+export {
+  BROADCAST_NODE_NUM,
+  bytesLEToNodeNum,
+  hexToNodeNum,
+  isCanonicalNodeHex,
+  legacyLEHexToNodeNum,
+  nodeNumToBytesLE,
+  nodeNumToHex,
+} from "./node-id";
 export { hapticTick } from "./haptics";
 export { isAppActive, subscribeAppState } from "./app-state";
 export {

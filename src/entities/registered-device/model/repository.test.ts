@@ -17,6 +17,7 @@ function dev(overrides: Partial<RegisteredDevice> = {}): RegisteredDevice {
     signalDbm: null,
     lastConnectedAt: null,
     registeredAt: 1,
+    nodeNum: null,
     nodeId: null,
     ...overrides,
   };

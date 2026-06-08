@@ -6,14 +6,14 @@ import {
   subscribePublicKeys,
 } from "./store";
 
-export function usePublicKey(nodeId: string | null): Uint8Array | null {
+export function usePublicKey(nodeNum: number | null): Uint8Array | null {
   return useSyncExternalStore(
     subscribePublicKeys,
-    () => findPublicKey(nodeId),
-    () => findPublicKey(nodeId),
+    () => findPublicKey(nodeNum),
+    () => findPublicKey(nodeNum),
   );
 }
 
-export function usePublicKeys(): ReadonlyMap<string, Uint8Array> {
+export function usePublicKeys(): ReadonlyMap<number, Uint8Array> {
   return useSyncExternalStore(subscribePublicKeys, getPublicKeys, getPublicKeys);
 }

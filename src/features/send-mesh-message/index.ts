@@ -1,3 +1,4 @@
+export { PeerDmDrawer } from "./ui/peer-dm-drawer";
 export { SendMeshForm } from "./ui/send-mesh-form";
 export {
   useSendMeshMessage,

@@ -10,7 +10,7 @@ import {
   startNotifications,
   writeCharacteristic,
 } from "@/shared/api";
-import { notifyIncomingChat } from "@/shared/lib";
+import { BROADCAST_NODE_NUM, notifyIncomingChat } from "@/shared/lib";
 import {
   decodeFrame,
   decodeTlvs,
@@ -100,7 +100,11 @@ export function onLandlinkPeerFound(handler: PeerFoundHandler): () => void {
 // Fires for each accepted incoming chat frame after dedup/echo filtering.
 // Lets the lora-peer slice register the sender as a "chat" peer without
 // landlink-device having to depend on it (same entity layer).
-export type ChatRecvEvent = { senderNodeId: string; receivedAt: number };
+export type ChatRecvEvent = {
+  senderNodeNum: number;
+  senderNodeId: string;
+  receivedAt: number;
+};
 type ChatRecvHandler = (event: ChatRecvEvent) => void;
 const chatRecvHandlers = new Set<ChatRecvHandler>();
 
@@ -238,18 +242,23 @@ export async function attachLandlinkClient(
           }
 
           // Defense in depth: drop chat frames that purport to come from us.
-          const selfNodeId = getState()?.info?.nodeId;
-          if (selfNodeId && parsed.senderNodeId === selfNodeId) return;
+          const selfNodeNum = getState()?.info?.nodeNum ?? null;
+          if (selfNodeNum !== null && parsed.senderNodeNum === selfNodeNum) {
+            return;
+          }
           const dedupKey = parsed.pktId !== null
-            ? `${parsed.senderNodeId}:${parsed.pktId}`
-            : `${parsed.senderNodeId}:${parsed.receivedAt}`;
+            ? `${parsed.senderNodeId}:${parsed.pktId.toString()}`
+            : `${parsed.senderNodeId}:${parsed.receivedAt.toString()}`;
           if (chatSeen(dedupKey)) return;
+          const isUnicast = parsed.dstNodeNum !== BROADCAST_NODE_NUM;
           const msg: AppendMessageInput = {
+            senderNodeNum: parsed.senderNodeNum,
             senderNodeId: parsed.senderNodeId,
             text: parsed.text,
             direction: "incoming",
             receivedAt: parsed.receivedAt,
             channelIndex: parsed.channelIndex,
+            ...(isUnicast ? { recipientNodeNum: parsed.dstNodeNum } : {}),
             ...(parsed.pkiEncrypted ? { pkiEncrypted: true } : {}),
           };
           if (parsed.pktId !== null) msg.pktId = parsed.pktId;
@@ -257,6 +266,7 @@ export async function attachLandlinkClient(
           for (const handler of chatRecvHandlers) {
             try {
               handler({
+                senderNodeNum: parsed.senderNodeNum,
                 senderNodeId: parsed.senderNodeId,
                 receivedAt: parsed.receivedAt,
               });
@@ -437,15 +447,20 @@ export async function setLandlinkRegion(region: RegionValue): Promise<void> {
 export function appendOutgoingMessage(
   text: string,
   channelIndex = 0,
-  options: { pkiEncrypted?: boolean } = {},
+  options: { pkiEncrypted?: boolean; recipientNodeNum?: number } = {},
 ): void {
   const dev = getState();
+  const senderNodeNum = dev?.info?.nodeNum ?? 0;
   appendMessage({
+    senderNodeNum,
     senderNodeId: dev?.info?.nodeId ?? "self",
     text,
     direction: "outgoing",
     receivedAt: Date.now(),
     channelIndex,
+    ...(options.recipientNodeNum !== undefined
+      ? { recipientNodeNum: options.recipientNodeNum }
+      : {}),
     ...(options.pkiEncrypted === true ? { pkiEncrypted: true } : {}),
   });
 }
@@ -458,9 +473,12 @@ export function appendOutgoingPending(
   text: string,
   bleSeq: number,
   channelIndex = 0,
+  options: { recipientNodeNum?: number } = {},
 ): void {
   const dev = getState();
+  const senderNodeNum = dev?.info?.nodeNum ?? 0;
   appendMessage({
+    senderNodeNum,
     senderNodeId: dev?.info?.nodeId ?? "self",
     text,
     direction: "outgoing",
@@ -469,6 +487,9 @@ export function appendOutgoingPending(
     bleSeq,
     status: "sending",
     attempts: 1,
+    ...(options.recipientNodeNum !== undefined
+      ? { recipientNodeNum: options.recipientNodeNum }
+      : {}),
   });
 }
 

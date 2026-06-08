@@ -1,7 +1,9 @@
 import { Users } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
+import { useState } from "react";
 
-import { useLoraPeers } from "@/entities/lora-peer";
+import { type LoraPeer, useLoraPeers } from "@/entities/lora-peer";
+import { PeerDmDrawer } from "@/features/send-mesh-message";
 import { cn, hapticTick } from "@/shared/lib";
 import {
   Button,
@@ -19,6 +21,7 @@ const IS_NATIVE_APP = Capacitor.isNativePlatform();
 
 export function NodeListSheet() {
   const peers = useLoraPeers();
+  const [dmPeer, setDmPeer] = useState<LoraPeer | null>(null);
 
   return (
     <Sheet>
@@ -57,11 +60,21 @@ export function NodeListSheet() {
             }}
           >
             {peers.map((peer) => (
-              <NodeListRow key={peer.nodeId} peer={peer} />
+              <NodeListRow
+                key={peer.nodeId}
+                peer={peer}
+                onStartDm={setDmPeer}
+              />
             ))}
           </ul>
         )}
       </SheetContent>
+      <PeerDmDrawer
+        peer={dmPeer}
+        onOpenChange={(open) => {
+          if (!open) setDmPeer(null);
+        }}
+      />
     </Sheet>
   );
 }

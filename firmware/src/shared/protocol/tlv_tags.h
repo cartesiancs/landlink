@@ -10,7 +10,8 @@ namespace landlink::proto {
 
 enum class TlvTag : uint8_t {
     KIND = 0x01,  // Payload kind discriminator
-    NODE_ID = 0x02,  // 32-bit node id
+    NODE_ID = 0x02,  // 32-bit node id (sender in RX, destination in MESH_SEND)
+    NODE_DST = 0x05,  // Destination u32 in MESH_RECV; 0xFFFFFFFF means broadcast.
     MESH_ID = 0x03,  // Mesh group id
     TIMESTAMP_MS = 0x04,  // Unix time ms (best-effort)
     CHAT_TEXT = 0x10,  // UTF-8 chat text, <=200 B

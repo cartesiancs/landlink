@@ -51,7 +51,8 @@ let selfNodeNum = 0;
 // entity (same FSD layer) can be fed via a features-layer adapter, without
 // landlink/meshtastic-device having to import meshtastic-pki directly.
 export type MeshtasticNodeInfoEvent = {
-  nodeId: string; // 8-char hex
+  nodeNum: number; // canonical numeric id
+  nodeId: string; // 8-char BE canonical hex, derived from nodeNum
   publicKey?: Uint8Array; // 32 B when present in User.public_key
 };
 type NodeInfoHandler = (event: MeshtasticNodeInfoEvent) => void;
@@ -156,14 +157,18 @@ function dispatchFromRadio(data: Uint8Array): void {
       if (activeDeviceId !== null) {
         const hex = nodeIdHex(selfNodeNum);
         setInfo({
+          nodeNum: selfNodeNum,
           nodeId: hex,
           nodeName: null,
           meshId: null,
           region: null,
         });
         const registered = findDevice(getRegisteredDevices(), activeDeviceId);
-        if (registered && registered.nodeId !== hex) {
-          updateRegisteredDevice(activeDeviceId, { nodeId: hex });
+        if (registered && registered.nodeNum !== selfNodeNum) {
+          updateRegisteredDevice(activeDeviceId, {
+            nodeNum: selfNodeNum,
+            nodeId: hex,
+          });
         }
       }
       return;
@@ -220,12 +225,15 @@ function dispatchFromRadio(data: Uint8Array): void {
       // broadcast) do. The optimistic append in sendMeshtasticText is the
       // source of truth for our own outgoing messages.
       if (selfNodeNum !== 0 && p.from === selfNodeNum) return;
+      const isUnicast = p.to !== BROADCAST_ADDR;
       appendMessage({
+        senderNodeNum: p.from,
         senderNodeId: senderHex,
         text,
         direction: "incoming",
         receivedAt,
         channelIndex: p.channel,
+        ...(isUnicast ? { recipientNodeNum: p.to } : {}),
         ...(p.pkiEncrypted === true ? { pkiEncrypted: true } : {}),
       });
       return;
@@ -233,7 +241,10 @@ function dispatchFromRadio(data: Uint8Array): void {
     case "node_info": {
       const ni = msg.nodeInfo;
       if (ni.num === 0) return;
-      const event: MeshtasticNodeInfoEvent = { nodeId: nodeIdHex(ni.num) };
+      const event: MeshtasticNodeInfoEvent = {
+        nodeNum: ni.num >>> 0,
+        nodeId: nodeIdHex(ni.num),
+      };
       if (ni.user?.publicKey) event.publicKey = ni.user.publicKey;
       for (const handler of nodeInfoHandlers) {
         try {
@@ -447,8 +458,15 @@ export async function sendMeshtasticText(
   // the message to appear in our own feed. dispatchFromRadio drops any
   // echoed copy from firmware variants that do re-emit it. The firmware
   // decides PKI vs PSK on-device; outgoing local echo is plaintext and
-  // doesn't carry the pki flag (no auth context to display anyway).
-  appendOutgoingMessage(trimmed, channelIndex);
+  // doesn't carry the pki flag (no auth context to display anyway). When
+  // addressing a unicast DM we mirror the destination so the host demuxes
+  // the outgoing copy into the DM thread instead of the channel feed.
+  const isUnicastOut = dest !== BROADCAST_ADDR;
+  appendOutgoingMessage(
+    trimmed,
+    channelIndex,
+    isUnicastOut ? { recipientNodeNum: dest } : {},
+  );
 }
 
 export function isMeshtasticActive(): boolean {

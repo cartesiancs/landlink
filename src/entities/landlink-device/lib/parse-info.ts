@@ -1,3 +1,5 @@
+import { bytesLEToNodeNum, nodeNumToHex } from "@/shared/lib";
+
 import type { ParsedInfo } from "../model/store";
 
 // WHY: the firmware's INFO characteristic is a packed binary blob, not a TLV
@@ -11,17 +13,9 @@ import type { ParsedInfo } from "../model/store";
 // Earlier code ran decodeTlvs() on this buffer, which made every field null
 // because byte 0 (proto_version=0x01) was being interpreted as a TLV tag.
 
-function bytesToHex(bytes: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    const b = bytes[i] ?? 0;
-    out += b.toString(16).padStart(2, "0");
-  }
-  return out;
-}
-
 export function parseLandlinkInfo(bytes: Uint8Array): ParsedInfo {
   const out: ParsedInfo = {
+    nodeNum: null,
     nodeId: null,
     nodeName: null,
     meshId: null,
@@ -32,7 +26,11 @@ export function parseLandlinkInfo(bytes: Uint8Array): ParsedInfo {
 
   // bytes[0] is proto_version; we don't surface it on ParsedInfo today but the
   // dashboard / telemetry don't need it either. Skip past it.
-  out.nodeId = bytesToHex(bytes.slice(1, 5));
+  const nodeNum = bytesLEToNodeNum(bytes.slice(1, 5));
+  if (nodeNum !== null) {
+    out.nodeNum = nodeNum;
+    out.nodeId = nodeNumToHex(nodeNum);
+  }
 
   return out;
 }

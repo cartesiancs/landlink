@@ -24,36 +24,32 @@ const PRUNE_INTERVAL_MS = 15_000;
 
 // WHY: firmware advertises the device as "Landlink-%04X" using
 // `node_id & 0xFFFF` (see firmware/src/transport/ble/gatt_server.cpp:134).
-// Our nodeId convention is byte-order LE hex, so the lower-half u16
-// corresponds to the FIRST two bytes of the 8-char hex string but in
-// reversed pair order for big-endian display. For nodeId="11868ad9",
-// bytes 0..1 = "11" "86" → u16 LE = 0x8611 → "8611" in BLE name suffix.
-function deviceNameSuffixForNodeId(nodeId: string): string | null {
-  if (nodeId.length !== 8) return null;
-  const byte0 = nodeId.slice(0, 2);
-  const byte1 = nodeId.slice(2, 4);
-  return (byte1 + byte0).toUpperCase();
+// nodeNum is the canonical u32; the lower 16 bits print as a 4-char uppercase
+// hex (e.g. nodeNum 0x11868ad9 -> "8AD9").
+function deviceNameSuffixForNodeNum(nodeNum: number): string {
+  return ((nodeNum >>> 0) & 0xffff).toString(16).padStart(4, "0").toUpperCase();
 }
 
-// Backfill nodeId on a registered device whose name ends with the suffix
-// derived from this peer's nodeId. Only touches BLE devices with null nodeId.
 function backfillNodeIdByName(
   devices: readonly RegisteredDevice[],
+  peerNodeNum: number,
   peerNodeId: string,
 ): void {
-  const suffix = deviceNameSuffixForNodeId(peerNodeId);
-  if (!suffix) return;
-  const needle = `-${suffix}`;
+  const needle = `-${deviceNameSuffixForNodeNum(peerNodeNum)}`;
   for (const d of devices) {
     if (d.source !== "ble") continue;
-    if (d.nodeId !== null) continue;
+    if (d.nodeNum !== null) continue;
     if (d.name.toUpperCase().endsWith(needle)) {
       console.log("[lora-discovery] backfill nodeId via name suffix", {
         deviceId: d.id,
         name: d.name,
+        nodeNum: peerNodeNum,
         nodeId: peerNodeId,
       });
-      updateRegisteredDevice(d.id, { nodeId: peerNodeId });
+      updateRegisteredDevice(d.id, {
+        nodeNum: peerNodeNum,
+        nodeId: peerNodeId,
+      });
       return;
     }
   }
@@ -65,8 +61,6 @@ export function useLoraDiscovery(): void {
   const deviceId = device?.deviceId ?? null;
 
   useEffect(() => {
-    // WHY: surface the registered nodeIds at startup so user can eyeball them
-    // against the parsedNodeId logs from incoming LoRa peer events.
     const registered = getRegisteredDevices();
     console.log(
       "[lora-discovery] registered devices on mount",
@@ -95,17 +89,13 @@ export function useLoraDiscovery(): void {
       });
       if (peer) {
         upsertLoraPeer(peer);
-        // WHY: registered devices saved before the parse-info fix have
-        // nodeId=null. Match them up via the BLE name suffix so users don't
-        // have to re-attach every device manually.
-        backfillNodeIdByName(getRegisteredDevices(), peer.nodeId);
+        backfillNodeIdByName(getRegisteredDevices(), peer.nodeNum, peer.nodeId);
       }
     });
 
-    // Register chat senders as "chat" peers so the node list shows the people
-    // we're talking to, even when their beacon isn't being heard.
-    const unsubChat = onLandlinkChatRecv(({ senderNodeId, receivedAt }) => {
+    const unsubChat = onLandlinkChatRecv(({ senderNodeNum, senderNodeId, receivedAt }) => {
       upsertLoraPeer({
+        nodeNum: senderNodeNum,
         nodeId: senderNodeId,
         batteryPct: null,
         batteryMv: null,
@@ -118,8 +108,6 @@ export function useLoraDiscovery(): void {
     });
 
     const tickDiscover = (): void => {
-      // WHY: firmware fires its own beacon every 30s, but explicitly asking
-      // flushes its peer cache so newly-opened tabs catch up immediately.
       sendLandlinkCommand(Opcode.LORA_DISCOVER).catch(() => undefined);
     };
 
@@ -138,15 +126,13 @@ export function useLoraDiscovery(): void {
   }, [isConnected]);
 
   useEffect(() => {
-    // Hydrate the peer list with nodes we've chatted with in the past, scoped
-    // to the currently-connected device. Promotion rules in the peer store
-    // keep history from overwriting live beacon/chat entries.
     if (!deviceId) return;
     let cancelled = false;
     void loadKnownSenderNodeIds(deviceId).then((entries) => {
       if (cancelled) return;
       for (const e of entries) {
         upsertLoraPeer({
+          nodeNum: e.nodeNum,
           nodeId: e.nodeId,
           batteryPct: null,
           batteryMv: null,

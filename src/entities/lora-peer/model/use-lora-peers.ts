@@ -11,10 +11,10 @@ export function useLoraPeers(): readonly LoraPeer[] {
   return useSyncExternalStore(subscribeLoraPeers, getLoraPeers, getLoraPeers);
 }
 
-export function useLoraPeer(nodeId: string | null): LoraPeer | null {
+export function useLoraPeer(nodeNum: number | null): LoraPeer | null {
   return useSyncExternalStore(
     subscribeLoraPeers,
-    () => findLoraPeer(nodeId),
-    () => findLoraPeer(nodeId),
+    () => findLoraPeer(nodeNum),
+    () => findLoraPeer(nodeNum),
   );
 }

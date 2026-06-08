@@ -14,6 +14,7 @@ import { AboutPage } from "@/pages/about";
 import { ChannelChatPage } from "@/pages/channel-chat";
 import { ChannelsPage } from "@/pages/channels";
 import { DeviceDashboardPage } from "@/pages/device-dashboard";
+import { DmChatPage } from "@/pages/dm-chat";
 import { ErrorPage } from "@/pages/error";
 import { FaqPage } from "@/pages/faq";
 import { HardwareSetupPage } from "@/pages/hardware-setup";
@@ -67,6 +68,7 @@ const routes: RouteObject[] = [
       { path: ROUTES.deviceDashboard, element: <DeviceDashboardPage /> },
       { path: ROUTES.channels, element: <ChannelsPage /> },
       { path: ROUTES.channelChat, element: <ChannelChatPage /> },
+      { path: ROUTES.dmChat, element: <DmChatPage /> },
       { path: ROUTES.settings, element: <SettingsPage /> },
       { path: ROUTES.settingsTheme, element: <SettingsThemePage /> },
       { path: ROUTES.settingsDebug, element: <SettingsDebugPage /> },

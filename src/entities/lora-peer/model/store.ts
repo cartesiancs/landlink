@@ -13,7 +13,9 @@ const SOURCE_RANK: Record<LoraPeerSource, number> = {
   beacon: 2,
 };
 
-const peers = new Map<string, LoraPeer>();
+// Keyed by numeric nodeNum so peers heard via different adapters (which
+// historically surfaced different hex string formats) collapse to one entry.
+const peers = new Map<number, LoraPeer>();
 const listeners = new Set<() => void>();
 let snapshot: readonly LoraPeer[] = [];
 
@@ -36,23 +38,23 @@ function emit(): void {
 }
 
 export function upsertLoraPeer(peer: LoraPeer): void {
-  const existing = peers.get(peer.nodeId);
+  const existing = peers.get(peer.nodeNum);
   if (!existing) {
-    peers.set(peer.nodeId, peer);
+    peers.set(peer.nodeNum, peer);
     emit();
     return;
   }
   const incomingRank = SOURCE_RANK[peer.source];
   const existingRank = SOURCE_RANK[existing.source];
   if (incomingRank >= existingRank) {
-    // Same or stronger source — replace wholesale, advancing lastSeenAt.
-    peers.set(peer.nodeId, peer);
+    // Same or stronger source. Replace wholesale, advancing lastSeenAt.
+    peers.set(peer.nodeNum, peer);
   } else {
     // Weaker source (e.g. history arriving for an already-beaconed peer):
     // keep telemetry and source intact, but bump lastSeenAt if the weaker
     // signal is actually newer so ordering reflects recent activity.
     if (peer.lastSeenAt > existing.lastSeenAt) {
-      peers.set(peer.nodeId, { ...existing, lastSeenAt: peer.lastSeenAt });
+      peers.set(peer.nodeNum, { ...existing, lastSeenAt: peer.lastSeenAt });
     } else {
       return;
     }
@@ -73,22 +75,22 @@ export function subscribeLoraPeers(cb: () => void): () => void {
 
 export function pruneExpiredPeers(now: number): void {
   let removed = false;
-  for (const [nodeId, peer] of peers) {
+  for (const [nodeNum, peer] of peers) {
     // Only beacon peers expire. chat/history entries are kept indefinitely
     // so a node we've talked to remains in the list even after its beacon
     // stops being heard, and offline history doesn't churn.
     if (peer.source !== "beacon") continue;
     if (now - peer.lastSeenAt > PEER_TTL_MS) {
-      peers.delete(nodeId);
+      peers.delete(nodeNum);
       removed = true;
     }
   }
   if (removed) emit();
 }
 
-export function findLoraPeer(nodeId: string | null): LoraPeer | null {
-  if (!nodeId) return null;
-  return peers.get(nodeId) ?? null;
+export function findLoraPeer(nodeNum: number | null): LoraPeer | null {
+  if (nodeNum === null) return null;
+  return peers.get(nodeNum) ?? null;
 }
 
 export function _resetLoraPeersStore(): void {

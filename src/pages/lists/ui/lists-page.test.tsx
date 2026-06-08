@@ -61,6 +61,7 @@ describe("ListsPage", () => {
       signalDbm: null,
       lastConnectedAt: null,
       registeredAt: 1,
+      nodeNum: null,
       nodeId: null,
     });
     renderListsPage();

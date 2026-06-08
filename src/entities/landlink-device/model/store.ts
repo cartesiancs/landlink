@@ -9,6 +9,9 @@ import {
 export type LandlinkStatus = "disconnected" | "connecting" | "connected";
 
 export type ParsedInfo = {
+  // Canonical numeric self id. Null until the INFO characteristic read lands.
+  nodeNum: number | null;
+  // BE canonical hex of `nodeNum`. Derived; equals nodeNumToHex(nodeNum).
   nodeId: string | null;
   nodeName: string | null;
   meshId: string | null;
@@ -47,7 +50,15 @@ export type MeshMessage = {
   // its persisted IndexedDB row when status updates (ACK delivery, retries)
   // arrive after the initial write.
   id: string;
+  // Canonical numeric sender. For outgoing this is self.
+  senderNodeNum: number;
+  // BE canonical hex of senderNodeNum, kept for IndexedDB query convenience
+  // and feed rendering without recomputing every render.
   senderNodeId: string;
+  // Set when this row belongs to a unicast DM. Undefined means broadcast on
+  // the channel (regular channel chat). Outgoing DMs set this to the peer;
+  // incoming DMs set this to the receiving self id.
+  recipientNodeNum?: number;
   text: string;
   direction: MeshMessageDirection;
   receivedAt: number;
@@ -157,6 +168,7 @@ export function setTelemetry(telemetry: DeviceTelemetry): void {
 export function setRegion(region: number): void {
   if (!state) return;
   const baseInfo: ParsedInfo = state.info ?? {
+    nodeNum: null,
     nodeId: null,
     nodeName: null,
     meshId: null,
@@ -180,9 +192,11 @@ export function appendMessage(input: AppendMessageInput): void {
   emit();
   // Best-effort durable write. The connected deviceId is the per-device key
   // we use to scope history; if the state has gone missing between emit and
-  // here, skip persistence.
+  // here, skip persistence. selfNodeNum is needed so the message-store can
+  // compute dmPeerNum for index population.
   const deviceId = state.deviceId;
-  void persistMessage(message, deviceId);
+  const selfNodeNum = state.info?.nodeNum ?? 0;
+  void persistMessage(message, deviceId, selfNodeNum);
 }
 
 export function attachPktIdToOutgoing(bleSeq: number, pktId: number): void {

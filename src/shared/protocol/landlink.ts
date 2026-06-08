@@ -65,6 +65,7 @@ export type FsmStateValue = (typeof FsmState)[FsmStateName];
 export const TlvTag = {
   KIND: 0x01,
   NODE_ID: 0x02,
+  NODE_DST: 0x05,
   MESH_ID: 0x03,
   TIMESTAMP_MS: 0x04,
   CHAT_TEXT: 0x10,

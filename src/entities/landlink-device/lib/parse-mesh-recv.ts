@@ -1,13 +1,9 @@
+import {
+  BROADCAST_NODE_NUM,
+  bytesLEToNodeNum,
+  nodeNumToHex,
+} from "@/shared/lib";
 import { decodeTlvs, MeshKind, TlvTag } from "@/shared/protocol";
-
-function bytesToHex(bytes: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    const b = bytes[i] ?? 0;
-    out += b.toString(16).padStart(2, "0");
-  }
-  return out;
-}
 
 function readU32LE(bytes: Uint8Array): number | null {
   if (bytes.byteLength !== 4) return null;
@@ -22,7 +18,12 @@ function readU32LE(bytes: Uint8Array): number | null {
 export type ParsedMeshRecv =
   | {
       kind: "chat";
+      senderNodeNum: number;
       senderNodeId: string;
+      // Destination of the original LoRa frame. BROADCAST_NODE_NUM (0xFFFFFFFF)
+      // when the frame was a channel broadcast; any other value means the
+      // frame was unicast to that nodeNum (host demuxes DMs from this).
+      dstNodeNum: number;
       text: string;
       pktId: number | null;
       channelIndex: number;
@@ -31,14 +32,19 @@ export type ParsedMeshRecv =
     }
   | {
       kind: "ack";
+      senderNodeNum: number;
       senderNodeId: string;
+      dstNodeNum: number;
       ackPktId: number;
       channelIndex: number;
       receivedAt: number;
     };
 
 export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
-  let senderNodeId: string | null = null;
+  let senderNodeNum: number | null = null;
+  // Default to broadcast so MESH_RECV frames from pre-NODE_DST firmware still
+  // land in channel feeds rather than getting demuxed as DMs to nobody.
+  let dstNodeNum: number = BROADCAST_NODE_NUM;
   let text: string | null = null;
   let kindValue: number | null = null;
   let ackPktId: number | null = null;
@@ -52,7 +58,10 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
   const decoder = new TextDecoder();
   for (const tlv of decodeTlvs(payload)) {
     if (tlv.tag === TlvTag.NODE_ID && tlv.value.byteLength === 4) {
-      senderNodeId = bytesToHex(tlv.value);
+      senderNodeNum = bytesLEToNodeNum(tlv.value);
+    } else if (tlv.tag === TlvTag.NODE_DST && tlv.value.byteLength === 4) {
+      const v = bytesLEToNodeNum(tlv.value);
+      if (v !== null) dstNodeNum = v;
     } else if (tlv.tag === TlvTag.CHAT_TEXT) {
       text = decoder.decode(tlv.value);
     } else if (tlv.tag === TlvTag.KIND && tlv.value.byteLength === 1) {
@@ -68,17 +77,16 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
       pkiEncrypted = (tlv.value[0] ?? 0) !== 0;
     }
   }
-  if (senderNodeId === null) return null;
+  if (senderNodeNum === null) return null;
+  const senderNodeId = nodeNumToHex(senderNodeNum);
 
-  // Firmware prefixes every MESH_RECV with the outer ACK_PKT_ID = source pkt_id
-  // of the received frame. For chat that doubles as the message identifier the
-  // host uses for retry tracking. The KIND TLV inside the payload disambiguates
-  // a chat message from an ACK packet.
   if (kindValue === MeshKind.ACK) {
     if (ackPktId === null) return null;
     return {
       kind: "ack",
+      senderNodeNum,
       senderNodeId,
+      dstNodeNum,
       ackPktId,
       channelIndex,
       receivedAt: Date.now(),
@@ -87,7 +95,9 @@ export function parseMeshRecv(payload: Uint8Array): ParsedMeshRecv | null {
   if (text === null) return null;
   return {
     kind: "chat",
+    senderNodeNum,
     senderNodeId,
+    dstNodeNum,
     text,
     pktId: ackPktId,
     channelIndex,

@@ -1,17 +1,17 @@
-// In-memory cache of node X25519 public keys learned from NodeInfo broadcasts.
-// STEP 1 scope: visibility only. Keys are not used for crypto here — when the
-// firmware/STEP 2 layer starts performing PKI encrypt/decrypt, this store is
-// the lookup table they'll consult.
+// In-memory cache of node X25519 public keys learned from NodeInfo
+// broadcasts. STEP 1 scope: visibility only. Keys are not used for crypto
+// here; firmware owns the keypair and decides PKI vs PSK on send. The host
+// uses this cache to decide which UI badge to show in the DM composer.
 
 const PUBLIC_KEY_BYTES = 32;
 
-const keys = new Map<string, Uint8Array>();
+// Keyed by numeric nodeNum so this store is consistent with lora-peer and
+// landlink-device, which now identify peers numerically.
+const keys = new Map<number, Uint8Array>();
 const listeners = new Set<() => void>();
-let snapshot: ReadonlyMap<string, Uint8Array> = new Map();
+let snapshot: ReadonlyMap<number, Uint8Array> = new Map();
 
 function rebuildSnapshot(): void {
-  // The snapshot reference must change for React's useSyncExternalStore to
-  // re-render consumers; cloning the Map is cheap relative to NodeInfo cadence.
   snapshot = new Map(keys);
 }
 
@@ -26,27 +26,27 @@ function emit(): void {
   }
 }
 
-export function recordPublicKey(nodeId: string, key: Uint8Array): void {
-  if (!nodeId) return;
+export function recordPublicKey(nodeNum: number, key: Uint8Array): void {
+  if (!Number.isFinite(nodeNum)) return;
   if (key.byteLength !== PUBLIC_KEY_BYTES) {
     console.warn("[meshtastic-pki] reject non-32B public key", {
-      nodeId,
+      nodeNum,
       length: key.byteLength,
     });
     return;
   }
-  const existing = keys.get(nodeId);
+  const existing = keys.get(nodeNum);
   if (existing && bytesEqual(existing, key)) return;
-  keys.set(nodeId, key.slice());
+  keys.set(nodeNum, key.slice());
   emit();
 }
 
-export function findPublicKey(nodeId: string | null): Uint8Array | null {
-  if (!nodeId) return null;
-  return keys.get(nodeId) ?? null;
+export function findPublicKey(nodeNum: number | null): Uint8Array | null {
+  if (nodeNum === null) return null;
+  return keys.get(nodeNum) ?? null;
 }
 
-export function getPublicKeys(): ReadonlyMap<string, Uint8Array> {
+export function getPublicKeys(): ReadonlyMap<number, Uint8Array> {
   return snapshot;
 }
 

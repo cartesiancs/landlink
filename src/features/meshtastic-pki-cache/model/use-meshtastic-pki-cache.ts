@@ -8,9 +8,9 @@ import { recordPublicKey } from "@/entities/meshtastic-pki";
 // entities, and FSD forbids cross-slice imports at the entity layer.
 export function useMeshtasticPkiCache(): void {
   useEffect(() => {
-    const unsubscribe = onMeshtasticNodeInfo(({ nodeId, publicKey }) => {
+    const unsubscribe = onMeshtasticNodeInfo(({ nodeNum, publicKey }) => {
       if (!publicKey) return;
-      recordPublicKey(nodeId, publicKey);
+      recordPublicKey(nodeNum, publicKey);
     });
     return () => {
       unsubscribe();

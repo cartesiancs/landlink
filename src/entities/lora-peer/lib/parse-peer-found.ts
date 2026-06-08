@@ -1,3 +1,4 @@
+import { bytesLEToNodeNum, nodeNumToHex } from "@/shared/lib";
 import { decodeTlvs, TlvTag, type Tlv } from "@/shared/protocol";
 
 import type { LoraPeer } from "../model/types";
@@ -21,20 +22,6 @@ function readI32LE(value: Uint8Array): number {
   return u | 0;
 }
 
-// WHY: match parse-info / parse-mesh-recv exactly — byte-order hex (each TLV
-// byte hex'd in buffer order). The firmware writes node_id as LE uint32, and
-// the registered-device store records that same byte-order hex when reading
-// the BLE INFO characteristic. parsing the value back through readU32LE here
-// would flip endianness and break the device.nodeId === peer.nodeId match.
-function bytesToNodeIdHex(value: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < value.byteLength; i++) {
-    const b = value[i] ?? 0;
-    out += b.toString(16).padStart(2, "0");
-  }
-  return out;
-}
-
 function parseChargeByte(byte: number): ChargeState {
   return {
     vbus: (byte & 0x01) !== 0,
@@ -51,8 +38,9 @@ export function parsePeerFound(payload: Uint8Array): LoraPeer | null {
 
   const nodeIdTlv = map.get(TlvTag.NODE_ID);
   if (!nodeIdTlv) return null;
-  const nodeId = bytesToNodeIdHex(nodeIdTlv.value);
-  if (!nodeId) return null;
+  const nodeNum = bytesLEToNodeNum(nodeIdTlv.value);
+  if (nodeNum === null) return null;
+  const nodeId = nodeNumToHex(nodeNum);
 
   const battMv = map.get(TlvTag.BATTERY_MV);
   const battPct = map.get(TlvTag.BATTERY_PCT);
@@ -82,6 +70,7 @@ export function parsePeerFound(payload: Uint8Array): LoraPeer | null {
   }
 
   return {
+    nodeNum,
     nodeId,
     batteryMv:
       battMv && battMv.value.byteLength >= 2 ? readU16LE(battMv.value) : null,

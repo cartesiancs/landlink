@@ -11,27 +11,20 @@ import {
   findDevice,
   useRegisteredDevices,
 } from "@/entities/registered-device";
+import { nodeNumToBytesLE } from "@/shared/lib";
 import { MeshKind, Opcode, TlvTag, type Tlv } from "@/shared/protocol";
 
 export type SendMeshMessageStatus = "idle" | "sending" | "sent" | "error";
 
 const MAX_TEXT_BYTES = 200;
 
-// 8-char hex nodeId → u32. Inverse of the nodeIdHex(num) used by the
-// Meshtastic adapter when surfacing senders to the UI.
-function nodeIdHexToNum(hex: string): number | null {
-  if (hex.length !== 8) return null;
-  if (!/^[0-9a-f]{8}$/iu.test(hex)) return null;
-  const n = parseInt(hex, 16);
-  return Number.isFinite(n) ? n >>> 0 : null;
-}
-
 export type SendOptions = {
-  // Hex nodeId of the recipient. When set, the message is addressed as a
-  // unicast — firmware-side PKI (X25519+AES-CCM) kicks in transparently
-  // when the recipient's public_key has been heard via NodeInfo. Without
-  // a recipient key the firmware falls back to channel PSK.
-  recipientNodeId?: string;
+  // Numeric node id of the recipient. When set, the message is addressed as a
+  // unicast: firmware sets FlagUnicast on the Landlink wire, sets
+  // MeshPacket.to=recipientNodeNum on Meshtastic, and PKI (X25519+AES-CCM)
+  // kicks in transparently when the recipient's public_key has been heard via
+  // NodeInfo. Without a recipient the message broadcasts on the channel.
+  recipientNodeNum?: number;
 };
 
 export function useSendMeshMessage(channelIndex = 0) {
@@ -42,8 +35,6 @@ export function useSendMeshMessage(channelIndex = 0) {
   const registered = device
     ? findDevice(registeredDevices, device.deviceId)
     : null;
-  // Connected-device protocol family (Landlink TLV vs Meshtastic). Falls
-  // back to "landlink" for legacy registered entries that predate the field.
   const adapter = registered?.protocol ?? "landlink";
 
   const send = useCallback(
@@ -67,19 +58,13 @@ export function useSendMeshMessage(channelIndex = 0) {
 
     if (adapter === "meshtastic") {
       try {
-        // Firmware owns the X25519 keypair and runs PKI encryption when the
-        // recipient's public_key is cached (STEP 3+). The app only forwards
-        // plaintext + destination — picking PSK vs PKI happens device-side.
-        if (opts.recipientNodeId) {
-          const destNum = nodeIdHexToNum(opts.recipientNodeId);
-          if (destNum === null) throw new Error("Invalid recipient node id");
-          await sendMeshtasticText(trimmed, channelIndex, { dest: destNum });
+        if (opts.recipientNodeNum !== undefined) {
+          await sendMeshtasticText(trimmed, channelIndex, {
+            dest: opts.recipientNodeNum,
+          });
         } else {
           await sendMeshtasticText(trimmed, channelIndex);
         }
-        // sendMeshtasticText optimistically appends the outgoing message into
-        // the local feed (stock Meshtastic firmware does not echo it back via
-        // FromRadio), so the UI updates without waiting on a roundtrip.
         setStatus("sent");
         return true;
       } catch (err) {
@@ -90,25 +75,30 @@ export function useSendMeshMessage(channelIndex = 0) {
     }
 
     // Landlink path: TLV/opcode framing. The firmware always runs in
-    // Meshtastic-compatible mode (LongFast), so the per-channel key on
-    // header byte 13 selects the slot — any 0..7 index that resolves to a
-    // configured channel works.
+    // Meshtastic-compatible mode (LongFast). When a recipient is set, push a
+    // NODE_ID TLV with the destination as 4 LE bytes; firmware reads this as
+    // the unicast destination and the router stamps FlagUnicast on the wire.
     const tlvs: Tlv[] = [
       { tag: TlvTag.KIND, value: Uint8Array.of(MeshKind.CHAT_TEXT) },
       { tag: TlvTag.CHANNEL_INDEX, value: Uint8Array.of(channelIndex) },
-      { tag: TlvTag.CHAT_TEXT, value: encoded },
     ];
+    if (opts.recipientNodeNum !== undefined) {
+      tlvs.push({
+        tag: TlvTag.NODE_ID,
+        value: nodeNumToBytesLE(opts.recipientNodeNum),
+      });
+    }
+    tlvs.push({ tag: TlvTag.CHAT_TEXT, value: encoded });
 
     try {
-      // Firmware surfaces MESH_SEND_RESULT with the assigned pkt_id, so the
-      // host can wait for the Meshtastic Routing ACK (matching request_id)
-      // and flip the message to "delivered". Retry is disabled — there's no
-      // on-wire RETRY_PKT_ID in Meshtastic and duplicate sends would render
-      // as new messages on the receiver. The pre-seq hook registers the
-      // pending entry synchronously, before the BLE write, because
-      // MESH_SEND_RESULT can race past the await on a fast link.
+      const recipient = opts.recipientNodeNum;
       await sendLandlinkCommand(Opcode.MESH_SEND, tlvs, (seq) => {
-        appendOutgoingPending(trimmed, seq, channelIndex);
+        appendOutgoingPending(
+          trimmed,
+          seq,
+          channelIndex,
+          recipient !== undefined ? { recipientNodeNum: recipient } : {},
+        );
         trackPendingChat(seq, trimmed, encoded, { noRetry: true });
       });
       setStatus("sent");

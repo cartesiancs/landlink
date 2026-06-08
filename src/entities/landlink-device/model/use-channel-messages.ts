@@ -53,12 +53,16 @@ export function useChannelMessages(
     };
   }, [deviceId, channelIndex, isLive]);
 
+  // DMs ride the Primary channel on the wire (Meshtastic standard) but must
+  // not appear in channel feeds: presence of recipientNodeNum marks the row
+  // as a unicast DM and routes it to the dm-thread selector instead.
+  const isChannelMessage = (m: MeshMessage): boolean =>
+    (m.channelIndex ?? 0) === channelIndex && m.recipientNodeNum === undefined;
   if (isLive && device) {
-    return device.messages.filter(
-      (m) => (m.channelIndex ?? 0) === channelIndex,
-    );
+    return device.messages.filter(isChannelMessage);
   }
   if (deviceId === null || channelIndex < 0) return EMPTY_MESSAGES;
   const expected = keyFor(deviceId, channelIndex);
-  return loaded?.key === expected ? loaded.messages : EMPTY_MESSAGES;
+  if (loaded?.key !== expected) return EMPTY_MESSAGES;
+  return loaded.messages.filter(isChannelMessage);
 }

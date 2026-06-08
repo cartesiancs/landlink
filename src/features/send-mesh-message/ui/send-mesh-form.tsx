@@ -12,6 +12,10 @@ type SendMeshFormProps = {
   // Primary works (the hook errors on other indices); on Meshtastic the
   // index routes via MeshPacket.channel.
   channelIndex?: number;
+  // When set, every send addresses this peer as a unicast. The DM chat page
+  // passes this to keep the composer scoped to the open thread; the channel
+  // chat page leaves it undefined for normal channel broadcast.
+  recipientNodeNum?: number;
   // When true the textarea and submit button are both disabled, used by the
   // channel chat page to keep the form mounted (for layout stability and
   // history viewing) while no device is connected to deliver writes.
@@ -24,6 +28,7 @@ type SendMeshFormProps = {
 
 export function SendMeshForm({
   channelIndex = 0,
+  recipientNodeNum,
   disabled = false,
   disabledReason,
 }: SendMeshFormProps = {}) {
@@ -49,9 +54,15 @@ export function SendMeshForm({
     // Refocus synchronously before awaiting the BLE write so the soft keyboard
     // stays open even if a parent rerender or button tap stole focus.
     textareaRef.current?.focus();
-    const ok = await send(sent);
+    const ok = await send(
+      sent,
+      recipientNodeNum !== undefined ? { recipientNodeNum } : {},
+    );
     if (ok) {
-      posthog.capture("mesh_message_sent", { byte_length: byteLength });
+      posthog.capture("mesh_message_sent", {
+        byte_length: byteLength,
+        unicast: recipientNodeNum !== undefined,
+      });
       setText((cur) => (cur === sent ? "" : cur));
     }
     textareaRef.current?.focus();

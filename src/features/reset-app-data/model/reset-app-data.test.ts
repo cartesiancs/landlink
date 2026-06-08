@@ -30,6 +30,7 @@ describe("resetAppData", () => {
       signalDbm: null,
       lastConnectedAt: null,
       registeredAt: 1,
+      nodeNum: null,
       nodeId: null,
     });
     expect(window.localStorage.getItem(REGISTERED_DEVICES_STORAGE_KEY)).not.toBeNull();
@@ -73,6 +74,7 @@ describe("resetAppData", () => {
       signalDbm: null,
       lastConnectedAt: null,
       registeredAt: 1,
+      nodeNum: null,
       nodeId: null,
     });
     setDebugMode(true);

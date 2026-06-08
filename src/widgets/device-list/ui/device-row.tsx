@@ -19,7 +19,7 @@ type DeviceRowProps = {
 export function DeviceRow({ device }: DeviceRowProps) {
   const navigate = useNavigate();
   const liveDevice = useLandlinkDevice();
-  const peer = useLoraPeer(device.nodeId);
+  const peer = useLoraPeer(device.nodeNum);
   const {
     status: reconnectStatus,
     error: reconnectError,

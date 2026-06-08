@@ -19,6 +19,7 @@ function makeDevice(overrides: Partial<RegisteredDevice> = {}): RegisteredDevice
     signalDbm: null,
     lastConnectedAt: null,
     registeredAt: 1000,
+    nodeNum: null,
     nodeId: null,
     ...overrides,
   };
@@ -59,7 +60,7 @@ describe("local-storage-adapter", () => {
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 2,
+        version: 3,
         devices: [makeDevice({ id: "good" }), { id: 5, name: 1 }, null],
       }),
     );

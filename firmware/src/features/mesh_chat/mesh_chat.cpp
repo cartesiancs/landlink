@@ -55,13 +55,14 @@ void ensure_pending_mtx() {
 }
 
 void emit_recv_event(uint8_t channel_index,
-                     uint32_t src, uint32_t pkt_id,
+                     uint32_t src, uint32_t dst, uint32_t pkt_id,
                      const uint8_t* text, size_t text_len,
                      bool pki_encrypted = false) {
     const size_t cap = static_cast<size_t>(text_len > 200 ? 200 : text_len);
     uint8_t buf[240];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u32(TlvTag::NODE_ID,        src);
+    b.put_u32(TlvTag::NODE_DST,       dst);
     b.put_u32(TlvTag::ACK_PKT_ID,     pkt_id);
     b.put_u8 (TlvTag::CHANNEL_INDEX,  channel_index);
     b.put_u8 (TlvTag::KIND,           kKindChatText);
@@ -319,6 +320,7 @@ void on_chat(const landlink::mesh::Header& h,
         uint8_t buf[240];
         landlink::TlvBuilder b(buf, sizeof(buf));
         b.put_u32(TlvTag::NODE_ID,       h.src);
+        b.put_u32(TlvTag::NODE_DST,      h.dst);
         b.put_u32(TlvTag::ACK_PKT_ID,    h.pkt_id);
         b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
         for (size_t i = 0; i + 2 <= tlv_len; ) {
@@ -349,6 +351,7 @@ void on_ack(const landlink::mesh::Header& h,
     uint8_t buf[240];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u32(TlvTag::NODE_ID,       h.src);
+    b.put_u32(TlvTag::NODE_DST,      h.dst);
     b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
     for (size_t i = 0; i + 2 <= tlv_len; ) {
         const uint8_t tag = tlv_payload[i];
@@ -375,7 +378,7 @@ void on_meshtastic_chat(uint8_t channel_index,
              want_ack ? 1 : 0,
              pki_encrypted ? 1 : 0,
              static_cast<unsigned>(text_len));
-    emit_recv_event(channel_index, src, pkt_id, text, text_len, pki_encrypted);
+    emit_recv_event(channel_index, src, dst, pkt_id, text, text_len, pki_encrypted);
 
     // ACK any chat that requested one. For broadcasts we jitter (multiple
     // receivers reply, so back-to-back transmits would collide on-air);
@@ -399,10 +402,13 @@ void on_meshtastic_routing(uint8_t channel_index,
              static_cast<unsigned>(request_id));
     // Mirror the wire shape that on_ack[landlink] produces so the host's
     // parseMeshRecv treats this as an ACK and onAck(pktId) resolves the
-    // pending entry into "delivered".
-    uint8_t buf[16];
+    // pending entry into "delivered". NODE_DST is the self id since a
+    // Routing ACK that reaches our sink was addressed to us.
+    const uint32_t self_id = mesh::protocol::meshtastic_router().self_id();
+    uint8_t buf[24];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u32(TlvTag::NODE_ID,       src);
+    b.put_u32(TlvTag::NODE_DST,      self_id);
     b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
     b.put_u8 (TlvTag::KIND,          kKindAck);
     b.put_u32(TlvTag::ACK_PKT_ID,    request_id);
@@ -419,9 +425,10 @@ void on_meshtastic_own_echo(uint8_t channel_index, uint32_t pkt_id) {
     // ACK path accepts self-sourced ACKs — its self-filter is for chat
     // echoes, not delivery confirmations.
     const uint32_t self_id = mesh::protocol::meshtastic_router().self_id();
-    uint8_t buf[16];
+    uint8_t buf[24];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u32(TlvTag::NODE_ID,       self_id);
+    b.put_u32(TlvTag::NODE_DST,      self_id);
     b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
     b.put_u8 (TlvTag::KIND,          kKindAck);
     b.put_u32(TlvTag::ACK_PKT_ID,    pkt_id);

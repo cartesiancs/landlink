@@ -17,8 +17,11 @@ export type RegisteredDevice = {
   signalDbm: number | null;
   lastConnectedAt: number | null;
   registeredAt: number;
-  // WHY: firmware-side 4-byte node id, captured from INFO (Landlink) or
-  // FromRadio.my_info.my_node_num (Meshtastic) on first attach.
+  // WHY: firmware-side 4-byte node id captured from INFO (Landlink) or
+  // FromRadio.my_info.my_node_num (Meshtastic) on first attach. nodeNum is
+  // the canonical identifier; nodeId is its BE canonical hex form, kept
+  // around for display without recomputing each render.
+  nodeNum: number | null;
   nodeId: string | null;
   protocol?: RegisteredDeviceProtocol;
 };

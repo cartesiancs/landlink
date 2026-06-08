@@ -18,6 +18,7 @@ export const ROUTES = {
   deviceDashboard: "/device",
   channels: "/channels",
   channelChat: "/channels/:index",
+  dmChat: "/dm/:nodeIdHex",
   settings: "/settings",
   settingsTheme: "/settings/theme",
   settingsDebug: "/settings/debug",

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useDmThreads } from "@/entities/dm-thread";
 import {
   landlinkChannelDelete,
   useLandlinkDevice,
@@ -29,6 +30,7 @@ import {
 } from "@/shared/ui";
 
 import { ChannelRow } from "./channel-row";
+import { DmThreadRow } from "./dm-thread-row";
 
 export function ChannelList() {
   const navigate = useNavigate();
@@ -36,6 +38,7 @@ export function ChannelList() {
   const device = useLandlinkDevice();
   const activeDeviceId = useActiveDeviceId();
   const registeredDevices = useRegisteredDevices();
+  const dmThreads = useDmThreads();
   const registered = activeDeviceId
     ? findDevice(registeredDevices, activeDeviceId)
     : null;
@@ -92,11 +95,17 @@ export function ChannelList() {
       <ul className="flex flex-col gap-2">
         {channels.map((c) => (
           <ChannelRow
-            key={c.index}
+            key={`channel-${c.index.toString()}`}
             channel={c}
             deletable={rowsDeletable}
             onRequestDelete={setPendingDelete}
             onRequestShare={setPendingShare}
+          />
+        ))}
+        {dmThreads.map((t) => (
+          <DmThreadRow
+            key={`dm-${t.peerNodeIdHex}`}
+            thread={t}
           />
         ))}
       </ul>
