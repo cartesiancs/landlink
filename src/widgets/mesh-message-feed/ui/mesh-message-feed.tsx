@@ -119,6 +119,10 @@ export function MeshMessageFeed({ messages }: MeshMessageFeedProps) {
         <div
           ref={scrollRef}
           className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto"
+          style={{
+            paddingBottom: "var(--keyboard-inset, 0px)",
+            transition: "padding-bottom 250ms cubic-bezier(0.32, 0.72, 0, 1)",
+          }}
         >
           <ul className="flex flex-col">
             {grouped.map((g, i) => (
