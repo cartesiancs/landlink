@@ -25,7 +25,7 @@ export function NodeListSheet() {
 
   function handleStartDm(peer: LoraPeer): void {
     const path = ROUTES.dmChat.replace(":nodeIdHex", peer.nodeId);
-    void navigate(path);
+    void navigate(path, { viewTransition: true });
   }
 
   return (

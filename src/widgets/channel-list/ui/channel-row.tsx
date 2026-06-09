@@ -1,14 +1,10 @@
-import {
-  ChevronRight,
-  Hash,
-  Lock,
-  MoreVertical,
-  Share2,
-  Trash2,
-} from "lucide-react";
+import { ChevronRight, Hash, MoreVertical, Share2, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { displayChannelName, type Channel } from "@/entities/meshtastic-channel";
+import {
+  displayChannelName,
+  type Channel,
+} from "@/entities/meshtastic-channel";
 import { ROUTES } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
 import {
@@ -61,11 +57,13 @@ export function ChannelRow({
         className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
         aria-hidden="true"
       >
-        {isPrimary ? <Lock className="size-4" /> : <Hash className="size-4" />}
+        <Hash className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">{displayChannelName(channel)}</p>
+          <p className="truncate text-sm font-medium">
+            {displayChannelName(channel)}
+          </p>
         </div>
       </div>
       {isPrimary ? (
@@ -80,45 +78,49 @@ export function ChannelRow({
         // <li onClick={handleClick}> and would navigate to the chat page.
         // Stopping propagation at the wrapper catches both the trigger
         // click and item clicks before they reach the row.
-        <span onClick={(e) => { e.stopPropagation(); }}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Channel options"
-              className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => {
-                hapticTick();
-              }}
-            >
-              <MoreVertical className="size-5" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem
-              onSelect={() => {
-                hapticTick();
-                onRequestShare(channel);
-              }}
-            >
-              <Share2 aria-hidden="true" />
-              Share for Meshtastic
-            </DropdownMenuItem>
-            {showDelete ? <DropdownMenuSeparator /> : null}
-            {showDelete ? (
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => {
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Channel options"
+                className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => {
                   hapticTick();
-                  onRequestDelete(channel);
                 }}
               >
-                <Trash2 aria-hidden="true" />
-                Delete channel
+                <MoreVertical className="size-5" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                onSelect={() => {
+                  hapticTick();
+                  onRequestShare(channel);
+                }}
+              >
+                <Share2 aria-hidden="true" />
+                Share for Meshtastic
               </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {showDelete ? <DropdownMenuSeparator /> : null}
+              {showDelete ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => {
+                    hapticTick();
+                    onRequestDelete(channel);
+                  }}
+                >
+                  <Trash2 aria-hidden="true" />
+                  Delete channel
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </span>
       )}
     </li>

@@ -41,19 +41,21 @@ export function DmChatPage() {
         fallback={ROUTES.channels}
         backLabel="Back to Channels"
       >
-        {peerNodeNum !== null ? (
-          pkiEncrypted ? (
-            <Lock
-              className="size-3.5 text-emerald-600 dark:text-emerald-400"
-              aria-label="End-to-end encrypted"
-            />
-          ) : (
-            <LockOpen
-              className="size-3.5 text-amber-600 dark:text-amber-400"
-              aria-label="Channel-encrypted only"
-            />
-          )
-        ) : null}
+        <Button variant="ghost" size="icon" aria-label="Show node list">
+          {peerNodeNum !== null ? (
+            pkiEncrypted ? (
+              <Lock
+                className="size-4 text-emerald-600 dark:text-emerald-400"
+                aria-label="End-to-end encrypted"
+              />
+            ) : (
+              <LockOpen
+                className="size-4 text-amber-600 dark:text-amber-400"
+                aria-label="Channel-encrypted only"
+              />
+            )
+          ) : null}
+        </Button>
       </PageHeader>
       <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-0 pb-0">
         {peerNodeNum === null ? (

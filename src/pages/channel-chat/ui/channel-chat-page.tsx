@@ -1,4 +1,4 @@
-import { Hash, Lock } from "lucide-react";
+import { Hash } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -29,7 +29,6 @@ export function ChannelChatPage() {
   const parsedIndex =
     indexParam && /^[0-7]$/.test(indexParam) ? Number(indexParam) : null;
   const channel = findChannel(channels, parsedIndex ?? -1);
-  const isPrimary = channel?.role === "primary";
   const isConnected = device?.status === "connected";
 
   // Pulls live messages when connected to the active device, otherwise reads
@@ -42,13 +41,7 @@ export function ChannelChatPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            {channel ? (
-              isPrimary ? (
-                <Lock className="size-4 text-muted-foreground" aria-hidden />
-              ) : (
-                <Hash className="size-4 text-muted-foreground" aria-hidden />
-              )
-            ) : null}
+            <Hash className="size-4 text-muted-foreground" aria-hidden />
             {channel ? displayChannelName(channel) : "Channel"}
           </span>
         }
@@ -57,7 +50,7 @@ export function ChannelChatPage() {
       >
         <NodeListSheet />
       </PageHeader>
-      <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-4 pb-4">
+      <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-0 pb-2">
         {!channel ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <p className="text-sm text-muted-foreground">Channel not found.</p>
