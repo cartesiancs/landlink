@@ -8,6 +8,7 @@
 #include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
+#include "features/pki_keystore/pki_keystore.h"
 #include "features/telemetry/telemetry.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
@@ -58,6 +59,10 @@ constexpr const char* kTag = "tasks";
 [[noreturn]] void telemetry_task(void*) {
     for (;;) {
         (void)features::telemetry::push();
+        // Persist any dirty pki_keystore entries to NVS. The 3s cadence is
+        // well above pki_keystore's 1s debounce so each NodeInfo burst flushes
+        // at most once.
+        (void)features::pki_keystore::flush_pending(millis());
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
 }

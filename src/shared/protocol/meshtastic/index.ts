@@ -17,6 +17,7 @@ export {
   encodeData,
   encodeMeshPacket,
   encodeToRadio,
+  encodeUser,
   type Channel as MeshtasticChannel,
   type ChannelRoleValue,
   type ChannelSettings,

@@ -29,6 +29,13 @@ void init(uint32_t self_node_id);
 // returns false (without side effects) outside MESHTASTIC mode.
 bool send_nodeinfo();
 
+// Same as send_nodeinfo() but addressed as a unicast to `dest`. Used to
+// answer peers that flagged want_response=true on a NodeInfo request, which
+// is how Vision's host bootstraps an unknown peer's public_key before sending
+// a PKI DM. Returns false on encode/queue failure, dest==0, or outside
+// MESHTASTIC mode.
+bool send_nodeinfo_to(uint32_t dest);
+
 // Build + queue a Meshtastic Position broadcast. Includes a GPS-derived
 // `time` field when the GPS has a recent date/time fix (epoch_ms > 0).
 // Position with both lat/lon == 0 is suppressed unless we still have a

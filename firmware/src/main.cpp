@@ -156,6 +156,16 @@ void meshtastic_payload_sink(uint8_t channel_index,
             LL_LOG_I(kTag, "mt rx: cached pki pub for src=%08x",
                      static_cast<unsigned>(h.src));
         }
+        // Mirror upstream NodeInfoModule: when the peer explicitly asked for
+        // a NodeInfo reply (want_response=true), answer once with our own
+        // NodeInfo as a unicast. Vision's host bootstraps PKI keys by sending
+        // exactly this kind of request; without an answer the host times out
+        // and falls back to PSK. We answer immediately with no cooldown;
+        // Landlink usage is small mesh, low request volume, so the storm
+        // mitigation upstream applies is not needed yet.
+        if (data.has_want_response && data.want_response && h.src != 0) {
+            (void)landlink::features::mesh_identity::send_nodeinfo_to(h.src);
+        }
     }
 }
 }
@@ -244,6 +254,10 @@ void setup() {
     if (!landlink::features::pki_identity::init()) {
         LL_LOG_W(kTag, "pki_identity init failed — DMs will degrade to PSK");
     }
+    // Restore the peer pubkey LRU from NVS so PKI DMs are possible
+    // immediately after reboot, before peers re-broadcast their NodeInfo
+    // (15 min interval at default settings).
+    landlink::features::pki_keystore::init();
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

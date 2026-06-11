@@ -33,7 +33,9 @@ import {
   BROADCAST_ADDR,
   decodeFromRadio,
   encodeToRadio,
+  encodeUser,
   type MeshtasticChannel,
+  type User as MeshtasticUser,
 } from "@/shared/protocol/meshtastic";
 
 let activeDeviceId: string | null = null;
@@ -46,6 +48,19 @@ let pendingChannels: ChannelStoreEntry[] = [];
 // we can attribute outgoing messages to a stable id (matches incoming RX
 // dedup keying by senderNodeId).
 let selfNodeNum = 0;
+
+// Cached self User struct from FromRadio.node_info when ni.num === selfNodeNum.
+// We carry the full User on the wire when requesting NodeInfo from a peer
+// (NodeInfoModule treats the payload as the requester's identity). Without
+// this we have no payload to send and can't trigger a NodeInfo reply.
+let selfUser: MeshtasticUser | null = null;
+
+// Default hop limit applied to all outgoing MeshPackets. Meshtastic firmware
+// only auto-fills hop_limit when (RX_SRC_USER && want_ack && hop_limit == 0),
+// so broadcasts addressed with want_ack=false silently ship with 0 hops and
+// never propagate past the local node. We default to 3 to match the
+// firmware's getConfiguredOrDefaultHopLimit fallback.
+const DEFAULT_HOP_LIMIT = 3;
 
 // External subscribers to NodeInfo events. Exposed so the meshtastic-pki
 // entity (same FSD layer) can be fed via a features-layer adapter, without
@@ -117,6 +132,11 @@ function clearActive(): void {
   activeStoppers = [];
   pendingChannels = [];
   selfNodeNum = 0;
+  selfUser = null;
+}
+
+export function getSelfUser(): MeshtasticUser | null {
+  return selfUser;
 }
 
 function bytesToHexPreview(data: Uint8Array, max = 32): string {
@@ -205,11 +225,25 @@ function dispatchFromRadio(data: Uint8Array): void {
         rxTime: p.rxTime,
         pkiEncrypted: p.pkiEncrypted,
       });
-      // The firmware (STEP 3+) decrypts PKI DMs on-device using its own
-      // X25519 keypair and forwards plaintext over BLE alongside the
-      // pki_encrypted flag — so we treat encrypted-but-decoded-absent as
-      // a packet we cannot read (firmware key mismatch / pre-NodeInfo).
-      if (!p.decoded) return;
+      // The firmware decrypts PKI DMs on-device using its own X25519 keypair
+      // and forwards plaintext over BLE alongside the pki_encrypted flag.
+      // Encrypted-but-decoded-absent means we cannot read the packet (firmware
+      // key mismatch, pre-NodeInfo, or wrong-channel PSK). Surface a warning
+      // so the user can diagnose silent receive failures instead of having
+      // the packet vanish without a trace.
+      if (!p.decoded) {
+        if (p.encrypted) {
+          console.warn("[meshtastic] dropped undecodable packet", {
+            from: nodeIdHex(p.from),
+            to: nodeIdHex(p.to),
+            channel: p.channel,
+            pktId: p.id,
+            pkiEncrypted: p.pkiEncrypted === true,
+            encryptedBytes: p.encrypted.byteLength,
+          });
+        }
+        return;
+      }
       if (p.decoded.portnum !== PORTNUM.TEXT_MESSAGE_APP) return;
       const text = new TextDecoder().decode(p.decoded.payload);
       const senderHex = nodeIdHex(p.from);
@@ -241,6 +275,14 @@ function dispatchFromRadio(data: Uint8Array): void {
     case "node_info": {
       const ni = msg.nodeInfo;
       if (ni.num === 0) return;
+      // Cache our own User (id/longName/shortName/hwModel/publicKey) when the
+      // firmware emits self NodeInfo. requestMeshtasticNodeInfo needs to ship
+      // this verbatim as the NODEINFO_APP payload so the peer's NodeInfoModule
+      // treats us as a known requester and replies with its own NodeInfo (and
+      // public_key).
+      if (selfNodeNum !== 0 && ni.num === selfNodeNum && ni.user) {
+        selfUser = ni.user;
+      }
       const event: MeshtasticNodeInfoEvent = {
         nodeNum: ni.num >>> 0,
         nodeId: nodeIdHex(ni.num),
@@ -400,6 +442,7 @@ export async function detachMeshtasticClient(deviceId: string): Promise<void> {
 
 export type SendMeshtasticTextOptions = {
   dest?: number;
+  hopLimit?: number;
 };
 
 export async function sendMeshtasticText(
@@ -422,15 +465,25 @@ export async function sendMeshtasticText(
   // (when the firmware decides to apply it) rebuilds its AES-CCM nonce from
   // this exact value.
   const id = ((Math.random() * 0x7fffffff) | 0) || 1;
+  const hopLimit = options.hopLimit ?? DEFAULT_HOP_LIMIT;
+  // pki_encrypted and public_key (field 16) are intentionally NOT set here.
+  // The Meshtastic firmware decides PKI vs PSK on its own based on NodeDB
+  // state (recipient's cached public_key + our private_key). The standard
+  // phone app leaves these fields untouched so the firmware can pick the
+  // right path; setting them client-side would only cause PKI_FAILED on a
+  // key mismatch. Our job is to ship hop_limit + Data.source correctly and
+  // make sure the recipient has been NodeInfo-bootstrapped beforehand.
   const frame = encodeToRadio({
     kind: "packet",
     packet: {
       to: dest,
       channel: channelIndex,
       id,
+      hopLimit,
       decoded: {
         portnum: PORTNUM.TEXT_MESSAGE_APP,
         payload,
+        ...(selfNodeNum !== 0 ? { source: selfNodeNum } : {}),
       },
       wantAck: dest !== BROADCAST_ADDR,
     },
@@ -471,4 +524,56 @@ export async function sendMeshtasticText(
 
 export function isMeshtasticActive(): boolean {
   return activeDeviceId !== null;
+}
+
+// Send a NODEINFO_APP packet to a specific peer to trigger their
+// NodeInfoModule into replying with its own NodeInfo (which carries the
+// peer's User.public_key). The standard Meshtastic NodeInfoModule does not
+// auto-respond on first hear and applies a 12h cooldown on broadcasts, so an
+// explicit unicast request is the only reliable way to learn a fresh peer's
+// public key before sending a PKI DM.
+//
+// The payload is our own User struct serialized with encodeUser; NodeInfoModule
+// treats it as the requester's identity. want_response=true is the convention
+// for asking the receiver to reply.
+export async function requestMeshtasticNodeInfo(dest: number): Promise<void> {
+  if (dest === BROADCAST_ADDR || dest === 0) {
+    throw new Error("NodeInfo request requires a unicast destination");
+  }
+  const dev = getState();
+  if (dev?.status !== "connected") {
+    throw new Error("Meshtastic device not connected");
+  }
+  if (!selfUser) {
+    throw new Error("Self NodeInfo not yet learned from firmware");
+  }
+  const userBytes = encodeUser(selfUser);
+  const id = ((Math.random() * 0x7fffffff) | 0) || 1;
+  const frame = encodeToRadio({
+    kind: "packet",
+    packet: {
+      to: dest,
+      channel: 0,
+      id,
+      hopLimit: DEFAULT_HOP_LIMIT,
+      decoded: {
+        portnum: PORTNUM.NODEINFO_APP,
+        payload: userBytes,
+        wantResponse: true,
+        ...(selfNodeNum !== 0 ? { source: selfNodeNum } : {}),
+      },
+      wantAck: false,
+    },
+  });
+  console.log("[meshtastic] requestNodeInfo", {
+    dest: nodeIdHex(dest),
+    pktId: id,
+    payloadBytes: userBytes.byteLength,
+  });
+  await writeCharacteristic(
+    dev.deviceId,
+    MESHTASTIC_SERVICE_UUID,
+    MESHTASTIC_CHARACTERISTIC.TO_RADIO,
+    frame,
+  );
 }

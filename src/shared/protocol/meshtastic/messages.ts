@@ -338,6 +338,21 @@ export function decodeUser(buf: Uint8Array): User {
   return out;
 }
 
+// Encoder used when the host needs to send a NodeInfo (NODEINFO_APP portnum)
+// payload, e.g. to request a peer's public_key by triggering NodeInfoModule on
+// the other side. The phone-API contract is that the host carries the full
+// User struct on the wire even when most fields are echoes of what the
+// firmware already has.
+export function encodeUser(u: User): Uint8Array {
+  const w = new PbWriter();
+  if (u.id.length > 0) w.writeString(1, u.id);
+  if (u.longName.length > 0) w.writeString(2, u.longName);
+  if (u.shortName.length > 0) w.writeString(3, u.shortName);
+  if (u.hwModel !== 0) w.writeUint32(5, u.hwModel);
+  if (u.publicKey?.byteLength === 32) w.writeBytes(8, u.publicKey);
+  return w.finish();
+}
+
 export type NodeInfo = {
   num: number;
   user?: User;

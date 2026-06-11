@@ -67,11 +67,14 @@ void init(uint32_t self_node_id) {
              s_id, s_long_name, s_short_name);
 }
 
-bool send_nodeinfo() {
-    if (!is_meshtastic_mode()) return false;
-    if (s_self_id == 0)        return false;
+namespace {
+// Common NodeInfo encode + queue path shared by send_nodeinfo() (broadcast)
+// and send_nodeinfo_to(dest) (unicast reply to want_response). Returns the
+// pkt_id queued, or 0 on any failure.
+uint32_t emit_nodeinfo(uint32_t dest, const char* tag_suffix) {
+    if (!is_meshtastic_mode()) return 0;
+    if (s_self_id == 0)        return 0;
 
-    using mesh::meshtastic::kBroadcastAddr;
     using mesh::meshtastic::kMaxFrame;
     using mesh::meshtastic::kMaxPayload;
     using mesh::meshtastic::kPortnumNodeInfoApp;
@@ -89,8 +92,8 @@ bool send_nodeinfo() {
         have_pki ? pki_pub : nullptr,
         user_buf, sizeof(user_buf));
     if (user_len == 0) {
-        LL_LOG_W(kTag, "nodeinfo: encode_user failed");
-        return false;
+        LL_LOG_W(kTag, "nodeinfo: encode_user failed (%s)", tag_suffix);
+        return 0;
     }
 
     // Wrap in a Data{portnum=NODEINFO_APP, payload=User} protobuf.
@@ -99,32 +102,44 @@ bool send_nodeinfo() {
         kPortnumNodeInfoApp, user_buf, user_len,
         data_buf, sizeof(data_buf));
     if (data_len == 0 || data_len > kMaxPayload) {
-        LL_LOG_W(kTag, "nodeinfo: encode_data failed (user_len=%u)",
-                 static_cast<unsigned>(user_len));
-        return false;
+        LL_LOG_W(kTag, "nodeinfo: encode_data failed (%s user_len=%u)",
+                 tag_suffix, static_cast<unsigned>(user_len));
+        return 0;
     }
 
     uint8_t frame[kMaxFrame];
     uint32_t assigned = 0;
-    // NodeInfo broadcasts on Primary (channel 0). Real Meshtastic nodes do
+    // NodeInfo always rides Primary (channel 0). Real Meshtastic nodes do
     // the same — secondary channels carry chat/sensor traffic, never
     // identity beacons (those need to be readable across every group).
     const size_t frame_len = mesh::protocol::meshtastic_router().originate_data(
         /*channel_index=*/0,
-        kBroadcastAddr, /*want_ack=*/false,
+        dest, /*want_ack=*/false,
         data_buf, data_len, frame, sizeof(frame), &assigned);
     if (frame_len == 0) {
-        LL_LOG_W(kTag, "nodeinfo: originate_data failed");
-        return false;
+        LL_LOG_W(kTag, "nodeinfo: originate_data failed (%s)", tag_suffix);
+        return 0;
     }
     const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
-    LL_LOG_I(kTag, "nodeinfo tx pkt_id=%u user=%u data=%u frame=%u q=%d",
+    LL_LOG_I(kTag, "nodeinfo tx %s dst=%08x pkt_id=%u user=%u data=%u frame=%u q=%d",
+             tag_suffix,
+             static_cast<unsigned>(dest),
              static_cast<unsigned>(assigned),
              static_cast<unsigned>(user_len),
              static_cast<unsigned>(data_len),
              static_cast<unsigned>(frame_len),
              ok ? 1 : 0);
-    return ok;
+    return ok ? assigned : 0;
+}
+} // namespace
+
+bool send_nodeinfo() {
+    return emit_nodeinfo(mesh::meshtastic::kBroadcastAddr, "bcast") != 0;
+}
+
+bool send_nodeinfo_to(uint32_t dest) {
+    if (dest == 0 || dest == mesh::meshtastic::kBroadcastAddr) return false;
+    return emit_nodeinfo(dest, "unicast") != 0;
 }
 
 bool send_position() {

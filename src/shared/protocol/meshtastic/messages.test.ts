@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decodeData,
   decodeMeshPacket,
   decodeUser,
   encodeData,
   encodeMeshPacket,
+  encodeUser,
 } from "./messages";
 import { PbWriter } from "./protobuf";
 
@@ -138,5 +140,66 @@ describe("encodeMeshPacket", () => {
         id: 0,
       }),
     ).toThrow();
+  });
+
+  it("round-trips hop_limit on field 9", () => {
+    const bytes = encodeMeshPacket({
+      to: 0x1,
+      channel: 0,
+      id: 1,
+      hopLimit: 3,
+      decoded: { portnum: 1, payload: new Uint8Array(0) },
+    });
+    const back = decodeMeshPacket(bytes);
+    expect(back.hopLimit).toBe(3);
+  });
+});
+
+describe("encodeUser", () => {
+  it("round-trips id/longName/shortName/hwModel/publicKey", () => {
+    const pk = makePublicKey();
+    const bytes = encodeUser({
+      id: "!abcd1234",
+      longName: "Long Name",
+      shortName: "LN",
+      hwModel: 12,
+      publicKey: pk,
+    });
+    const back = decodeUser(bytes);
+    expect(back.id).toBe("!abcd1234");
+    expect(back.longName).toBe("Long Name");
+    expect(back.shortName).toBe("LN");
+    expect(back.hwModel).toBe(12);
+    expect(Array.from(back.publicKey ?? new Uint8Array(0))).toEqual(
+      Array.from(pk),
+    );
+  });
+
+  it("omits public_key when missing or non-32 B", () => {
+    const bytes = encodeUser({
+      id: "!x",
+      longName: "x",
+      shortName: "x",
+      hwModel: 0,
+    });
+    const back = decodeUser(bytes);
+    expect(back.publicKey).toBeUndefined();
+  });
+});
+
+describe("encodeData", () => {
+  it("round-trips source/dest/want_response", () => {
+    const bytes = encodeData({
+      portnum: 4,
+      payload: new TextEncoder().encode("u"),
+      wantResponse: true,
+      source: 0x11223344,
+      dest: 0x55667788,
+    });
+    const back = decodeData(bytes);
+    expect(back.portnum).toBe(4);
+    expect(back.wantResponse).toBe(true);
+    expect(back.source).toBe(0x11223344);
+    expect(back.dest).toBe(0x55667788);
   });
 });
