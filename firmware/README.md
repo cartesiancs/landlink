@@ -1,9 +1,10 @@
 # Landlink Module I — Firmware
 
-Firmware for the LILYGO T-Beam V1.1 (SX1262, 923 MHz) that powers the
-Landlink onboarding flow in the web app. BLE GATT for pairing / WiFi
-onboarding / radio config, SX1262 LoRa for peer discovery and a
-managed-flood mesh, and BLE-streamed signed OTA.
+Firmware for the LILYGO T-Beam V1.1 (SX1262, 923 MHz) and the Seeed XIAO
+ESP32S3 + Wio-SX1262 Kit for Meshtastic. Powers the Landlink onboarding
+flow in the web app: BLE GATT for pairing / WiFi onboarding / radio
+config, SX1262 LoRa for peer discovery and a managed-flood mesh, and
+BLE-streamed signed OTA.
 
 ## Quick start
 
@@ -11,12 +12,24 @@ managed-flood mesh, and BLE-streamed signed OTA.
 # 1. Regenerate protocol headers (YAML -> C++ + TS)
 python3 tools/gen_protocol.py
 
-# 2. Build & flash
-pio run -e ttgo-t-beam-sx1262 -t upload
+# 2. Build & flash — pick one
+pio run -e ttgo-t-beam-sx1262 -t upload          # LILYGO T-Beam V1.1 + SX1262
+pio run -e xiao-esp32s3-wio-sx1262 -t upload     # Seeed XIAO ESP32S3 + Wio-SX1262
 
 # 3. Watch logs
 pio device monitor
 ```
+
+## Supported boards
+
+| PlatformIO env              | Board                                | PMU              | GPS     | LED               | Button                  |
+|-----------------------------|--------------------------------------|------------------|---------|-------------------|-------------------------|
+| `ttgo-t-beam-sx1262`        | LILYGO T-Beam V1.1 + SX1262          | AXP19x / AXP2101 | NEO-M8N | GPIO4 active-high | GPIO38 active-low       |
+| `xiao-esp32s3-wio-sx1262`   | Seeed XIAO ESP32S3 + Wio-SX1262 kit  | none             | none    | GPIO48 active-high | GPIO21 (PROG) active-low |
+
+Board selection is compile-time via the env. To add a third board: add a
+`src/shared/config/pins_<name>.h`, an `#elif defined(LL_BOARD_<name>)`
+branch in `src/shared/config/board.h`, and an env in `platformio.ini`.
 
 ## Layout
 
@@ -47,10 +60,10 @@ See `../.claude/plans/1-peppy-valley.md` for the full design plan.
 
 1. Serial logger
 2. Status LED + button
-3. AXP192 PMU (enables LDO2 = SX1262, LDO3 = GPS)
+3. PMU (T-Beam only; XIAO has none, the call is a no-op)
 4. NVS storage (derives per-device wrap key)
-5. GPS
-6. SX1262 radio (needs PMU)
+5. GPS (T-Beam only; XIAO has none, the call is a no-op)
+6. SX1262 radio (needs PMU on T-Beam; powered from USB/3V3 on XIAO)
 7. NimBLE GATT server
 8. Mesh router (loads network key from NVS)
 9. App FSM + FreeRTOS task swarm

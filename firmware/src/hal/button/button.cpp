@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#include "shared/config/pins_tbeam_v11.h"
+#include "shared/config/board.h"
 
 namespace landlink::hal::button {
 
@@ -18,11 +18,19 @@ bool     s_very_fired   = false;
 }
 
 void init() {
+#if LL_BOARD_BUTTON_PULL_UP
     pinMode(pins::kUserButton, INPUT_PULLUP);
+#else
+    pinMode(pins::kUserButton, INPUT_PULLDOWN);
+#endif
 }
 
 Event poll() {
+#if LL_BOARD_BUTTON_ACTIVE_LOW
     const bool pressed = digitalRead(pins::kUserButton) == LOW;
+#else
+    const bool pressed = digitalRead(pins::kUserButton) == HIGH;
+#endif
     const uint32_t now = millis();
 
     if (pressed && !s_last_pressed) {

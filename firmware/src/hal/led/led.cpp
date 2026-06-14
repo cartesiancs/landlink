@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#include "shared/config/pins_tbeam_v11.h"
+#include "shared/config/board.h"
 
 namespace landlink::hal::led {
 
@@ -15,7 +15,11 @@ uint32_t s_fp_tick    = 0;
 Pattern  s_fp_saved   = Pattern::Off;
 
 inline void write(bool on) {
+#if LL_BOARD_LED_ACTIVE_HIGH
     digitalWrite(pins::kStatusLed, on ? HIGH : LOW);
+#else
+    digitalWrite(pins::kStatusLed, on ? LOW  : HIGH);
+#endif
 }
 
 void run_pattern(Pattern p, uint32_t t) {

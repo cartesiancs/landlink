@@ -1,6 +1,7 @@
 #include "sx1262_driver.h"
 
 #include <RadioLib.h>
+#include <SPI.h>
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -8,7 +9,7 @@
 #include <cstring>
 
 #include "mesh/frame/frame.h"
-#include "shared/config/pins_tbeam_v11.h"
+#include "shared/config/board.h"
 #include "shared/util/log.h"
 
 namespace landlink::transport::lora {
@@ -31,8 +32,14 @@ public:
     }
 };
 
-SX1262Ext s_radio = SX1262Ext(new Module(pins::kLoraNss, pins::kLoraDio1,
-                                         pins::kLoraRst, pins::kLoraBusy));
+// Constructed lazily in init() so we can pin the SPI bus to board-specific
+// pins before the Module wires up. On T-Beam the (5,19,27,18) tuple happens
+// to be the ESP32 VSPI defaults — the original code worked by accident; on
+// ESP32-S3 the defaults differ from the wiring and the explicit SPI.begin
+// becomes load-bearing. `s_radio` macro keeps the rest of this file's
+// `s_radio.foo()` call sites unchanged.
+SX1262Ext* s_radio_ptr = nullptr;
+#define s_radio (*s_radio_ptr)
 
 struct TxFrame {
     uint8_t buf[mesh::kMaxFrame];
@@ -217,6 +224,17 @@ LoraPreset preset_meshtastic_longfast(Region r) {
 
 bool init(Region r) {
     if (s_tx_mtx == nullptr) s_tx_mtx = xSemaphoreCreateMutex();
+    if (s_radio_ptr == nullptr) {
+        // Pin SPI to the LoRa wiring. On the T-Beam this is the same tuple as
+        // the ESP32 VSPI default (5,19,27,18); on the XIAO ESP32S3 the
+        // defaults differ from the Wio-SX1262 shield, so the explicit pinning
+        // is required. Called once before constructing the Module so the
+        // radio's SPI ref is stable from first I/O.
+        SPI.begin(pins::kLoraSck, pins::kLoraMiso, pins::kLoraMosi, pins::kLoraNss);
+        s_radio_ptr = new SX1262Ext(new Module(pins::kLoraNss, pins::kLoraDio1,
+                                               pins::kLoraRst, pins::kLoraBusy,
+                                               SPI));
+    }
     return apply_preset(preset_landlink(r));
 }
 

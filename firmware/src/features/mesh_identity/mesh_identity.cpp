@@ -10,6 +10,7 @@
 #include "mesh/meshtastic/data_pb.h"
 #include "mesh/meshtastic/frame.h"
 #include "mesh/protocol/protocol.h"
+#include "shared/config/board.h"
 #include "shared/util/log.h"
 #include "transport/lora/sx1262_driver.h"
 
@@ -18,11 +19,10 @@ namespace landlink::features::mesh_identity {
 namespace {
 constexpr const char* kTag = "mt_id";
 
-// Meshtastic HardwareModel enum value for TLora T-Beam (the supported HW).
-// Picking the right enum lets the Meshtastic client render the correct
-// device icon and capability hints. Source: meshtastic/protobufs mesh.proto
-// HardwareModel.TBEAM = 4.
-constexpr uint32_t kHwModelTBeam = 4;
+// Meshtastic HardwareModel enum value reported in NodeInfo. Sourced from the
+// board dispatch header so per-board overrides are localized to board.h.
+// Affects only icon/capability rendering on peer clients.
+constexpr uint32_t kMeshtasticHwModel = LL_BOARD_MT_HW_MODEL;
 
 // Meshtastic Position.LocationSource enum: LOC_INTERNAL = 1 (onboard GPS).
 constexpr uint32_t kLocSourceInternal = 1;
@@ -88,7 +88,7 @@ uint32_t emit_nodeinfo(uint32_t dest, const char* tag_suffix) {
     uint8_t user_buf[128];
     const size_t user_len = mesh::meshtastic::encode_user(
         s_id, s_long_name, s_short_name, s_macaddr,
-        kHwModelTBeam,
+        kMeshtasticHwModel,
         have_pki ? pki_pub : nullptr,
         user_buf, sizeof(user_buf));
     if (user_len == 0) {

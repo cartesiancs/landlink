@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <TinyGPSPlus.h>
 
-#include "shared/config/pins_tbeam_v11.h"
+#include "shared/config/board.h"
 #include "shared/util/log.h"
 
 namespace landlink::hal::gps {
@@ -26,10 +26,17 @@ uint32_t s_last_failed   = 0;
 }
 
 bool init() {
+#if !LL_BOARD_HAS_GPS
+    // Board has no GPS. latest() returns the default Fix{valid=false}, which
+    // makes mesh_identity::send_position skip its broadcast cleanly.
+    LL_LOG_I(kTag, "no GPS on this board, skipping");
+    return true;
+#else
     s_uart.begin(pins::kGpsBaud, SERIAL_8N1, pins::kGpsRx, pins::kGpsTx);
     LL_LOG_I(kTag, "UART1 @ %u", pins::kGpsBaud);
     s_last_diag_ms = millis();
     return true;
+#endif
 }
 
 // Convert a date+time pair (UTC, from the GNRMC/GPRMC NMEA sentence) to
@@ -54,6 +61,9 @@ uint64_t to_epoch_ms(uint16_t y, uint8_t mo, uint8_t d,
 }
 
 void pump() {
+#if !LL_BOARD_HAS_GPS
+    return;
+#else
     while (s_uart.available()) {
         const int b = s_uart.read();
         if (b < 0) break;
@@ -115,6 +125,7 @@ void pump() {
         s_last_failed   = failed_now;
         s_last_diag_ms  = now;
     }
+#endif
 }
 
 Fix latest() { return s_fix; }

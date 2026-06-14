@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <XPowersLib.h>
 
-#include "shared/config/pins_tbeam_v11.h"
+#include "shared/config/board.h"
 #include "shared/util/log.h"
 
 // T-Beam V1.1 SX1262 ships with either AXP192 (older lots) or AXP2101 (current
@@ -80,6 +80,14 @@ bool init_axp192() {
 }
 
 bool init() {
+#if !LL_BOARD_HAS_PMU
+    // Board has no PMU. Skipping the I2C probe avoids talking to whatever may
+    // sit at 0x34 on this board's bus and keeps the boot log clean. s_ready
+    // stays false so all enable_*/battery_* calls remain no-ops. Returning
+    // true is load-bearing: main.cpp halts via notify_fault("pmu") on false.
+    LL_LOG_I(kTag, "no PMU on this board, skipping");
+    return true;
+#else
     Wire.begin(pins::kPmuSda, pins::kPmuScl);
 
     if (init_axp2101()) {
@@ -96,6 +104,7 @@ bool init() {
 
     LL_LOG_E(kTag, "Neither AXP2101 nor AXP192 found on I2C");
     return false;
+#endif
 }
 
 void enable_radio(bool on) {
