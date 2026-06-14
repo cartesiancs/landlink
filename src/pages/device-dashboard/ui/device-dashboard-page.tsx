@@ -1,5 +1,5 @@
 import { usePostHog } from "@posthog/react";
-import { MoreVertical, Trash2 } from "lucide-react";
+import { BluetoothOff, MoreVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -9,6 +9,7 @@ import {
   type DeviceTelemetry,
 } from "@/entities/landlink-device";
 import { removeRegisteredDevice } from "@/entities/registered-device";
+import { disconnectDevice } from "@/features/disconnect-device";
 import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
 import {
@@ -24,6 +25,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  toast,
 } from "@/shared/ui";
 import { PageHeader } from "@/widgets/page-header";
 
@@ -127,6 +129,18 @@ export function DeviceDashboardPage() {
     void navigate(ROUTES.lists, { replace: true });
   };
 
+  const handleDisconnect = () => {
+    if (!device) return;
+    hapticTick();
+    posthog.capture("device_disconnected", {
+      device_id: device.deviceId,
+      device_name: device.name,
+    });
+    void disconnectDevice(device.deviceId).then(() => {
+      toast.success("Device disconnected.");
+    });
+  };
+
   return (
     <div className="mx-auto flex h-dvh w-full max-w-[430px] flex-col bg-background">
       <PageHeader
@@ -149,6 +163,10 @@ export function DeviceDashboardPage() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <DropdownMenuItem onSelect={handleDisconnect}>
+                <BluetoothOff aria-hidden="true" />
+                Disconnect BLE
+              </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => {
