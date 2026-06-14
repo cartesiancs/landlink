@@ -1,12 +1,19 @@
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { useLandlinkDevice } from "@/entities/landlink-device";
 import { findDevice, useRegisteredDevices } from "@/entities/registered-device";
 import { CreateChannelDialog } from "@/features/create-channel";
+import { ImportChannelDialog } from "@/features/import-channel";
 import { ActiveDevicePicker } from "@/features/select-active-device";
 import { cn, hapticTick } from "@/shared/lib";
-import { Button } from "@/shared/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui";
 import { AppHeader } from "@/widgets/app-header";
 import { BottomNavBar, useBottomNavVisible } from "@/widgets/bottom-nav-bar";
 import { ChannelList } from "@/widgets/channel-list";
@@ -17,6 +24,7 @@ export function ChannelsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const navVisible = useBottomNavVisible();
   const device = useLandlinkDevice();
   const registeredDevices = useRegisteredDevices();
@@ -60,18 +68,44 @@ export function ChannelsPage() {
         <ChannelList />
         {isDeviceConnected &&
           (canCreateOnDevice ? (
-            <Button
-              variant="outline"
-              size="lg"
-              className="mt-4 h-12 w-full justify-start gap-2"
-              onClick={() => {
-                hapticTick();
-                setCreateOpen(true);
-              }}
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              Create new channel
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="mt-4 h-12 w-full justify-start gap-2"
+                  onClick={() => {
+                    hapticTick();
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Create new channel
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-[calc(100vw-2rem)] max-w-99.5"
+              >
+                <DropdownMenuItem
+                  onSelect={() => {
+                    hapticTick();
+                    setCreateOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Create channel
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    hapticTick();
+                    setImportOpen(true);
+                  }}
+                >
+                  <Download className="size-4" aria-hidden="true" />
+                  Import channel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
             <p className="mt-4 rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
               Channels are managed on the Meshtastic device. Use the official
@@ -82,6 +116,7 @@ export function ChannelsPage() {
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />
       <CreateChannelDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <ImportChannelDialog open={importOpen} onOpenChange={setImportOpen} />
       <BottomNavBar />
     </div>
   );
