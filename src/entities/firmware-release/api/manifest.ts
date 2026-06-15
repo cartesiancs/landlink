@@ -5,7 +5,20 @@ import type {
   FirmwareAssetRole,
   FirmwareRelease,
   FirmwareReleaseAssets,
+  FirmwareTarget,
 } from "../model/types";
+
+const TARGETS: readonly FirmwareTarget[] = [
+  "ttgo-t-beam-sx1262",
+  "xiao-esp32s3-wio-sx1262",
+] as const;
+
+function parseTarget(value: unknown): FirmwareTarget | null {
+  const s = asString(value);
+  return s !== null && (TARGETS as readonly string[]).includes(s)
+    ? (s as FirmwareTarget)
+    : null;
+}
 
 function asString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
@@ -47,12 +60,13 @@ function parseRelease(raw: unknown): FirmwareRelease | null {
   const version = asString(obj["version"]);
   const tag = asString(obj["tag"]);
   const channelRaw = asString(obj["channel"]);
+  const target = parseTarget(obj["target"]);
   const releasedAt = asString(obj["releasedAt"]);
   const notes = asString(obj["notes"]) ?? "";
   const assets = parseAssets(obj["assets"]);
-  if (!version || !tag || !releasedAt || !assets) return null;
+  if (!version || !tag || !target || !releasedAt || !assets) return null;
   const channel = channelRaw === "beta" ? "beta" : "stable";
-  return { version, tag, channel, releasedAt, notes, assets };
+  return { version, tag, channel, target, releasedAt, notes, assets };
 }
 
 export async function fetchFirmwareReleases(

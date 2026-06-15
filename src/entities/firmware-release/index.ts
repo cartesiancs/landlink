@@ -4,7 +4,13 @@ export type {
   FirmwareChannel,
   FirmwareRelease,
   FirmwareReleaseAssets,
+  FirmwareTarget,
 } from "./model/types";
+
+export {
+  isChipCompatibleWithTarget,
+  type ChipFamily,
+} from "./lib";
 
 export {
   useFirmwareReleases,

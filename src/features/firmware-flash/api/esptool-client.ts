@@ -1,6 +1,9 @@
 import { ESPLoader, Transport } from "esptool-js";
 
-import type { FirmwareRelease } from "@/entities/firmware-release";
+import type {
+  FirmwareRelease,
+  FirmwareTarget,
+} from "@/entities/firmware-release";
 
 import { FlashCancelledError } from "../model/types";
 
@@ -15,9 +18,27 @@ export type FlashProgress = {
   currentFile: "bootloader" | "partitions" | "firmware";
 };
 
-const BOOTLOADER_OFFSET = 0x1000;
-const PARTITIONS_OFFSET = 0x8000;
-const FIRMWARE_OFFSET = 0x10000;
+type FlashOffsets = {
+  bootloader: number;
+  partitions: number;
+  firmware: number;
+};
+
+// WHY: ESP32 places the second-stage bootloader at 0x1000, but ESP32-S3 places
+// it at 0x0000. Partitions and app stay aligned across both. Pick offsets by
+// release target so XIAO and T-Beam can share one flash path.
+const FLASH_OFFSETS: Record<FirmwareTarget, FlashOffsets> = {
+  "ttgo-t-beam-sx1262": {
+    bootloader: 0x1000,
+    partitions: 0x8000,
+    firmware: 0x10000,
+  },
+  "xiao-esp32s3-wio-sx1262": {
+    bootloader: 0x0000,
+    partitions: 0x8000,
+    firmware: 0x10000,
+  },
+};
 // WHY: CH9102/CH340-based ESP32 boards (incl. LILYGO T-Beam) are flaky at
 // 921600 on macOS, surfacing as "Serial data stream stopped" right after
 // the baud switch. 460800 matches esptool stock default and is reliable
@@ -94,6 +115,8 @@ export async function flashRelease(
   release: FirmwareRelease,
   onProgress: (progress: FlashProgress) => void,
 ): Promise<void> {
+  const offsets = FLASH_OFFSETS[release.target];
+
   const [bootloader, partitions, firmware] = await Promise.all([
     downloadBinary(release.assets.bootloader.downloadUrl),
     downloadBinary(release.assets.partitions.downloadUrl),
@@ -101,9 +124,9 @@ export async function flashRelease(
   ]);
 
   const fileArray = [
-    { data: bootloader, address: BOOTLOADER_OFFSET },
-    { data: partitions, address: PARTITIONS_OFFSET },
-    { data: firmware, address: FIRMWARE_OFFSET },
+    { data: bootloader, address: offsets.bootloader },
+    { data: partitions, address: offsets.partitions },
+    { data: firmware, address: offsets.firmware },
   ] as const;
 
   const fileLabels: FlashProgress["currentFile"][] = [

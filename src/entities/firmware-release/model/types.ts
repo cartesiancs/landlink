@@ -1,5 +1,9 @@
 export type FirmwareChannel = "stable" | "beta";
 
+export type FirmwareTarget =
+  | "ttgo-t-beam-sx1262"
+  | "xiao-esp32s3-wio-sx1262";
+
 export type FirmwareAssetRole = "firmware" | "bootloader" | "partitions";
 
 export type FirmwareAsset = {
@@ -19,6 +23,7 @@ export type FirmwareRelease = {
   version: string;
   tag: string;
   channel: FirmwareChannel;
+  target: FirmwareTarget;
   releasedAt: string;
   notes: string;
   assets: FirmwareReleaseAssets;

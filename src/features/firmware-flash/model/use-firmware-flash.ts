@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { FirmwareRelease } from "@/entities/firmware-release";
+import {
+  isChipCompatibleWithTarget,
+  type FirmwareRelease,
+} from "@/entities/firmware-release";
 
 import {
   closeFlasher,
@@ -95,6 +98,14 @@ export function useFirmwareFlash(): UseFirmwareFlash {
   const flash = useCallback(async (release: FirmwareRelease) => {
     const handle = handleRef.current;
     if (!handle) return;
+
+    if (!isChipCompatibleWithTarget(handle.chip, release.target)) {
+      setError(
+        `This firmware targets ${release.target} but the connected chip is ${handle.chip}.`,
+      );
+      setStatus("error");
+      return;
+    }
 
     setStatus("flashing");
     setProgress(0);

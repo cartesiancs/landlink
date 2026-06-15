@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 
 import {
+  isChipCompatibleWithTarget,
   useFirmwareReleases,
   type FirmwareRelease,
+  type FirmwareTarget,
 } from "@/entities/firmware-release";
 import { useFirmwareFlash } from "@/features/firmware-flash";
 import { ROUTES } from "@/shared/config";
@@ -14,6 +16,11 @@ import { PageHeader } from "@/widgets/page-header";
 import { formatReleasedAt, formatSize, useIsMobile } from "../lib";
 
 type FirmwareStep = "connect" | "select" | "flash";
+
+const TARGET_LABEL: Record<FirmwareTarget, string> = {
+  "ttgo-t-beam-sx1262": "T-Beam",
+  "xiao-esp32s3-wio-sx1262": "XIAO S3",
+};
 
 type StepCta = {
   label: string;
@@ -38,8 +45,19 @@ export function LandlinkFirmwarePage() {
   const [intent, setIntent] = useState<FirmwareStep>("connect");
   const [pickedTag, setPickedTag] = useState<string | null>(null);
 
+  const compatibleReleases = useMemo(() => {
+    const chip = flash.chip;
+    if (!chip) return [];
+    return releasesState.releases.filter((r) =>
+      isChipCompatibleWithTarget(chip, r.target),
+    );
+  }, [releasesState.releases, flash.chip]);
+
+  // WHY: selecting from compatibleReleases (not the unfiltered list) means a
+  // tag picked under one chip family naturally yields null after the user
+  // swaps boards, no reset effect needed.
   const selected: FirmwareRelease | null =
-    releasesState.releases.find((r) => r.tag === pickedTag) ?? null;
+    compatibleReleases.find((r) => r.tag === pickedTag) ?? null;
 
   // WHY: derive the visible step from intent + connection status so a dropped
   // device pulls the user back to step 1 without a setState-in-effect cascade.
@@ -166,6 +184,8 @@ export function LandlinkFirmwarePage() {
         ) : step === "select" ? (
           <StepSelect
             state={releasesState}
+            releases={compatibleReleases}
+            chip={flash.chip}
             selectedTag={selected?.tag ?? null}
             onPick={setPickedTag}
           />
@@ -246,11 +266,19 @@ type ReleasesState = ReturnType<typeof useFirmwareReleases>;
 
 type StepSelectProps = {
   state: ReleasesState;
+  releases: FirmwareRelease[];
+  chip: string | null;
   selectedTag: string | null;
   onPick: (tag: string) => void;
 };
 
-function StepSelect({ state, selectedTag, onPick }: StepSelectProps) {
+function StepSelect({
+  state,
+  releases,
+  chip,
+  selectedTag,
+  onPick,
+}: StepSelectProps) {
   return (
     <StepShell title={STEP_TITLE.select}>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-6 pb-2">
@@ -285,9 +313,17 @@ function StepSelect({ state, selectedTag, onPick }: StepSelectProps) {
             No firmware releases published yet.
           </div>
         )}
-        {state.releases.length > 0 && (
+        {state.status === "ok" &&
+          state.releases.length > 0 &&
+          releases.length === 0 && (
+            <div className="rounded-2xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
+              No firmware available for the connected chip
+              {chip ? ` (${chip})` : ""}.
+            </div>
+          )}
+        {releases.length > 0 && (
           <div className="flex flex-col gap-2">
-            {state.releases.map((release) => {
+            {releases.map((release) => {
               const active = release.tag === selectedTag;
               const totalBytes =
                 release.assets.firmware.size +
@@ -322,6 +358,9 @@ function StepSelect({ state, selectedTag, onPick }: StepSelectProps) {
                         )}
                       >
                         {release.channel}
+                      </span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        {TARGET_LABEL[release.target]}
                       </span>
                     </div>
                     <span className="text-xs tabular-nums text-muted-foreground">

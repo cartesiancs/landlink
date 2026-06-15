@@ -1,10 +1,11 @@
 [
   {
     "version": "0.1.0",
-    "tag": "fw-v0.1.0",
+    "tag": "fw-v0.1.0-tbeam",
     "channel": "stable",
+    "target": "ttgo-t-beam-sx1262",
     "releasedAt": "2026-06-02",
-    "notes": "Landlink Module I firmware build for LILYGO T-Beam V1.1 (ESP32 + SX1262, 923 MHz).",
+    "notes": "Landlink Module I firmware for LILYGO T-Beam V1.1 (ESP32 + SX1262, 923 MHz).",
     "assets": {
       "firmware": {
         "name": "firmware.bin",
@@ -20,6 +21,31 @@
         "name": "partitions.bin",
         "size": 3072,
         "downloadUrl": "/firmware/0.1.0/partitions.bin"
+      }
+    }
+  },
+  {
+    "version": "0.1.0",
+    "tag": "fw-v0.1.0-xiao",
+    "channel": "stable",
+    "target": "xiao-esp32s3-wio-sx1262",
+    "releasedAt": "2026-06-02",
+    "notes": "Landlink Module I firmware for Seeed XIAO ESP32S3 + Wio-SX1262 kit (923 MHz).",
+    "assets": {
+      "firmware": {
+        "name": "firmware.bin",
+        "size": 0,
+        "downloadUrl": "/firmware/0.1.0-xiao/firmware.bin"
+      },
+      "bootloader": {
+        "name": "bootloader.bin",
+        "size": 0,
+        "downloadUrl": "/firmware/0.1.0-xiao/bootloader.bin"
+      },
+      "partitions": {
+        "name": "partitions.bin",
+        "size": 0,
+        "downloadUrl": "/firmware/0.1.0-xiao/partitions.bin"
       }
     }
   }
