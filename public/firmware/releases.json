@@ -9,7 +9,7 @@
     "assets": {
       "firmware": {
         "name": "firmware.bin",
-        "size": 1170384,
+        "size": 1175664,
         "downloadUrl": "/firmware/0.1.0/firmware.bin"
       },
       "bootloader": {
@@ -34,17 +34,17 @@
     "assets": {
       "firmware": {
         "name": "firmware.bin",
-        "size": 0,
+        "size": 995760,
         "downloadUrl": "/firmware/0.1.0-xiao/firmware.bin"
       },
       "bootloader": {
         "name": "bootloader.bin",
-        "size": 0,
+        "size": 15104,
         "downloadUrl": "/firmware/0.1.0-xiao/bootloader.bin"
       },
       "partitions": {
         "name": "partitions.bin",
-        "size": 0,
+        "size": 3072,
         "downloadUrl": "/firmware/0.1.0-xiao/partitions.bin"
       }
     }
