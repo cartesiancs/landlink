@@ -1,17 +1,8 @@
 import { useEffect } from "react";
 
-import { ROUTES } from "@/shared/config";
+import { APP_STORE_URL, ROUTES } from "@/shared/config";
+import { detectIOS } from "@/shared/lib";
 import { PageHeader } from "@/widgets/page-header";
-
-const APP_STORE_URL = "https://apps.apple.com/us/app/landlink/id6774466627";
-
-function detectIOS(): boolean {
-  const ua = navigator.userAgent;
-  return (
-    /iPad|iPhone|iPod/.test(ua) ||
-    (ua.includes("Mac") && navigator.maxTouchPoints > 1)
-  );
-}
 
 export function AppPage() {
   const isIOS = detectIOS();

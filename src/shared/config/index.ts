@@ -7,3 +7,4 @@ export {
   type RegionMeta,
 } from "./regions";
 export { SITE_URL } from "./site";
+export { APP_STORE_URL } from "./app-store";

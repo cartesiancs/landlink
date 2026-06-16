@@ -1,4 +1,5 @@
 export { cn } from "./utils";
+export { detectIOS } from "./detect-ios";
 export {
   BROADCAST_NODE_NUM,
   bytesLEToNodeNum,

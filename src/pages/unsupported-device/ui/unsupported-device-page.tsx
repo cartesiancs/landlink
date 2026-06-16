@@ -1,9 +1,21 @@
 import { BluetoothOff } from "lucide-react";
 
+import { APP_STORE_URL } from "@/shared/config";
+import { detectIOS, useSetStepAction } from "@/shared/lib";
 import { Reveal } from "@/shared/ui";
 import { ConnectStep } from "@/widgets/connect-step";
 
+function openAppStore() {
+  window.open(APP_STORE_URL, "_blank", "noopener,noreferrer");
+}
+
 export function UnsupportedDevicePage() {
+  const isIOS = detectIOS();
+
+  useSetStepAction(
+    isIOS ? { label: "Get iOS App", onAction: openAppStore } : {},
+  );
+
   return (
     <ConnectStep titleLines={["Unsupported", "browser or device"]}>
       <Reveal className="flex w-full flex-1 flex-col items-center justify-center gap-6 px-4">
@@ -19,8 +31,9 @@ export function UnsupportedDevicePage() {
           />
         </div>
         <p className="max-w-xs text-center text-sm text-muted-foreground">
-          Web Bluetooth isn't available here. Open this page in Chrome, Edge, or
-          Brave to continue.
+          {isIOS
+            ? "Web Bluetooth isn't available on iOS. Get the Landlink iOS app to pair your device."
+            : "Web Bluetooth isn't available here. Open this page in Chrome, Edge, or Brave to continue."}
         </p>
       </Reveal>
     </ConnectStep>
