@@ -11,6 +11,7 @@ import {
 } from "react-router-dom";
 
 import { AboutPage } from "@/pages/about";
+import { AppPage } from "@/pages/app";
 import { ChannelChatPage } from "@/pages/channel-chat";
 import { ChannelsPage } from "@/pages/channels";
 import { DeviceDashboardPage } from "@/pages/device-dashboard";
@@ -55,6 +56,7 @@ const routes: RouteObject[] = [
     errorElement: <ErrorPage />,
     children: [
       { path: ROUTES.about, element: <AboutPage /> },
+      { path: ROUTES.app, element: <AppPage /> },
       { path: ROUTES.faq, element: <FaqPage /> },
       { path: ROUTES.support, element: <SupportPage /> },
       { path: ROUTES.landlinkOne, element: <LandlinkOnePage /> },
