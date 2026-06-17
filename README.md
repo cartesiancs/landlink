@@ -3,8 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cartesiancs/landlink/blob/main/LICENSE"><img src="https://img.shields.io/github/license/cartesiancs/landlink?style=for-the-badge" alt="License" /></a>
-  <a href="https://github.com/cartesiancs/landlink/stargazers"><img src="https://img.shields.io/github/stars/cartesiancs/landlink?style=for-the-badge" alt="Stars" /></a>
   <a href="https://github.com/cartesiancs/landlink/issues"><img src="https://img.shields.io/github/issues/cartesiancs/landlink?style=for-the-badge" alt="Issues" /></a>
   <a href="https://landlink.sh/"><img src="https://img.shields.io/badge/Website-Live-2563eb?style=for-the-badge" alt="Website" /></a>
 </p>
@@ -14,7 +12,8 @@
   <a href="https://landlink.sh/landlink-module-i/buy">Get Module I</a> ·
   <a href="https://landlink.sh/hardware-setup">Hardware Setup</a> ·
   <a href="https://landlink.sh/faq">FAQ</a> ·
-  <a href="https://github.com/cartesiancs/landlink/issues">Report Bugs</a>
+  <a href="https://github.com/cartesiancs/landlink/issues">Report Bugs</a> ·
+  <a href="https://apps.apple.com/us/app/landlink/id6774466627">Get iOS App</a>
 </p>
 
 ---
