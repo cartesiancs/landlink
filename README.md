@@ -70,6 +70,10 @@ Issues and PRs are welcome. Before opening a PR:
 2. New code respects the FSD layer boundaries enforced in [`eslint.config.js`](eslint.config.js).
 3. Firmware changes are flashable to a T-Beam V1.1 and don't regress the bring-up order in [`firmware/README.md`](firmware/README.md).
 
+## Contributors
+
+H. Jun Huh [(GitHub)](https://github.com/hjunhuh)
+
 ## License
 
 See [LICENSE](LICENSE).
