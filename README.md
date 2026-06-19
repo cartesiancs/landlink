@@ -26,10 +26,6 @@ It lets phones talk to each other over LoRa when there is no cell tower, no Wi-F
 
 ## Demo
 
-<p align="center">
-  <video src="https://github.com/cartesiancs/landlink/raw/main/.github/output.mp4" controls width="100%"></video>
-</p>
-
 ## Quick start
 
 ### Web app (development)
