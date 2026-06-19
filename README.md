@@ -26,6 +26,9 @@ It lets phones talk to each other over LoRa when there is no cell tower, no Wi-F
 
 ## Demo
 
+https://github.com/user-attachments/assets/cd215b75-7e53-492d-968e-884c31c08897
+
+
 ## Quick start
 
 ### Web app (development)
