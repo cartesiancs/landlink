@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Bluetooth,
   Check,
@@ -77,6 +78,136 @@ const HARDWARE: readonly Hardware[] = [
   },
 ];
 
+type Region = "us" | "eu" | "kr" | "jp";
+
+type RegionalListing = {
+  store: string;
+  url: string;
+  note?: string;
+};
+
+type RequiredAccessory = {
+  label: string;
+  listings: Record<Region, RegionalListing>;
+};
+
+type SupportedHardware = {
+  id: string;
+  name: string;
+  tagline: string;
+  listings: Record<Region, RegionalListing>;
+  requiredAccessory?: RequiredAccessory;
+};
+
+const SUPPORTED_HARDWARE: readonly SupportedHardware[] = [
+  {
+    id: "lilygo-tbeam-v1-1",
+    name: "LILYGO T-Beam V1.1",
+    tagline: "ESP32 + SX1262 LoRa node with battery holder and GPS",
+    listings: {
+      us: {
+        store: "Amazon.com",
+        url: "https://www.amazon.com/LILYGO-TTGO-Beam-Bluetooth-Battery-CH9102F/dp/B09G6GPG9S",
+        note: "915 MHz, FCC variant",
+      },
+      eu: {
+        store: "Amazon.de",
+        url: "https://www.amazon.de/LILYGO-Entwicklungsboard-Meshtastic-Mainboards-Soldered/dp/B0B454TB6S",
+        note: "868 MHz, CE variant",
+      },
+      kr: {
+        store: "Devicemart",
+        url: "https://www.devicemart.co.kr/goods/view?no=14907883",
+      },
+      jp: {
+        store: "Amazon.co.jp",
+        url: "https://www.amazon.co.jp/-/en/LILYGO-Tastic-V1-1ESP32-Bluetooth-Battery/dp/B0BBZLX73B",
+        note: "Pick the 923 MHz variant at checkout",
+      },
+    },
+    requiredAccessory: {
+      label: "18650 battery (sold separately)",
+      listings: {
+        us: {
+          store: "Amazon.com",
+          url: "https://www.amazon.com/s?k=18650+protected+button+top+3400mAh",
+          note: "Pick a protected button-top 3.7 V cell",
+        },
+        eu: {
+          store: "Akkuteile.de",
+          url: "https://www.akkuteile.de/en/panasonic-ncr18650b-3-7v-3400mah-pcb-protected_100647_1248",
+          note: "Panasonic NCR18650B, 3400 mAh, PCB-protected",
+        },
+        kr: {
+          store: "Devicemart",
+          url: "https://www.devicemart.co.kr/goods/view?no=14117576",
+          note: "Pick a protected button-top 3.7 V cell",
+        },
+        jp: {
+          store: "Amazon.co.jp",
+          url: "https://www.amazon.co.jp/s?k=18650+%E4%BF%9D%E8%AD%B7%E5%9B%9E%E8%B7%AF+%E3%83%9C%E3%82%BF%E3%83%B3%E3%83%88%E3%83%83%E3%83%97",
+          note: "Pick a protected button-top 3.7 V cell",
+        },
+      },
+    },
+  },
+  {
+    id: "seeed-xiao-wio-sx1262",
+    name: "Seeed XIAO ESP32S3 + Wio-SX1262 Kit",
+    tagline: "Compact ESP32-S3 board paired with the Wio-SX1262 LoRa add-on",
+    listings: {
+      us: {
+        store: "Amazon.com",
+        url: "https://www.amazon.com/Wio-SX1262-Meshtastic-Pre-Flashed-ESP32-S3-Portable/dp/B0GY4QC6GN",
+      },
+      eu: {
+        store: "Seeed Studio",
+        url: "https://www.seeedstudio.com/Wio-SX1262-with-XIAO-ESP32S3-p-5982.html",
+        note: "Ships from Seeed EU warehouse",
+      },
+      kr: {
+        store: "Devicemart",
+        url: "https://www.devicemart.co.kr/goods/view?no=15784307",
+      },
+      jp: {
+        store: "Amazon.co.jp",
+        url: "https://www.amazon.co.jp/XIAO-ESP32S3-Wio-SX1262-Meshtastic-IoT%E3%82%B9%E3%83%9E%E3%83%BC%E3%83%88%E3%82%A6%E3%82%A7%E3%82%A2%E3%83%A9%E3%83%96%E3%83%AB%E3%83%87%E3%83%90%E3%82%A4%E3%82%B9%E7%94%A8%E3%81%AE%E8%B1%8A%E5%AF%8C%E3%81%AA%E3%82%A4%E3%83%B3%E3%82%BF%E3%83%BC%E3%83%95%E3%82%A7%E3%83%BC%E3%82%B9/dp/B0DZCQ1FG3",
+      },
+    },
+  },
+];
+
+const REGIONS: readonly { id: Region; label: string; flag: string }[] = [
+  { id: "us", label: "US", flag: "\u{1F1FA}\u{1F1F8}" },
+  { id: "eu", label: "EU", flag: "\u{1F1EA}\u{1F1FA}" },
+  { id: "kr", label: "KR", flag: "\u{1F1F0}\u{1F1F7}" },
+  { id: "jp", label: "JP", flag: "\u{1F1EF}\u{1F1F5}" },
+];
+
+function detectRegion(): Region {
+  if (typeof navigator === "undefined") return "us";
+  const lang = navigator.language.toLowerCase();
+  if (lang.startsWith("ko")) return "kr";
+  if (lang.startsWith("ja")) return "jp";
+  if (
+    lang.startsWith("de") ||
+    lang.startsWith("fr") ||
+    lang.startsWith("es") ||
+    lang.startsWith("it") ||
+    lang.startsWith("nl") ||
+    lang.startsWith("pt") ||
+    lang.startsWith("pl") ||
+    lang.startsWith("sv") ||
+    lang.startsWith("fi") ||
+    lang.startsWith("da") ||
+    lang === "en-gb" ||
+    lang === "en-ie"
+  ) {
+    return "eu";
+  }
+  return "us";
+}
+
 type PairingStep = {
   index: number;
   title: string;
@@ -149,6 +280,8 @@ const PRIVACY_POINTS: readonly PrivacyPoint[] = [
 // }
 
 export function HardwareSetupPage() {
+  const [region, setRegion] = useState<Region>(detectRegion);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
       <PageHeader
@@ -273,6 +406,118 @@ export function HardwareSetupPage() {
             );
           })}
         </div>
+      </section>
+
+      <section
+        aria-label="Where to buy supported hardware"
+        className="px-4 pb-8"
+      >
+        <div className="mb-3">
+          <h3 className="font-display text-2xl leading-tight tracking-tight">
+            Get supported hardware
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Landlink also runs on these off-the-shelf LoRa boards. Pick your
+            region to see where to buy.
+          </p>
+        </div>
+
+        <div
+          role="tablist"
+          aria-label="Region"
+          className="mb-4 flex w-full gap-1 rounded-lg border border-border bg-muted/40 p-1"
+        >
+          {REGIONS.map((r) => {
+            const active = r.id === region;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  setRegion(r.id);
+                }}
+                className={
+                  active
+                    ? "flex-1 cursor-pointer rounded-md bg-background px-2 py-1.5 text-xs font-medium text-foreground shadow-sm"
+                    : "flex-1 cursor-pointer rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                }
+              >
+                <span aria-hidden="true">{r.flag}</span> {r.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {SUPPORTED_HARDWARE.map((item) => {
+            const listing = item.listings[region];
+            const accessory = item.requiredAccessory;
+            const accessoryListing = accessory?.listings[region];
+            return (
+              <article
+                key={item.id}
+                className="rounded-2xl border border-border bg-card p-4"
+              >
+                <h4 className="text-sm font-medium">{item.name}</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {item.tagline}
+                </p>
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-foreground">
+                      {listing.store}
+                    </span>
+                    {listing.note ? (
+                      <span className="text-[11px] text-muted-foreground">
+                        {listing.note}
+                      </span>
+                    ) : null}
+                  </div>
+                  <a
+                    href={listing.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-colors hover:bg-foreground/90"
+                  >
+                    Buy
+                    <ChevronRight className="size-3.5" aria-hidden="true" />
+                  </a>
+                </div>
+                {accessory && accessoryListing ? (
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-foreground">
+                        {accessory.label}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {accessoryListing.store}
+                        {accessoryListing.note
+                          ? ` · ${accessoryListing.note}`
+                          : ""}
+                      </span>
+                    </div>
+                    <a
+                      href={accessoryListing.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                    >
+                      Buy
+                      <ChevronRight className="size-3.5" aria-hidden="true" />
+                    </a>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          Frequency band must match local LoRa regulations. We are not
+          affiliated with these stores; links are provided for convenience.
+        </p>
       </section>
 
       <section aria-label="Pairing" className="px-4 pb-8">
