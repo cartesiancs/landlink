@@ -17,7 +17,10 @@
 #include "mesh/frame/frame.h"
 #include "mesh/protocol/protocol.h"
 #include "shared/util/log.h"
+#include "transport/lora/mac.h"
 #include "transport/lora/sx1262_driver.h"
+
+#include <cstring>
 
 namespace landlink::app::services {
 
@@ -104,9 +107,11 @@ constexpr const char* kTag = "tasks";
 }
 
 [[noreturn]] void lora_tx_task(void*) {
+    // ack_tick() is gone — mesh_chat now enqueues ACKs directly to the MAC
+    // priority queue (with TxRequest::not_before_ms for broadcast-ACK jitter)
+    // so the deferred-build path is no longer needed.
     for (;;) {
         transport::lora::tx_tick();
-        features::mesh_chat::ack_tick();
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
@@ -120,7 +125,18 @@ constexpr const char* kTag = "tasks";
             size_t  fwd_len = 0;
             mesh::protocol::on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len);
             if (fwd_len > 0) {
-                transport::lora::queue_tx(fwd, fwd_len);
+                // Forward path: tell the MAC this is a rebroadcast so the
+                // SNR-weighted backoff applies. Lower-SNR receivers (poor
+                // signal, likely on the edge of the originator's range) get
+                // a smaller CW and relay first; higher-SNR receivers wait
+                // longer and usually suppress on overhearing the relay.
+                transport::lora::TxRequest req{};
+                std::memcpy(req.bytes, fwd, fwd_len);
+                req.len            = fwd_len;
+                req.priority       = transport::lora::Priority::Default;
+                req.is_rebroadcast = true;
+                req.rx_snr_db_x10  = rep.snr_db_x10;
+                (void)transport::lora::mac::enqueue(req);
             }
         }
         vTaskDelay(pdMS_TO_TICKS(5));

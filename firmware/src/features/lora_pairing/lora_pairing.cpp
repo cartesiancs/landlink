@@ -17,6 +17,7 @@
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
+#include "transport/lora/mac.h"
 #include "transport/lora/sx1262_driver.h"
 
 namespace landlink::app::services {
@@ -234,7 +235,14 @@ void send_beacon() {
                  static_cast<unsigned>(b.size()));
         return;
     }
-    const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
+    // Beacons are periodic peer-discovery + telemetry — strictly background
+    // traffic from the MAC's perspective, so they sit behind chat and ACK
+    // frames in the priority queue.
+    landlink::transport::lora::TxRequest req{};
+    std::memcpy(req.bytes, frame, frame_len);
+    req.len      = frame_len;
+    req.priority = landlink::transport::lora::Priority::Background;
+    const bool ok = landlink::transport::lora::mac::enqueue(req);
     LL_LOG_I(kTag, "beacon tx self=%08x payload=%u frame=%u queued=%d",
              static_cast<unsigned>(s_self_id),
              static_cast<unsigned>(b.size()),

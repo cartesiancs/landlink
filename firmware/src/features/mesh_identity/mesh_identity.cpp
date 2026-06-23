@@ -12,6 +12,7 @@
 #include "mesh/protocol/protocol.h"
 #include "shared/config/board.h"
 #include "shared/util/log.h"
+#include "transport/lora/mac.h"
 #include "transport/lora/sx1262_driver.h"
 
 namespace landlink::features::mesh_identity {
@@ -120,7 +121,13 @@ uint32_t emit_nodeinfo(uint32_t dest, const char* tag_suffix) {
         LL_LOG_W(kTag, "nodeinfo: originate_data failed (%s)", tag_suffix);
         return 0;
     }
-    const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
+    // NodeInfo is periodic identity beaconing — Background priority so chat
+    // and ACK traffic preempts it when the queue is contended.
+    landlink::transport::lora::TxRequest req{};
+    std::memcpy(req.bytes, frame, frame_len);
+    req.len      = frame_len;
+    req.priority = landlink::transport::lora::Priority::Background;
+    const bool ok = landlink::transport::lora::mac::enqueue(req);
     LL_LOG_I(kTag, "nodeinfo tx %s dst=%08x pkt_id=%u user=%u data=%u frame=%u q=%d",
              tag_suffix,
              static_cast<unsigned>(dest),
@@ -195,7 +202,12 @@ bool send_position() {
         LL_LOG_W(kTag, "position: originate_data failed");
         return false;
     }
-    const bool ok = landlink::transport::lora::queue_tx(frame, frame_len);
+    // Periodic position broadcast — Background, same rationale as NodeInfo.
+    landlink::transport::lora::TxRequest req{};
+    std::memcpy(req.bytes, frame, frame_len);
+    req.len      = frame_len;
+    req.priority = landlink::transport::lora::Priority::Background;
+    const bool ok = landlink::transport::lora::mac::enqueue(req);
     LL_LOG_I(kTag, "position tx pkt_id=%u loc=%d epoch=%u frame=%u q=%d",
              static_cast<unsigned>(assigned),
              has_loc ? 1 : 0,

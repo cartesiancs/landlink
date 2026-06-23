@@ -53,6 +53,13 @@ opcodes:
   RADIO_SET_PROTOCOL:    { code: 0x14, dir: C_TO_F }
   RADIO_PROTOCOL_RESULT: { code: 0x15, dir: F_TO_C }
 
+  # Node role for CSMA/CA scheduling (0=client, 1=router, 2=repeater).
+  # Router/Repeater nodes skip the client rebroadcast offset, guaranteeing
+  # they relay before client-class nodes when both hear the same packet.
+  RADIO_GET_ROLE:        { code: 0x16, dir: C_TO_F }
+  RADIO_SET_ROLE:        { code: 0x17, dir: C_TO_F }
+  RADIO_ROLE_RESULT:     { code: 0x18, dir: F_TO_C }
+
   # LoRa peer discovery + pairing
   LORA_DISCOVER:         { code: 0x20, dir: C_TO_F }
   LORA_PEER_FOUND:       { code: 0x21, dir: F_TO_C }
@@ -188,6 +195,7 @@ tlv_tags:
   # BLE region
   REGION:                { tag: 0xA0, type: u8 }
   PROTOCOL:              { tag: 0xA1, type: u8, desc: "Active radio protocol: 0=Landlink, 1=Meshtastic" }
+  ROLE:                  { tag: 0xA2, type: u8, desc: "Node CSMA/CA role: 0=client, 1=router, 2=repeater" }
 
   # BLE mesh membership
   MESH_KEY:              { tag: 0xB0, type: bytes32 }

@@ -7,6 +7,7 @@
 #include "mesh/channel/registry.h"
 #include "mesh/crypto/aes_ccm.h"
 #include "shared/util/log.h"
+#include "transport/lora/mac.h"
 
 namespace landlink::mesh {
 
@@ -44,6 +45,9 @@ void Router::init(const RouterConfig& cfg) {
     next_pkt_id_ = 1;
     tx_counter_  = 0;
     dedup_.clear();
+    // Propagate the role to the MAC scheduler so weighted-rebroadcast applies
+    // the Router/Repeater shortcut (skip the 2*CWmax*slotTime client offset).
+    transport::lora::mac::set_role(cfg_.role);
 }
 
 void Router::random_nonce(uint8_t out[7]) {

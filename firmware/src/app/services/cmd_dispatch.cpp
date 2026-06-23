@@ -16,6 +16,8 @@
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
+#include "transport/lora/mac.h"
+#include "transport/lora/priority.h"
 
 namespace landlink::app::services {
 
@@ -117,6 +119,42 @@ bool handle_cmd(Opcode op, uint8_t seq,
         landlink::TlvBuilder b(buf, sizeof(buf));
         b.put_u8(TlvTag::PROTOCOL, applied);
         transport::ble::notify_evt(Opcode::RADIO_PROTOCOL_RESULT, seq,
+                                   b.data(), b.size());
+        return true;
+    }
+
+    case Opcode::RADIO_GET_ROLE: {
+        uint8_t role = 0;
+        hal::storage::get_u8("ll.radio", "role", role, 0);
+        uint8_t buf[3];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put_u8(TlvTag::ROLE, role);
+        transport::ble::notify_evt(Opcode::RADIO_ROLE_RESULT, seq,
+                                   b.data(), b.size());
+        return true;
+    }
+
+    case Opcode::RADIO_SET_ROLE: {
+        landlink::Tlv t;
+        if (!r.find(TlvTag::ROLE, t) || t.len != 1) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        const uint8_t requested = t.data[0];
+        if (requested > 2) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        hal::storage::set_u8("ll.radio", "role", requested);
+        // Push to MAC immediately. The router cached cfg_.role at boot — it
+        // is only read at init, so live updates skip the router and go
+        // straight to the scheduler.
+        transport::lora::mac::set_role(
+            static_cast<transport::lora::Role>(requested));
+        uint8_t buf[3];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put_u8(TlvTag::ROLE, requested);
+        transport::ble::notify_evt(Opcode::RADIO_ROLE_RESULT, seq,
                                    b.data(), b.size());
         return true;
     }

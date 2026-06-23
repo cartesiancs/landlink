@@ -38,6 +38,7 @@
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
+#include "transport/lora/priority.h"
 #include "transport/lora/sx1262_driver.h"
 
 namespace landlink::app::services {
@@ -64,6 +65,13 @@ landlink::proto::Region load_region() {
     uint8_t r = 0;
     landlink::hal::storage::get_u8("ll.radio", "region", r, 0);
     return static_cast<landlink::proto::Region>(r);
+}
+
+landlink::transport::lora::Role load_role() {
+    uint8_t r = 0;
+    landlink::hal::storage::get_u8("ll.radio", "role", r, 0);
+    if (r > 2) r = 0;  // defensive: unknown values fall back to Client
+    return static_cast<landlink::transport::lora::Role>(r);
 }
 
 // Mesh router decrypted-payload sink: read the KIND TLV and dispatch to the
@@ -234,6 +242,7 @@ void setup() {
     cfg.mesh_id           = mesh_id;
     cfg.self_id           = node_id;
     cfg.default_hop_limit = 5;
+    cfg.role              = load_role();
     landlink::app::services::g_router.init(cfg);
     landlink::app::services::g_router.set_sink(&landlink_payload_sink);
 

@@ -74,9 +74,4 @@ void on_meshtastic_routing(uint8_t channel_index,
 // explicit Routing ACK so the host treats it uniformly.
 void on_meshtastic_own_echo(uint8_t channel_index, uint32_t pkt_id);
 
-// Drain due ACKs from the deferred queue. Called from the LoRa TX task at
-// ~1 kHz so ACK jitter (0..3s) resolves with ms precision without blocking
-// the RX task that schedules them. Cheap when the queue is empty.
-void ack_tick();
-
 } // namespace landlink::features::mesh_chat

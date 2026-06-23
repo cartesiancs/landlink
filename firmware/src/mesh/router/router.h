@@ -28,6 +28,7 @@
 
 #include "mesh/frame/frame.h"
 #include "mesh/router/dedup.h"
+#include "transport/lora/priority.h"
 
 namespace landlink::mesh {
 
@@ -48,6 +49,7 @@ struct RouterConfig {
     uint16_t mesh_id           = 0;
     uint32_t self_id           = 0;
     uint8_t  default_hop_limit = 5;
+    transport::lora::Role role = transport::lora::Role::Client;
 };
 
 class Router {
