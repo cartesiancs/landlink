@@ -11,18 +11,22 @@
 
 #include "shared/util/log.h"
 #include "transport/lora/airtime.h"
+#include "transport/lora/mac_math.h"
 
 namespace landlink::transport::lora::mac {
 
 namespace {
 constexpr const char* kTag = "mac";
 
-// ---- Meshtastic-identical constants (see RadioInterface.h) -----------------
-constexpr uint8_t  kNumSymCad           = 2;     // sub-GHz only
-constexpr uint8_t  kCWmin               = 3;     // 2^3 = 8 slots minimum
-constexpr uint8_t  kCWmax               = 8;     // 2^8 = 256 slots maximum
-constexpr int8_t   kSnrMinDb            = -20;
-constexpr int8_t   kSnrMaxDb            = 10;
+// Math constants and primitives live in mac_math.h so they can be exercised
+// from native unit tests without dragging in Arduino/RadioLib/FreeRTOS.
+using mac_math::kCWmin;
+using mac_math::kCWmax;
+using mac_math::kSnrMinDb;
+using mac_math::kSnrMaxDb;
+using mac_math::RoleClass;
+
+// FreeRTOS-only constants stay here.
 constexpr uint32_t kTxWatchdogMs        = 60000;
 constexpr size_t   kQueueDepth          = 16;
 constexpr uint32_t kPreambleDebounceMul = 2;
@@ -68,38 +72,19 @@ uint32_t uniform_lt(uint32_t n) {
     }
 }
 
-float clampf(float v, float lo, float hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-
-// Linear interpolation matching Arduino's map() semantics but with float input
-// for the source range and integer output clamped to [out_lo, out_hi].
-uint8_t map_to_cw(float v, float in_lo, float in_hi, uint8_t out_lo, uint8_t out_hi) {
-    if (in_hi <= in_lo) return out_lo;
-    const float clamped = clampf(v, in_lo, in_hi);
-    const float t       = (clamped - in_lo) / (in_hi - in_lo);
-    const float out     = static_cast<float>(out_lo)
-                        + t * static_cast<float>(out_hi - out_lo);
-    return static_cast<uint8_t>(std::lround(out));
-}
-
-uint8_t cw_size_from_util(float util_pct) {
-    return map_to_cw(util_pct, 0.0f, 100.0f, kCWmin, kCWmax);
-}
-
-uint8_t cw_size_from_snr(float snr_db) {
-    return map_to_cw(snr_db, static_cast<float>(kSnrMinDb),
-                     static_cast<float>(kSnrMaxDb), kCWmin, kCWmax);
+RoleClass role_class() {
+    return is_relay_role(s_role) ? RoleClass::Relay : RoleClass::Client;
 }
 
 uint32_t delay_originated_ms() {
-    const uint8_t cw = cw_size_from_util(airtime::channel_util_percent());
+    const uint8_t cw = mac_math::cw_size_from_util(airtime::channel_util_percent());
     return uniform_lt(1u << cw) * s_slot_time_ms;
 }
 
 uint32_t delay_weighted_ms(int8_t snr_db_x10) {
-    const uint8_t cw = cw_size_from_snr(static_cast<float>(snr_db_x10) / 10.0f);
-    if (is_relay_role(s_role)) {
+    const uint8_t cw = mac_math::cw_size_from_snr(
+        static_cast<float>(snr_db_x10) / 10.0f);
+    if (role_class() == RoleClass::Relay) {
         return uniform_lt(2u * cw) * s_slot_time_ms;
     }
     return (2u * kCWmax * s_slot_time_ms)
@@ -107,12 +92,13 @@ uint32_t delay_weighted_ms(int8_t snr_db_x10) {
 }
 
 uint32_t delay_weighted_worst_ms(int8_t snr_db_x10) {
-    const uint8_t cw = cw_size_from_snr(static_cast<float>(snr_db_x10) / 10.0f);
-    return (2u * kCWmax * s_slot_time_ms) + (1u << cw) * s_slot_time_ms;
+    const uint8_t cw = mac_math::cw_size_from_snr(
+        static_cast<float>(snr_db_x10) / 10.0f);
+    return mac_math::weighted_worst_ms(cw, s_slot_time_ms);
 }
 
 uint32_t delay_originated_worst_ms() {
-    return (1u << kCWmax) * s_slot_time_ms;
+    return mac_math::originated_worst_ms(s_slot_time_ms);
 }
 
 // ---- Priority queue --------------------------------------------------------
@@ -196,10 +182,15 @@ void reroll_head_after_busy(uint32_t now) {
 }
 
 // ---- Watchdog --------------------------------------------------------------
-// transmit_sync is blocking, so this can only fire if transmit_sync took
-// >kTxWatchdogMs and then *returned* — i.e. the radio is in a degraded state
-// where IRQs eventually fire but ages too late. We log and force a restart
-// because the next TX attempt is unlikely to recover.
+// transmit_sync is synchronous on lora_tx_task, so s_tx_started_at_ms is set
+// just before the call and cleared the moment it returns — both happen in
+// the SAME tick on the SAME task. A true mid-transmit deadlock (e.g. wedged
+// SPI bus, lost DIO1 IRQ) blocks the entire task; the FreeRTOS task
+// watchdog timer catches that case automatically and triggers a panic
+// reboot. Our software watchdog can therefore only fire if transmit_sync
+// somehow returned after >60s, which RadioLib's own timeout (5 + 5*airtime
+// ms) precludes in practice. We keep the check as a belt-and-suspenders
+// trip wire: if it ever fires, it means our timing model is wrong.
 void watchdog_check(uint32_t now) {
     if (s_tx_started_at_ms == 0) return;
     const uint32_t elapsed = now - s_tx_started_at_ms;
@@ -229,18 +220,12 @@ void init() {
 }
 
 void on_preset_change(const LoraPreset& p) {
-    // slot_time = max(2.25, NUM_SYM_CAD + 0.5) * symbolTime + (0.2 + 0.4 + 7).
-    // Sub-GHz only; if 2.4 GHz SX128x is ever added, branch here.
-    const float symbol_ms = static_cast<float>(1u << p.sf) / p.bw_khz;
-    const float cad_sym   = std::max(2.25f, static_cast<float>(kNumSymCad) + 0.5f);
-    const float overhead  = 0.2f + 0.4f + 7.0f;
-    const float slot      = cad_sym * symbol_ms + overhead;
-    s_slot_time_ms        = static_cast<uint32_t>(std::ceil(slot));
-    if (s_slot_time_ms == 0) s_slot_time_ms = 1;
-
-    s_max_packet_ms       = airtime::packet_airtime_ms(mesh::kMaxFrame);
+    // Slot time formula is in mac_math.h; truncation (not ceil) matches
+    // Meshtastic's implicit float→uint32_t cast bit-for-bit.
+    s_slot_time_ms  = mac_math::compute_slot_time_ms(p.sf, p.bw_khz);
+    s_max_packet_ms = airtime::packet_airtime_ms(mesh::kMaxFrame);
     if (s_max_packet_ms == 0) s_max_packet_ms = 1500;
-    s_preset_ready        = true;
+    s_preset_ready  = true;
 
     LL_LOG_I(kTag, "preset sf=%u bw=%.0f cr=4/%u slot=%ums max_pkt=%ums",
              static_cast<unsigned>(p.sf),
