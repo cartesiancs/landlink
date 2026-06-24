@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Used to pair and communicate with your Landlink Module by cartesiancs over Bluetooth Low Energy.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used to show your current location on the Landlink map and record your movement track over time.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 cartesiancs. Landlink and the Landlink logo are products of cartesiancs.</string>
 	<key>UIBackgroundModes</key>

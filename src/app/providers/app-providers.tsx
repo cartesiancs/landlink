@@ -5,6 +5,7 @@ import { useLoraDiscovery } from "@/features/lora-discovery";
 import { useMeshtasticPkiCache } from "@/features/meshtastic-pki-cache";
 import { useLiveDeviceSync } from "@/features/register-device";
 import { useSyncDeviceChannels } from "@/features/sync-device-channels";
+import { useTrackRecorder } from "@/features/track-position";
 import { useKeyboardInset } from "@/shared/lib";
 import { Toaster } from "@/shared/ui";
 
@@ -49,6 +50,11 @@ function KeyboardInsetBridge() {
   return null;
 }
 
+function TrackRecorderBridge() {
+  useTrackRecorder();
+  return null;
+}
+
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <StrictMode>
@@ -58,6 +64,7 @@ export function AppProviders({ children }: AppProvidersProps) {
         <ChannelSyncBridge />
         <MeshtasticPkiCacheBridge />
         <KeyboardInsetBridge />
+        <TrackRecorderBridge />
         {children}
         <ThemedToaster />
       </ThemeProvider>

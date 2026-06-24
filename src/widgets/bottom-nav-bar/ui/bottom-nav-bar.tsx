@@ -1,4 +1,4 @@
-import { HashIcon, Home, List, Settings } from "lucide-react";
+import { HashIcon, Home, List, Map as MapIcon, Settings } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -18,6 +18,7 @@ type NavItem = {
 const ITEMS: readonly NavItem[] = [
   { to: ROUTES.home, label: "Home", Icon: Home, state: { fromNav: true } },
   { to: ROUTES.lists, label: "Lists", Icon: List },
+  { to: ROUTES.map, label: "Map", Icon: MapIcon },
   { to: ROUTES.channels, label: "Channels", Icon: HashIcon },
   { to: ROUTES.settings, label: "Settings", Icon: Settings },
 ];
@@ -35,7 +36,10 @@ export function BottomNavBar() {
   return (
     <div
       data-vt-name="bottom-nav-bar"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center"
+      // z-1100: must sit above Leaflet's internal panes (popup-pane goes
+      // up to z-700) and above our own map control overlays (z-1000) so
+      // the nav is never occluded by the fullscreen map on the map page.
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-1100 flex justify-center bg-background"
     >
       <div className="pointer-events-auto w-full">
         <nav

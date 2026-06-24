@@ -7,6 +7,7 @@ import {
   House,
   Info,
   List,
+  MapPin,
   Package,
   Plane,
   Settings,
@@ -43,6 +44,7 @@ type NavItem = {
 const NAV_ITEMS: readonly NavItem[] = [
   { label: "Home", to: ROUTES.home, icon: House },
   { label: "Lists", to: ROUTES.lists, icon: List },
+  { label: "Map", to: ROUTES.map, icon: MapPin },
   { label: "Channels", to: ROUTES.channels, icon: HashIcon },
   { label: "Settings", to: ROUTES.settings, icon: Settings },
   { label: "About", to: ROUTES.about, icon: Info },

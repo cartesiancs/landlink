@@ -24,6 +24,7 @@ import { LandlinkModuleIPage } from "@/pages/landlink-module-i";
 import { LandlinkModuleIBuyPage } from "@/pages/landlink-module-i-buy";
 import { LandlinkOnePage } from "@/pages/landlink-one";
 import { ListsPage } from "@/pages/lists";
+import { MapPage } from "@/pages/map";
 import { PrivacyPage } from "@/pages/privacy";
 import { SettingsPage } from "@/pages/settings";
 import { SettingsDebugPage } from "@/pages/settings-debug";
@@ -67,6 +68,7 @@ const routes: RouteObject[] = [
       { path: ROUTES.privacy, element: <PrivacyPage /> },
       { path: ROUTES.terms, element: <TermsPage /> },
       { path: ROUTES.lists, element: <ListsPage /> },
+      { path: ROUTES.map, element: <MapPage /> },
       { path: ROUTES.deviceDashboard, element: <DeviceDashboardPage /> },
       { path: ROUTES.channels, element: <ChannelsPage /> },
       { path: ROUTES.channelChat, element: <ChannelChatPage /> },

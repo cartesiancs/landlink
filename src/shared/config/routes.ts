@@ -16,6 +16,7 @@ export const ROUTES = {
   privacy: "/privacy",
   terms: "/terms",
   lists: "/lists",
+  map: "/map",
   deviceDashboard: "/device",
   channels: "/channels",
   channelChat: "/channels/:index",
