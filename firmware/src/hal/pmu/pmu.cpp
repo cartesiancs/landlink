@@ -35,6 +35,10 @@ bool init_axp2101() {
     s_axp2101->setALDO2Voltage(3300); s_axp2101->enableALDO2();  // SX1262
     s_axp2101->setALDO3Voltage(3300); s_axp2101->enableALDO3();  // GPS
 
+    LL_LOG_I(kTag, "AXP2101 rails: ALDO2(SX1262)=%u mV ALDO3(GPS)=%u mV",
+             static_cast<unsigned>(s_axp2101->getALDO2Voltage()),
+             static_cast<unsigned>(s_axp2101->getALDO3Voltage()));
+
     s_axp2101->disableDC2();
     s_axp2101->disableDC3();
     s_axp2101->disableDC4();
@@ -66,6 +70,10 @@ bool init_axp192() {
     s_axp192->setLDO2Voltage(3300); s_axp192->enableLDO2();  // SX1262
     s_axp192->setLDO3Voltage(3300); s_axp192->enableLDO3();  // GPS
     s_axp192->setDC3Voltage(3300);  s_axp192->enableDC3();   // ESP32 rail
+
+    LL_LOG_I(kTag, "AXP192 rails: LDO2(SX1262)=%u mV LDO3(GPS)=%u mV",
+             static_cast<unsigned>(s_axp192->getLDO2Voltage()),
+             static_cast<unsigned>(s_axp192->getLDO3Voltage()));
 
     s_axp192->disableDC2();
     s_axp192->disableLDOio();
