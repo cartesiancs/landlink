@@ -10,6 +10,7 @@ import {
 import { useLandlinkDevice } from "@/entities/landlink-device";
 import { useLoraPeers } from "@/entities/lora-peer";
 import { useLatestTrackPoints, type TrackPoint } from "@/entities/position-track";
+import { useTheme } from "@/entities/theme";
 
 import {
   deviceIcon,
@@ -23,9 +24,13 @@ import { useTrackHistory } from "../lib/use-track-history";
 import { BackOverlay } from "./back-overlay";
 import { RecenterButton } from "./recenter-button";
 
-// CartoDB Dark Matter. OSM-derived dark tiles. Free for non-commercial use
-// with attribution to both OSM and CARTO.
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+// CartoDB Dark Matter / Positron. Both are OSM-derived minimalist tile sets
+// from CARTO. Dark Matter for dark theme, Positron for light. Free for
+// non-commercial use with attribution to both OSM and CARTO.
+const TILE_URL_DARK =
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_URL_LIGHT =
+  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 const TILE_SUBDOMAINS = "abcd";
 const TILE_ATTRIBUTION =
   '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>';
@@ -94,6 +99,13 @@ export function LandlinkMap() {
 
   const recenterTarget = phoneLatest ?? deviceLatest ?? allMarkers[0] ?? null;
 
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const tileUrl = isDark ? TILE_URL_DARK : TILE_URL_LIGHT;
+  // Container background fill peeks through during tile loading; matching
+  // the theme avoids a flash of the opposite color on first paint.
+  const mapBackground = isDark ? "oklch(0.145 0 0)" : "oklch(0.985 0 0)";
+
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">
       <MapContainer
@@ -103,10 +115,14 @@ export function LandlinkMap() {
         attributionControl={false}
         worldCopyJump
         className="h-full w-full"
-        style={{ background: "oklch(0.145 0 0)" }}
+        style={{ background: mapBackground }}
       >
+        {/* WHY: react-leaflet's TileLayer caches its url internally on mount;
+            keying by theme remounts the layer so the new tiles fetch
+            immediately on theme switch instead of waiting for pan/zoom. */}
         <TileLayer
-          url={TILE_URL}
+          key={theme}
+          url={tileUrl}
           subdomains={TILE_SUBDOMAINS}
           attribution={TILE_ATTRIBUTION}
           maxZoom={19}

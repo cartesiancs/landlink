@@ -18,8 +18,8 @@ type NavItem = {
 const ITEMS: readonly NavItem[] = [
   { to: ROUTES.home, label: "Home", Icon: Home, state: { fromNav: true } },
   { to: ROUTES.lists, label: "Lists", Icon: List },
-  { to: ROUTES.map, label: "Map", Icon: MapIcon },
   { to: ROUTES.channels, label: "Channels", Icon: HashIcon },
+  { to: ROUTES.map, label: "Map", Icon: MapIcon },
   { to: ROUTES.settings, label: "Settings", Icon: Settings },
 ];
 
