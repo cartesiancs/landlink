@@ -329,7 +329,7 @@ export function HardwareSetupPage() {
         </div>
       </section>
 
-      <section aria-label="Hardware" className="px-4 pb-8">
+      <section aria-label="Hardware" className="px-4 pb-8 hidden">
         <div className="mb-3 flex items-baseline justify-between">
           <h3 className="font-display text-2xl leading-tight tracking-tight">
             Hardware
