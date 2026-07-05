@@ -107,7 +107,7 @@ export function LandlinkMap() {
   const mapBackground = isDark ? "oklch(0.145 0 0)" : "oklch(0.985 0 0)";
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-background">
+    <div className="relative h-full w-full overflow-hidden bg-background">
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
