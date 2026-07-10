@@ -17,6 +17,7 @@ signature = "2"
 sha2 = "0.10"
 hmac = "0.12"
 base64 = "0.22"
+dotenvy = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }

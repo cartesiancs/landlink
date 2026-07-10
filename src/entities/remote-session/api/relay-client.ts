@@ -16,6 +16,7 @@ import { base64UrlToBytes, bytesToBase64Url } from "@/shared/lib";
 import {
   decodeEnvelope,
   encodeEnvelope,
+  RelayChannel,
   type RelayChannelValue,
   type RelayEnvelope,
 } from "../lib/envelope";
@@ -34,6 +35,10 @@ export type RelaySession = {
   ): void;
   onEnvelope(cb: (env: RelayEnvelope) => void): () => void;
   onClose(cb: () => void): () => void;
+  // Resolve true once the relay reports the device (by rendezvous id) is online,
+  // false if it isn't within `timeoutMs`. The relay sends DEVICE_ONLINE for
+  // already-connected devices right after auth, and when a device later joins.
+  waitForDevice(rendezvousId: string, timeoutMs: number): Promise<boolean>;
   isOpen(): boolean;
   close(): void;
 };
@@ -66,6 +71,9 @@ async function openSession(signer: RelaySigner): Promise<RelaySession> {
 
   const envelopeHandlers = new Set<(env: RelayEnvelope) => void>();
   const closeHandlers = new Set<() => void>();
+  // Device presence by rendezvous id, driven by DEVICE_ONLINE/OFFLINE envelopes.
+  const presence = new Map<string, boolean>();
+  const presenceWaiters = new Set<(rid: string, online: boolean) => void>();
   let ready = false;
 
   const session: RelaySession = {
@@ -89,6 +97,26 @@ async function openSession(signer: RelaySigner): Promise<RelaySession> {
       return () => {
         closeHandlers.delete(cb);
       };
+    },
+    waitForDevice(rendezvousId, timeoutMs) {
+      if (presence.get(rendezvousId) === true) return Promise.resolve(true);
+      return new Promise<boolean>((resolveWait) => {
+        let done = false;
+        const waiter = (rid: string, online: boolean): void => {
+          if (done || rid !== rendezvousId || !online) return;
+          done = true;
+          presenceWaiters.delete(waiter);
+          clearTimeout(timer);
+          resolveWait(true);
+        };
+        const timer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          presenceWaiters.delete(waiter);
+          resolveWait(false);
+        }, timeoutMs);
+        presenceWaiters.add(waiter);
+      });
     },
     isOpen() {
       return ready && ws.readyState === ws.OPEN;
@@ -179,6 +207,13 @@ async function openSession(signer: RelaySigner): Promise<RelaySession> {
       if (data instanceof ArrayBuffer) {
         const env = decodeEnvelope(new Uint8Array(data));
         if (!env) return;
+        if (env.channel === RelayChannel.DEVICE_ONLINE) {
+          presence.set(env.rendezvousId, true);
+          for (const w of [...presenceWaiters]) w(env.rendezvousId, true);
+        } else if (env.channel === RelayChannel.DEVICE_OFFLINE) {
+          presence.set(env.rendezvousId, false);
+          for (const w of [...presenceWaiters]) w(env.rendezvousId, false);
+        }
         for (const h of envelopeHandlers) {
           try {
             h(env);

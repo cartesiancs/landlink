@@ -26,6 +26,7 @@ function makeFakeSession() {
       closeHandlers.add(cb);
       return () => closeHandlers.delete(cb);
     },
+    waitForDevice: () => Promise.resolve(true),
     isOpen: () => true,
     close: () => undefined,
   };

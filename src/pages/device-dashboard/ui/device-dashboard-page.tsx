@@ -171,11 +171,14 @@ export function DeviceDashboardPage() {
     hapticTick();
     void reconnectController
       .switchTransport(device.deviceId, device.name, "remote")
-      .then(() => {
-        toast.success("Switched to Wi-Fi relay.");
-      })
-      .catch(() => {
-        toast.error("Couldn't switch to the Wi-Fi relay.");
+      .then((result) => {
+        if (result === "remote") {
+          toast.success("Connected via Wi-Fi relay.");
+        } else {
+          toast.error(
+            "Couldn't reach the device over the Wi-Fi relay. Check that the relay server is running and the device is online.",
+          );
+        }
       });
   };
 
@@ -184,11 +187,12 @@ export function DeviceDashboardPage() {
     hapticTick();
     void reconnectController
       .switchTransport(device.deviceId, device.name, "ble")
-      .then(() => {
-        toast.success("Reconnecting over Bluetooth…");
-      })
-      .catch(() => {
-        toast.error("Couldn't reconnect over Bluetooth.");
+      .then((result) => {
+        if (result === "ble") {
+          toast.success("Connected via Bluetooth.");
+        } else {
+          toast.error("Couldn't reconnect over Bluetooth.");
+        }
       });
   };
 

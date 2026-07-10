@@ -20,7 +20,6 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::{interval, timeout};
 
-use crate::config::OriginPolicy;
 use crate::crypto;
 use crate::envelope::{self, channel};
 use crate::limits::TokenBucket;
@@ -46,25 +45,16 @@ fn incr(c: &AtomicU64) {
     c.fetch_add(1, Ordering::Relaxed);
 }
 
-fn origin_allowed(policy: &OriginPolicy, headers: &HeaderMap) -> bool {
-    match policy {
-        OriginPolicy::Any => true,
-        OriginPolicy::List(list) => match headers.get("origin").and_then(|v| v.to_str().ok()) {
-            None => true, // native apps send no Origin
-            Some(o) => list.iter().any(|a| a == o),
-        },
-    }
-}
-
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
-    if !origin_allowed(&state.config.origins, &headers) {
-        return (StatusCode::FORBIDDEN, "origin not allowed").into_response();
-    }
+    // No Origin gate on the WebSocket: the relay auth is a per-connection
+    // signature challenge (no ambient credentials), so an Origin allowlist adds
+    // no security here and would wrongly block native apps / the device, which
+    // send arbitrary or host-based Origin headers. HTTP endpoints keep CORS.
     let ip = crate::http::client_ip(&headers, peer);
     if !state.ws_connect_limiter.check(&ip) {
         incr(&state.metrics.rate_limited_total);
@@ -74,7 +64,13 @@ pub async fn ws_handler(
         return (StatusCode::SERVICE_UNAVAILABLE, "at capacity").into_response();
     };
     let max_msg = state.config.limits.max_message_bytes;
-    ws.max_message_size(max_msg)
+    tracing::debug!(%ip, "ws upgrade");
+    ws
+        // Echo the "arduino" subprotocol the ESP32 client (links2004/WebSockets)
+        // offers — it rejects the handshake if a subprotocol it requested is not
+        // echoed. Browser clients offer none, so this is a no-op for them.
+        .protocols(["arduino"])
+        .max_message_size(max_msg)
         .max_frame_size(max_msg)
         .on_upgrade(move |socket| async move {
             // `global` guard is dropped when the socket task ends.
@@ -164,7 +160,7 @@ async fn handle(mut socket: WebSocket, state: Arc<AppState>) {
     // Authenticated: release the pre-auth slot before the long-lived loop.
     drop(preauth);
     // Privacy: log only a truncated hash of the key, never the key itself.
-    tracing::debug!(role = %auth.role, key = %crypto::short_hash(&auth.pubkey), "authenticated");
+    tracing::info!(role = %auth.role, key = %crypto::short_hash(&auth.pubkey), "authenticated");
 
     match auth.role.as_str() {
         "account" => run_account(socket, state, conn_id, &auth.pubkey).await,
@@ -273,9 +269,11 @@ async fn run_account(mut socket: WebSocket, state: Arc<AppState>, conn_id: ConnI
 async fn run_device(mut socket: WebSocket, state: Arc<AppState>, conn_id: ConnId, pubkey: String) {
     let lookup = state.db.lookup_by_device(pubkey).await.ok().flatten();
     let Some((account_id, rid)) = lookup else {
+        tracing::warn!("device rejected: not enrolled");
         send_error(&mut socket, "not enrolled").await;
         return;
     };
+    tracing::info!(rid = %rid, "device online");
 
     let (tx, mut rx) = mpsc::channel::<Outbound>(OUTBOUND_CAP);
     if let Some(old) = state.register_device(&account_id, &rid, conn_id, tx) {

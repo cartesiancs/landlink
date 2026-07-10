@@ -4,6 +4,7 @@ import { getAnonSigner, loadAnonIdentity } from "@/entities/anon-identity";
 import {
   attachLandlinkClient,
   detachLandlinkClient,
+  getState,
 } from "@/entities/landlink-device";
 import {
   attachMeshtasticClient,
@@ -81,16 +82,32 @@ async function attachOverRemote(
   if (!isRemoteEligible(registered) || !registered?.rendezvousId) {
     return false;
   }
-  await loadAnonIdentity();
-  const signer = getAnonSigner();
-  if (!signer) return false;
-
-  const session = await ensureRelaySession(signer);
-  const transport = createRemoteTransport(session, deviceId, registered.rendezvousId);
   try {
+    await loadAnonIdentity();
+    const signer = getAnonSigner();
+    if (!signer) {
+      console.warn("[reconnect] no anonymous identity — create an account first");
+      return false;
+    }
+    // ensureRelaySession opens the account WebSocket to the relay. This is the
+    // step that fails when the relay server is unreachable / not running.
+    const session = await ensureRelaySession(signer);
+    // Only proceed if the DEVICE is actually connected to the relay. The relay
+    // reports this (DEVICE_ONLINE/OFFLINE); without this we'd "connect" to an
+    // absent device and time out mid-attach. Returning false lets the caller
+    // fall back / report cleanly.
+    const online = await session.waitForDevice(registered.rendezvousId, 6000);
+    if (!online) {
+      console.warn(
+        "[reconnect] device is not connected to the relay — check the device is flashed, on Wi-Fi, and enrolled against this relay URL",
+      );
+      return false;
+    }
+    const transport = createRemoteTransport(session, deviceId, registered.rendezvousId);
     await attachLandlinkClient(transport, name);
     return true;
   } catch (err) {
+    console.warn("[reconnect] relay attach failed", err);
     await detachLandlinkClient(deviceId).catch(() => undefined);
     throw err;
   }
@@ -162,17 +179,23 @@ export const reconnectController = {
   isAttempting(deviceId: string): boolean {
     return inFlight.has(deviceId);
   },
-  // Switch a device's active transport. mode="remote" pins it to the Wi-Fi
-  // relay (skips BLE from now on); mode="ble" returns to Bluetooth. Detaches
-  // the current link and reconnects under the new preference — the connection
-  // stays live over the chosen transport rather than going offline.
+  // Switch a device's active transport. mode="remote" makes the Wi-Fi relay the
+  // primary; mode="ble" makes Bluetooth primary. Detaches the current link and
+  // reconnects under the new preference. Returns the transport it actually
+  // ended up on ("ble" | "remote"), or null if neither could be reached, so the
+  // caller can report honestly (e.g. relay unreachable → fell back to BLE).
   async switchTransport(
     deviceId: string,
     name: string,
     mode: "ble" | "remote",
-  ): Promise<void> {
+  ): Promise<"ble" | "remote" | null> {
     updateRegisteredDevice(deviceId, { preferRemote: mode === "remote" });
     await detachLandlinkClient(deviceId).catch(() => undefined);
-    await guardedAttempt(deviceId, name);
+    try {
+      await guardedAttempt(deviceId, name);
+    } catch (err) {
+      console.warn("[reconnect] switchTransport failed", err);
+    }
+    return getState()?.transport ?? null;
   },
 };

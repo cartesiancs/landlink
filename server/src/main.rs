@@ -16,6 +16,10 @@ use landlink_relay::state::AppState;
 
 #[tokio::main]
 async fn main() {
+    // Load a local .env if present (does not override already-set env vars, so
+    // it's inert in production where the environment is provided directly).
+    let _ = dotenvy::dotenv();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
