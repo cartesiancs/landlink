@@ -13,7 +13,6 @@ import {
 import {
   findDevice,
   getRegisteredDevices,
-  updateRegisteredDevice,
   type RegisteredDevice,
 } from "@/entities/registered-device";
 import {
@@ -35,9 +34,19 @@ type Attempt = {
 
 const inFlight = new Map<string, Attempt>();
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("timed out")), ms),
+    ),
+  ]);
+}
+
 // Whether this device can be reached over the Wi-Fi relay (enrolled Landlink
-// device + relay configured). A first-class transport, not only a fallback.
-export function isRemoteEligible(device: RegisteredDevice | null): boolean {
+// device + relay configured). The relay is the automatic fallback when
+// Bluetooth is unavailable.
+function isRemoteEligible(device: RegisteredDevice | null): boolean {
   return (
     device?.remoteEnrolled === true &&
     Boolean(device.rendezvousId) &&
@@ -129,9 +138,9 @@ async function canTryBle(deviceId: string): Promise<boolean> {
   }
 }
 
-// Connect over the device's chosen primary transport, falling back to the other
-// so the device is never stranded. Both Bluetooth and the Wi-Fi relay are
-// first-class: `preferRemote` just picks which one is primary.
+// Bluetooth is always the primary transport; the Wi-Fi relay is the automatic
+// fallback used only when BLE isn't reachable (off, out of range, unpermitted,
+// or unsupported). The device is never stranded while either path works.
 async function runAttempt(deviceId: string, name: string): Promise<void> {
   const registered = findDevice(getRegisteredDevices(), deviceId);
 
@@ -145,12 +154,8 @@ async function runAttempt(deviceId: string, name: string): Promise<void> {
   const tryRemote = (): Promise<boolean> =>
     attachOverRemote(deviceId, name, registered);
 
-  const order = registered?.preferRemote === true
-    ? [tryRemote, tryBle]
-    : [tryBle, tryRemote];
-
   let lastErr: unknown = null;
-  for (const attach of order) {
+  for (const attach of [tryBle, tryRemote]) {
     try {
       if (await attach()) {
         inFlight.delete(deviceId);
@@ -179,23 +184,33 @@ export const reconnectController = {
   isAttempting(deviceId: string): boolean {
     return inFlight.has(deviceId);
   },
-  // Switch a device's active transport. mode="remote" makes the Wi-Fi relay the
-  // primary; mode="ble" makes Bluetooth primary. Detaches the current link and
-  // reconnects under the new preference. Returns the transport it actually
-  // ended up on ("ble" | "remote"), or null if neither could be reached, so the
-  // caller can report honestly (e.g. relay unreachable → fell back to BLE).
-  async switchTransport(
-    deviceId: string,
-    name: string,
-    mode: "ble" | "remote",
-  ): Promise<"ble" | "remote" | null> {
-    updateRegisteredDevice(deviceId, { preferRemote: mode === "remote" });
-    await detachLandlinkClient(deviceId).catch(() => undefined);
-    try {
-      await guardedAttempt(deviceId, name);
-    } catch (err) {
-      console.warn("[reconnect] switchTransport failed", err);
+  // Bluetooth is the preferred transport. When we're currently connected over
+  // the Wi-Fi relay (because BLE was unavailable when we connected), probe
+  // whether BLE has become reachable again and, if so, hand the connection back
+  // to Bluetooth. The probe is a real BLE connect but it does NOT disturb the
+  // live relay link until it succeeds, so an out-of-range device just stays on
+  // the relay. Called periodically by useLiveDeviceSync while on the relay.
+  async restoreBleIfAvailable(deviceId: string, name: string): Promise<void> {
+    const state = getState();
+    if (
+      state?.deviceId !== deviceId ||
+      state.status !== "connected" ||
+      state.transport !== "remote"
+    ) {
+      return; // not on the relay for this device
     }
-    return getState()?.transport ?? null;
+    if (inFlight.has(deviceId)) return;
+    if (!(await canTryBle(deviceId))) return;
+    // Probe BLE reachability (bounded so an out-of-range device can't hang us).
+    try {
+      await withTimeout(reconnectLandlinkDevice(deviceId), 8000);
+    } catch {
+      return; // BLE still unreachable — stay on the relay
+    }
+    // Still on the relay after the probe? Then swap the live link to Bluetooth.
+    const now = getState();
+    if (now?.deviceId !== deviceId || now.transport !== "remote") return;
+    await detachLandlinkClient(deviceId).catch(() => undefined);
+    await guardedAttempt(deviceId, name).catch(() => undefined);
   },
 };

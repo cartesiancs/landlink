@@ -166,13 +166,22 @@ export async function attachLandlinkClient(
   name: string,
 ): Promise<void> {
   const deviceId = transport.deviceId;
-  // WHY: an in-flight retry can race with an active connection. If we're
-  // already attached to this exact device, leaving the existing notifications
-  // alone is safe and avoids a brief "connecting" flicker.
-  if (activeDeviceId === deviceId && getState()?.status === "connected") {
+  // WHY: an in-flight retry can race with an active connection. If we're already
+  // attached to this exact device over the SAME transport, leaving the live
+  // notifications alone is safe and avoids a brief "connecting" flicker. A
+  // DIFFERENT transport for the same device (e.g. handing a Wi-Fi relay link
+  // back to Bluetooth) must NOT short-circuit — otherwise the store stays on the
+  // stale transport forever.
+  if (
+    activeDeviceId === deviceId &&
+    activeTransport?.kind === transport.kind &&
+    getState()?.status === "connected"
+  ) {
     return;
   }
-  if (activeDeviceId && activeDeviceId !== deviceId) {
+  // Tear down whatever is currently active first: a different device, or the
+  // same device on a different transport kind (a transport switch).
+  if (activeDeviceId) {
     await detachLandlinkClient(activeDeviceId);
   }
 

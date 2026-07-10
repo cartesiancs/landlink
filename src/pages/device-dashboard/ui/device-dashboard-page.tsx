@@ -1,13 +1,5 @@
 import { usePostHog } from "@posthog/react";
-import {
-  Bluetooth,
-  Globe,
-  MoreVertical,
-  RadioTower,
-  Trash2,
-  Unplug,
-  Wifi,
-} from "lucide-react";
+import { Globe, MoreVertical, Trash2, Unplug, Wifi } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -16,13 +8,8 @@ import {
   type ChargeState,
   type DeviceTelemetry,
 } from "@/entities/landlink-device";
-import {
-  findDevice,
-  removeRegisteredDevice,
-  useRegisteredDevices,
-} from "@/entities/registered-device";
+import { removeRegisteredDevice } from "@/entities/registered-device";
 import { clearWifiStatus, useWifiStatus } from "@/entities/wifi-status";
-import { isRemoteEligible, reconnectController } from "@/features/auto-reconnect";
 import { disconnectDevice } from "@/features/disconnect-device";
 import { RemoteEnrollCard } from "@/features/enroll-remote-device";
 import { WifiProvisionForm } from "@/features/provision-wifi";
@@ -132,15 +119,8 @@ export function DeviceDashboardPage() {
   const [wifiOpen, setWifiOpen] = useState(false);
   const [remoteOpen, setRemoteOpen] = useState(false);
 
-  const registeredDevices = useRegisteredDevices();
-  const registered = device
-    ? findDevice(registeredDevices, device.deviceId)
-    : null;
-
   const isConnected = device?.status === "connected";
   const isRemote = isConnected && device?.transport === "remote";
-  const onBle = device?.transport === "ble";
-  const canUseRelay = isRemoteEligible(registered);
   const wifi = useWifiStatus(device?.deviceId ?? null);
   const telemetry = device?.telemetry ?? null;
 
@@ -167,36 +147,6 @@ export function DeviceDashboardPage() {
     void disconnectDevice(device.deviceId).then(() => {
       toast.success("Device disconnected.");
     });
-  };
-
-  const handleSwitchToRelay = () => {
-    if (!device) return;
-    hapticTick();
-    void reconnectController
-      .switchTransport(device.deviceId, device.name, "remote")
-      .then((result) => {
-        if (result === "remote") {
-          toast.success("Connected via Wi-Fi relay.");
-        } else {
-          toast.error(
-            "Couldn't reach the device over the Wi-Fi relay. Check that the relay server is running and the device is online.",
-          );
-        }
-      });
-  };
-
-  const handleSwitchToBluetooth = () => {
-    if (!device) return;
-    hapticTick();
-    void reconnectController
-      .switchTransport(device.deviceId, device.name, "ble")
-      .then((result) => {
-        if (result === "ble") {
-          toast.success("Connected via Bluetooth.");
-        } else {
-          toast.error("Couldn't reconnect over Bluetooth.");
-        }
-      });
   };
 
   return (
@@ -239,18 +189,6 @@ export function DeviceDashboardPage() {
                 <Globe aria-hidden="true" />
                 Remote access
               </DropdownMenuItem>
-              {onBle && canUseRelay ? (
-                <DropdownMenuItem onSelect={handleSwitchToRelay}>
-                  <RadioTower aria-hidden="true" />
-                  Switch to Wi-Fi relay
-                </DropdownMenuItem>
-              ) : null}
-              {isRemote ? (
-                <DropdownMenuItem onSelect={handleSwitchToBluetooth}>
-                  <Bluetooth aria-hidden="true" />
-                  Switch to Bluetooth
-                </DropdownMenuItem>
-              ) : null}
               <DropdownMenuItem onSelect={handleDisconnect}>
                 <Unplug aria-hidden="true" />
                 Disconnect

@@ -88,6 +88,15 @@ export function useLiveDeviceSync(): void {
   const primaryId = usePrimaryDeviceId();
   const previousIdRef = useRef<string | null>(null);
 
+  // WHY: Bluetooth is the preferred transport. When we're connected over the
+  // Wi-Fi relay (BLE was unavailable at connect time), keep checking whether
+  // Bluetooth has come back and, if so, hand the link back to it. Derived
+  // primitives keep this off the telemetry-update churn of `live`.
+  const liveDeviceId = live?.deviceId ?? null;
+  const liveName = live?.name ?? null;
+  const liveTransport = live?.transport ?? null;
+  const liveStatus = live?.status ?? null;
+
   useEffect(() => {
     const previousId = previousIdRef.current;
 
@@ -165,4 +174,26 @@ export function useLiveDeviceSync(): void {
     if (!primaryId) return;
     void attemptPrimaryReconnect();
   }, [primaryId]);
+
+  useEffect(() => {
+    if (
+      liveStatus !== "connected" ||
+      liveTransport !== "remote" ||
+      liveDeviceId === null ||
+      liveName === null
+    ) {
+      return;
+    }
+    const deviceId = liveDeviceId;
+    const name = liveName;
+    const kick = (): void => {
+      void reconnectController.restoreBleIfAvailable(deviceId, name);
+    };
+    const soon = setTimeout(kick, 4000);
+    const interval = setInterval(kick, 20000);
+    return () => {
+      clearTimeout(soon);
+      clearInterval(interval);
+    };
+  }, [liveDeviceId, liveName, liveTransport, liveStatus]);
 }
