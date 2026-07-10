@@ -1,5 +1,4 @@
 import { useRelayStatus } from "@/entities/remote-session";
-import { RemoteEnrollCard } from "@/features/enroll-remote-device";
 import { AnonAccountCard } from "@/features/register-anon-account";
 import { ROUTES } from "@/shared/config";
 import { PageHeader } from "@/widgets/page-header";
@@ -11,13 +10,13 @@ const RELAY_LABEL: Record<string, string> = {
   error: "Error",
 };
 
-export function SettingsRemotePage() {
+export function SettingsAccountPage() {
   const relay = useRelayStatus();
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
       <PageHeader
-        title="Remote access"
+        title="Account"
         fallback={ROUTES.settings}
         backLabel="Back to Settings"
       />
@@ -29,7 +28,6 @@ export function SettingsRemotePage() {
         </p>
 
         <AnonAccountCard />
-        <RemoteEnrollCard />
       </section>
     </main>
   );

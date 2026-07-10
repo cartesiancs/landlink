@@ -16,7 +16,7 @@ type SettingEntry = {
 };
 
 const ENTRIES: readonly SettingEntry[] = [
-  { id: "remote", label: "Remote access", to: ROUTES.settingsRemote },
+  { id: "account", label: "Account", to: ROUTES.settingsAccount },
   { id: "theme", label: "Theme", to: ROUTES.settingsTheme },
   { id: "region", label: "Region", to: ROUTES.settingsRegion },
   { id: "debug", label: "Debug mode", to: ROUTES.settingsDebug },

@@ -1,6 +1,7 @@
 import { usePostHog } from "@posthog/react";
 import {
   Bluetooth,
+  Globe,
   MoreVertical,
   RadioTower,
   Trash2,
@@ -23,6 +24,7 @@ import {
 import { clearWifiStatus, useWifiStatus } from "@/entities/wifi-status";
 import { isRemoteEligible, reconnectController } from "@/features/auto-reconnect";
 import { disconnectDevice } from "@/features/disconnect-device";
+import { RemoteEnrollCard } from "@/features/enroll-remote-device";
 import { WifiProvisionForm } from "@/features/provision-wifi";
 import { ROUTES } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
@@ -128,6 +130,7 @@ export function DeviceDashboardPage() {
   const posthog = usePostHog();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [wifiOpen, setWifiOpen] = useState(false);
+  const [remoteOpen, setRemoteOpen] = useState(false);
 
   const registeredDevices = useRegisteredDevices();
   const registered = device
@@ -226,6 +229,15 @@ export function DeviceDashboardPage() {
               >
                 <Wifi aria-hidden="true" />
                 Connect Wi-Fi
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  hapticTick();
+                  setRemoteOpen(true);
+                }}
+              >
+                <Globe aria-hidden="true" />
+                Remote access
               </DropdownMenuItem>
               {onBle && canUseRelay ? (
                 <DropdownMenuItem onSelect={handleSwitchToRelay}>
@@ -364,6 +376,20 @@ export function DeviceDashboardPage() {
           </DrawerHeader>
           <div className="px-4 pb-2">
             <WifiProvisionForm />
+          </div>
+        </DrawerContent>
+      </Drawer>
+      <Drawer open={remoteOpen} onOpenChange={setRemoteOpen}>
+        <DrawerContent className="pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <DrawerHeader>
+            <DrawerTitle>Remote access</DrawerTitle>
+            <DrawerDescription>
+              Enroll this device to your anonymous account so you can reach it
+              over the relay when Bluetooth drops.
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-2">
+            <RemoteEnrollCard />
           </div>
         </DrawerContent>
       </Drawer>

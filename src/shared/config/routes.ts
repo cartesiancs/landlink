@@ -26,7 +26,7 @@ export const ROUTES = {
   settingsDebug: "/settings/debug",
   settingsReset: "/settings/reset",
   settingsRegion: "/settings/region",
-  settingsRemote: "/settings/remote",
+  settingsAccount: "/settings/account",
   error: "/error",
   notFound: "*",
 } as const;
