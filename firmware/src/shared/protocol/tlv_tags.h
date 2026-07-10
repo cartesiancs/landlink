@@ -57,6 +57,11 @@ enum class TlvTag : uint8_t {
     CHANNEL_NAME = 0xc1,  // Channel name, <=12 B (Meshtastic cap)
     CHANNEL_PSK = 0xc2,  // Pre-shared key, 1/16/32 B (Meshtastic PSK rules)
     CHANNEL_ROLE = 0xc3,  // 0=primary, 1=secondary, 2=disabled
+    REMOTE_SERVER_URL = 0xd0,  // Relay WSS base URL the device dials out to
+    REMOTE_DEVICE_PUBKEY = 0xd1,  // Device ECDSA P-256 public key (raw/uncompressed)
+    REMOTE_RENDEZVOUS_ID = 0xd2,  // Opaque rendezvous id the relay routes frames by
+    REMOTE_ACCOUNT_BIND = 0xd3,  // Account binding blob provisioned by the phone (server-verified)
+    REMOTE_STATE = 0xd4,  // 0=off, 1=connecting, 2=online, 3=error
     ERR_CODE = 0xf0,
     ERR_CONTEXT = 0xf1,
 };

@@ -1,0 +1,39 @@
+# Turnkey self-host: relay + Caddy (auto-HTTPS).
+#
+# The relay is NOT published to the host — only Caddy is. Caddy reaches the
+# relay over the private compose network, so the relay's 8080 is never exposed
+# directly to the internet.
+
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      RELAY_BIND: 0.0.0.0:8080
+      RELAY_DB_PATH: /data/relay.db
+      # Pin a shared secret so enroll nonces survive restarts (and match across
+      # instances). Generate: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`
+      RELAY_CHALLENGE_SECRET: ${RELAY_CHALLENGE_SECRET:-}
+      # Comma-separated browser origins. Native apps need no entry.
+      RELAY_ALLOWED_ORIGINS: ${RELAY_ALLOWED_ORIGINS:-}
+    volumes:
+      - relay-data:/data
+    # No `ports:` — intentionally unreachable from the host.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:

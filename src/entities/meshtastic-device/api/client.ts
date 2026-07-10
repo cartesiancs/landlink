@@ -348,7 +348,9 @@ export async function attachMeshtasticClient(
     await detachMeshtasticClient(activeDeviceId);
   }
 
-  setConnecting({ deviceId, name });
+  // Meshtastic devices are reached over BLE only; the relay transport is
+  // Landlink-firmware specific.
+  setConnecting({ deviceId, name, transport: "ble" });
   activeDeviceId = deviceId;
   pendingChannels = [];
 

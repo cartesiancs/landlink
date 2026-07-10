@@ -105,6 +105,17 @@ opcodes:
   OTA_COMMIT:            { code: 0x62, dir: C_TO_F, requires: authed }
   OTA_STATUS:            { code: 0x63, dir: F_TO_C }
 
+  # Remote relay onboarding. The phone reads the device's self-generated
+  # identity (pubkey + rendezvous id) over the trusted BLE link, enrolls it to
+  # the user's anonymous account at the relay, then pushes the relay URL + the
+  # account binding so the device can open its own outbound WSS to the relay.
+  # Once connected, the relay tunnels opaque BLE frames between phone and device
+  # so the exact same wire protocol works remotely.
+  REMOTE_GET_IDENTITY:    { code: 0x80, dir: C_TO_F }
+  REMOTE_IDENTITY_RESULT: { code: 0x81, dir: F_TO_C, note: "Carries REMOTE_DEVICE_PUBKEY + REMOTE_RENDEZVOUS_ID." }
+  REMOTE_SET_CONFIG:     { code: 0x82, dir: C_TO_F, note: "Carries REMOTE_SERVER_URL + REMOTE_ACCOUNT_BIND; device begins outbound relay connect." }
+  REMOTE_STATUS:         { code: 0x83, dir: F_TO_C, note: "Carries REMOTE_STATE (0=off,1=connecting,2=online,3=error)." }
+
   # Generic error
   ERROR:                 { code: 0x7F, dir: F_TO_C }
 
@@ -206,6 +217,13 @@ tlv_tags:
   CHANNEL_NAME:          { tag: 0xC1, type: utf8,  desc: "Channel name, <=12 B (Meshtastic cap)" }
   CHANNEL_PSK:           { tag: 0xC2, type: bytes, desc: "Pre-shared key, 1/16/32 B (Meshtastic PSK rules)" }
   CHANNEL_ROLE:          { tag: 0xC3, type: u8,    desc: "0=primary, 1=secondary, 2=disabled" }
+
+  # Remote relay (0xD0-0xDF)
+  REMOTE_SERVER_URL:     { tag: 0xD0, type: utf8,  desc: "Relay WSS base URL the device dials out to" }
+  REMOTE_DEVICE_PUBKEY:  { tag: 0xD1, type: bytes, desc: "Device ECDSA P-256 public key (raw/uncompressed)" }
+  REMOTE_RENDEZVOUS_ID:  { tag: 0xD2, type: bytes, desc: "Opaque rendezvous id the relay routes frames by" }
+  REMOTE_ACCOUNT_BIND:   { tag: 0xD3, type: bytes, desc: "Account binding blob provisioned by the phone (server-verified)" }
+  REMOTE_STATE:          { tag: 0xD4, type: u8,    desc: "0=off, 1=connecting, 2=online, 3=error" }
 
   # Errors
   ERR_CODE:              { tag: 0xF0, type: u8 }

@@ -45,6 +45,10 @@ export const Opcode = {
   OTA_CHUNK: 0x61,
   OTA_COMMIT: 0x62,
   OTA_STATUS: 0x63,
+  REMOTE_GET_IDENTITY: 0x80,
+  REMOTE_IDENTITY_RESULT: 0x81,
+  REMOTE_SET_CONFIG: 0x82,
+  REMOTE_STATUS: 0x83,
   ERROR: 0x7f,
 } as const;
 export type OpcodeName = keyof typeof Opcode;
@@ -114,6 +118,11 @@ export const TlvTag = {
   CHANNEL_NAME: 0xc1,
   CHANNEL_PSK: 0xc2,
   CHANNEL_ROLE: 0xc3,
+  REMOTE_SERVER_URL: 0xd0,
+  REMOTE_DEVICE_PUBKEY: 0xd1,
+  REMOTE_RENDEZVOUS_ID: 0xd2,
+  REMOTE_ACCOUNT_BIND: 0xd3,
+  REMOTE_STATE: 0xd4,
   ERR_CODE: 0xf0,
   ERR_CONTEXT: 0xf1,
 } as const;

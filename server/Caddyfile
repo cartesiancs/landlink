@@ -1,0 +1,17 @@
+# TLS-terminating reverse proxy for the Landlink relay.
+#
+# Caddy auto-provisions and renews HTTPS certs and proxies WebSockets
+# transparently. Replace the domain with yours. Caddy MUST be the sole edge
+# proxy: it appends the real client IP to X-Forwarded-For, and the relay trusts
+# only the rightmost (Caddy-observed) entry for rate limiting.
+
+relay.example.com {
+	# Host/systemd deploy: relay on loopback. For docker-compose, use `relay:8080`.
+	reverse_proxy 127.0.0.1:8080
+
+	# Optional: keep /metrics off the public internet (scrape it locally).
+	# @metrics path /metrics
+	# handle @metrics {
+	# 	respond 403
+	# }
+}

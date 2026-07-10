@@ -1,6 +1,13 @@
 export { cn } from "./utils";
 export { detectIOS } from "./detect-ios";
 export {
+  base64UrlToBytes,
+  bytesToBase64Url,
+  bytesToHex,
+  hexToBytes,
+  sha256,
+} from "./encoding";
+export {
   BROADCAST_NODE_NUM,
   bytesLEToNodeNum,
   hexToNodeNum,

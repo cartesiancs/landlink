@@ -24,4 +24,13 @@ export type RegisteredDevice = {
   nodeNum: number | null;
   nodeId: string | null;
   protocol?: RegisteredDeviceProtocol;
+  // Remote-relay provisioning state, all set over the trusted BLE link.
+  // wifiProvisioned: the device has been handed Wi-Fi credentials.
+  // remoteEnrolled: the device's key is bound to the account at the relay and
+  // the relay config has been pushed to it. rendezvousId + devicePubKey are the
+  // opaque handles the relay routes/authenticates by (base64url).
+  wifiProvisioned?: boolean;
+  remoteEnrolled?: boolean;
+  rendezvousId?: string;
+  devicePubKey?: string;
 };

@@ -21,6 +21,7 @@
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/pki_identity/pki_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
+#include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
@@ -267,6 +268,11 @@ void setup() {
     // immediately after reboot, before peers re-broadcast their NodeInfo
     // (15 min interval at default settings).
     landlink::features::pki_keystore::init();
+
+    // Wi-Fi manager: STA mode + auto-connect from saved credentials. Must run
+    // before spawn_tasks() (it touches WiFi.* on this thread; afterwards only
+    // wifi_task does). BLE is already up so WIFI_STATUS EVTs can be emitted.
+    landlink::features::wifi::init();
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

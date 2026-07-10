@@ -17,6 +17,7 @@ import {
 } from "@/entities/registered-device";
 import {
   connectLandlinkDevice,
+  createBleTransport,
   detectDeviceProtocolKind,
   isBlePairingSupported,
   PairingCancelledError,
@@ -129,7 +130,7 @@ export function useBluetoothPairing() {
       if (kind === "meshtastic") {
         await attachMeshtasticClient(paired.id, paired.name);
       } else {
-        await attachLandlinkClient(paired.id, paired.name);
+        await attachLandlinkClient(createBleTransport(paired.id), paired.name);
       }
     } catch (err) {
       setPrimaryDeviceId(previousPrimary);

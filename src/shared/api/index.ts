@@ -25,3 +25,8 @@ export {
   tx,
   type IdbUpgradeContext,
 } from "./idb";
+export {
+  createBleTransport,
+  type LandlinkTransport,
+  type TransportKind,
+} from "./transport";

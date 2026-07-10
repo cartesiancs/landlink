@@ -17,11 +17,23 @@ vi.mock("@/shared/api", () => {
       this.name = "PairingCancelledError";
     }
   }
+  class PairingPinRequiredError extends Error {
+    constructor() {
+      super("pin required");
+      this.name = "PairingPinRequiredError";
+    }
+  }
   return {
     isBlePairingSupported: () => true,
     requestLandlinkDevice: vi.fn(),
     connectLandlinkDevice: vi.fn(() => Promise.resolve()),
+    detectDeviceProtocolKind: vi.fn(() => Promise.resolve("landlink")),
+    createBleTransport: vi.fn((deviceId: string) => ({
+      kind: "ble",
+      deviceId,
+    })),
     PairingCancelledError,
+    PairingPinRequiredError,
   };
 });
 

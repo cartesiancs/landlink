@@ -3,21 +3,13 @@ import {
   getRegisteredDevices,
   updateRegisteredDevice,
 } from "@/entities/registered-device";
-import {
-  disconnectLandlinkDevice,
-  onLandlinkDisconnect,
-  readCharacteristic,
-  startNotifications,
-  writeCharacteristic,
-} from "@/shared/api";
+import type { LandlinkTransport } from "@/shared/api";
 import { BROADCAST_NODE_NUM, notifyIncomingChat } from "@/shared/lib";
 import {
   decodeFrame,
   decodeTlvs,
   encodeFrame,
   encodeTlvs,
-  LANDLINK_CHARACTERISTIC,
-  LANDLINK_SERVICE_UUID,
   Opcode,
   TlvTag,
   type FsmStateValue,
@@ -83,6 +75,7 @@ function readU32LE(bytes: Uint8Array): number | null {
 }
 
 let activeDeviceId: string | null = null;
+let activeTransport: LandlinkTransport | null = null;
 let activeStoppers: (() => Promise<void>)[] = [];
 let activeUnsubDisconnect: (() => void) | null = null;
 
@@ -161,13 +154,18 @@ function clearActive(): void {
   activeUnsubDisconnect?.();
   activeUnsubDisconnect = null;
   activeDeviceId = null;
+  activeTransport = null;
   activeStoppers = [];
 }
 
+// Attach the client over any transport. `transport.deviceId` keys the store
+// and registry lookups so the entity is identical whether the frames arrive
+// over Bluetooth (createBleTransport) or the remote relay (createRemoteTransport).
 export async function attachLandlinkClient(
-  deviceId: string,
+  transport: LandlinkTransport,
   name: string,
 ): Promise<void> {
+  const deviceId = transport.deviceId;
   // WHY: an in-flight retry can race with an active connection. If we're
   // already attached to this exact device, leaving the existing notifications
   // alone is safe and avoids a brief "connecting" flicker.
@@ -178,11 +176,12 @@ export async function attachLandlinkClient(
     await detachLandlinkClient(activeDeviceId);
   }
 
-  setConnecting({ deviceId, name });
+  setConnecting({ deviceId, name, transport: transport.kind });
   activeDeviceId = deviceId;
+  activeTransport = transport;
   seqCounter = 0;
 
-  activeUnsubDisconnect = onLandlinkDisconnect(deviceId, () => {
+  activeUnsubDisconnect = transport.onClose(() => {
     cancelAllRetries();
     failAllOutgoingPending();
     void runStoppers().finally(() => {
@@ -192,22 +191,14 @@ export async function attachLandlinkClient(
   });
 
   try {
-    const stopState = await startNotifications(
-      deviceId,
-      LANDLINK_SERVICE_UUID,
-      LANDLINK_CHARACTERISTIC.STATE,
-      (data) => {
-        const b = data[0];
-        if (b === undefined) return;
-        setFsmState(b as FsmStateValue);
-      },
-    );
+    const stopState = await transport.subscribeState((data) => {
+      const b = data[0];
+      if (b === undefined) return;
+      setFsmState(b as FsmStateValue);
+    });
     activeStoppers.push(stopState);
 
-    const stopEvt = await startNotifications(
-      deviceId,
-      LANDLINK_SERVICE_UUID,
-      LANDLINK_CHARACTERISTIC.EVT,
+    const stopEvt = await transport.subscribeEvt(
       (data) => {
         const frame = decodeFrame(data);
         if (!frame) return;
@@ -318,11 +309,7 @@ export async function attachLandlinkClient(
     activeStoppers.push(stopEvt);
 
     try {
-      const infoBytes = await readCharacteristic(
-        deviceId,
-        LANDLINK_SERVICE_UUID,
-        LANDLINK_CHARACTERISTIC.INFO,
-      );
+      const infoBytes = await transport.readInfo();
       const hex = Array.from(infoBytes)
         .map((b) => b.toString(16).padStart(2, "0"))
         .join(" ");
@@ -378,10 +365,11 @@ export async function attachLandlinkClient(
   }
 }
 
-export async function detachLandlinkClient(deviceId: string): Promise<void> {
+export async function detachLandlinkClient(_deviceId: string): Promise<void> {
+  const transport = activeTransport;
   await runStoppers();
   try {
-    await disconnectLandlinkDevice(deviceId);
+    await transport?.close();
   } catch {
     // ignore: device may already be gone
   }
@@ -405,25 +393,18 @@ export async function sendLandlinkCommand(
   onSeqAssigned?: (seq: number) => void,
 ): Promise<number> {
   const dev = getState();
-  if (dev?.status !== "connected") {
+  const transport = activeTransport;
+  if (dev?.status !== "connected" || !transport) {
     throw new Error("Landlink device not connected");
   }
   const seq = nextSeq();
-  // WHY: firmware may emit MESH_SEND_RESULT via BLE notify before the
-  // writeCharacteristic await resolves on a fast link. Letting the caller
-  // register state here closes the race — by the time the notify lands, the
-  // pending entry already exists.
+  // WHY: firmware may emit MESH_SEND_RESULT via the transport notify before the
+  // sendCmd await resolves on a fast link. Letting the caller register state
+  // here closes the race — by the time the notify lands, the pending entry
+  // already exists.
   onSeqAssigned?.(seq);
   const frame = encodeFrame(opcode, seq, encodeTlvs(tlvs));
-  const deviceId = dev.deviceId;
-  const run = writeChain.then(() =>
-    writeCharacteristic(
-      deviceId,
-      LANDLINK_SERVICE_UUID,
-      LANDLINK_CHARACTERISTIC.CMD,
-      frame,
-    ),
-  );
+  const run = writeChain.then(() => transport.sendCmd(frame));
   // Keep the chain alive even if this write rejects; the next caller still
   // needs a serialization point, just not the failure.
   writeChain = run.catch(() => undefined);

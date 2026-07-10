@@ -1,3 +1,4 @@
+import type { TransportKind } from "@/shared/api";
 import type { BleFrame, FsmStateValue } from "@/shared/protocol";
 
 import {
@@ -79,6 +80,10 @@ export type LandlinkDevice = {
   deviceId: string;
   name: string;
   status: LandlinkStatus;
+  // How the active session is reaching the device: "ble" for a direct
+  // Bluetooth link, "remote" when tunneled through the relay. Drives the
+  // "Connected remotely" badge.
+  transport: TransportKind;
   info: ParsedInfo | null;
   fsmState: FsmStateValue | null;
   lastEvtFrame: BleFrame | null;
@@ -112,11 +117,16 @@ export function subscribe(l: () => void): () => void {
   };
 }
 
-export function setConnecting(d: { deviceId: string; name: string }): void {
+export function setConnecting(d: {
+  deviceId: string;
+  name: string;
+  transport: TransportKind;
+}): void {
   state = {
     deviceId: d.deviceId,
     name: d.name,
     status: "connecting",
+    transport: d.transport,
     info: null,
     fsmState: null,
     lastEvtFrame: null,

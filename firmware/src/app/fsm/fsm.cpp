@@ -96,6 +96,12 @@ void notify_ble_connected(bool v) {
 void notify_wifi_up(bool v) {
     if (v) s_flags |= bits::kWifiUp;
     else   s_flags &= ~bits::kWifiUp;
+    // Wi-Fi coming up completes provisioning; advance to READY. enter()
+    // publishes the new state+flags, so no separate publish() is needed.
+    if (v && s_state == State::WIFI_PROVISIONING) {
+        enter(State::READY);
+        return;
+    }
     publish();
 }
 

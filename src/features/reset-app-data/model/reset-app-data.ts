@@ -1,9 +1,11 @@
+import { resetAnonIdentity } from "@/entities/anon-identity";
 import { _resetDebugModeStore, setDebugMode } from "@/entities/debug-mode";
 import { clearAllMessages } from "@/entities/landlink-device";
 import {
   _resetRegisteredDevicesStore,
   clearRegisteredDevices,
 } from "@/entities/registered-device";
+import { closeRelaySession } from "@/entities/remote-session";
 
 const VISION_KEY_PREFIX = "vision.";
 
@@ -42,6 +44,12 @@ export function resetAppData(): { keysRemoved: number } {
   // error is warn-logged inside clearAllMessages and must not block the
   // synchronous reset (the button caller already toasts success).
   void clearAllMessages();
+
+  // The anonymous identity keypair lives in its own IndexedDB database, and the
+  // relay socket must drop when its account key is being wiped. Both are
+  // fire-and-forget for the same reason as clearAllMessages above.
+  closeRelaySession();
+  void resetAnonIdentity();
 
   return { keysRemoved };
 }

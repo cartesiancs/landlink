@@ -1,0 +1,37 @@
+[package]
+name = "landlink-relay"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Anonymous relay for Landlink devices. A dumb pipe for opaque frames."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["limit", "timeout", "cors"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+ecdsa = { version = "0.16", features = ["signing", "verifying"] }
+signature = "2"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+getrandom = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+
+# Multi-tenant availability: a panic in one connection task must drop only that
+# socket (the tokio task is the panic boundary), never abort the whole process.
+[profile.release]
+panic = "unwind"
+lto = true
+codegen-units = 1
+strip = true

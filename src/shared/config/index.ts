@@ -8,3 +8,9 @@ export {
 } from "./regions";
 export { SITE_URL } from "./site";
 export { APP_STORE_URL } from "./app-store";
+export {
+  RELAY_BASE_URL,
+  isRelayConfigured,
+  relayHttpBase,
+  relayWsUrl,
+} from "./relay";

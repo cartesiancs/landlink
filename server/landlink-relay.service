@@ -1,0 +1,37 @@
+# systemd unit for a host (non-Docker) deployment.
+# Install: cp target/release/landlink-relay /usr/local/bin/ &&
+#          cp landlink-relay.service /etc/systemd/system/ &&
+#          systemctl enable --now landlink-relay
+[Unit]
+Description=Landlink relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=landlink-relay
+Environment=RELAY_BIND=127.0.0.1:8080
+Environment=RELAY_DB_PATH=/var/lib/landlink-relay/relay.db
+EnvironmentFile=-/etc/landlink-relay.env
+ExecStart=/usr/local/bin/landlink-relay
+Restart=on-failure
+RestartSec=2s
+
+# Sized to the concurrent-connection target (~one FD per socket + headroom).
+LimitNOFILE=200000
+
+# Hardening.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,5 @@
 import { usePostHog } from "@posthog/react";
-import { BluetoothOff, MoreVertical, Trash2 } from "lucide-react";
+import { BluetoothOff, MoreVertical, Trash2, Wifi } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -10,6 +10,7 @@ import {
 } from "@/entities/landlink-device";
 import { removeRegisteredDevice } from "@/entities/registered-device";
 import { disconnectDevice } from "@/features/disconnect-device";
+import { WifiProvisionForm } from "@/features/provision-wifi";
 import { ROUTES } from "@/shared/config";
 import { hapticTick } from "@/shared/lib";
 import {
@@ -113,8 +114,10 @@ export function DeviceDashboardPage() {
   const device = useLandlinkDevice();
   const posthog = usePostHog();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [wifiOpen, setWifiOpen] = useState(false);
 
   const isConnected = device?.status === "connected";
+  const isRemote = isConnected && device?.transport === "remote";
   const telemetry = device?.telemetry ?? null;
 
   const handleConfirmRemove = () => {
@@ -163,6 +166,15 @@ export function DeviceDashboardPage() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <DropdownMenuItem
+                onSelect={() => {
+                  hapticTick();
+                  setWifiOpen(true);
+                }}
+              >
+                <Wifi aria-hidden="true" />
+                Connect Wi-Fi
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={handleDisconnect}>
                 <BluetoothOff aria-hidden="true" />
                 Disconnect BLE
@@ -197,12 +209,22 @@ export function DeviceDashboardPage() {
               Connect a device
             </Button>
           </div>
-        ) : telemetry ? (
-          <TelemetryBlock telemetry={telemetry} />
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No telemetry received yet.
-          </p>
+          <>
+            {isRemote ? (
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+                <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                Connected remotely through the relay.
+              </div>
+            ) : null}
+            {telemetry ? (
+              <TelemetryBlock telemetry={telemetry} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No telemetry received yet.
+              </p>
+            )}
+          </>
         )}
         {isConnected ? (
           <div className="mt-6">
@@ -250,6 +272,20 @@ export function DeviceDashboardPage() {
               </Button>
             </DrawerClose>
           </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+      <Drawer open={wifiOpen} onOpenChange={setWifiOpen}>
+        <DrawerContent className="pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <DrawerHeader>
+            <DrawerTitle>Connect Wi-Fi</DrawerTitle>
+            <DrawerDescription>
+              Put this device on Wi-Fi so it stays reachable when Bluetooth is
+              out of range.
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-2">
+            <WifiProvisionForm />
+          </div>
         </DrawerContent>
       </Drawer>
     </div>

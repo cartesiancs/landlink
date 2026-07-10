@@ -54,7 +54,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
 
     switch (op) {
     case Opcode::WIFI_SCAN:
-        features::wifi::scan_async(seq);
+        features::wifi::request_scan(seq);
         return true;
 
     case Opcode::WIFI_CONNECT: {
@@ -62,7 +62,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
         char psk[65]  = { 0 };
         if (!get_tlv_str(r, TlvTag::WIFI_SSID, ssid, sizeof(ssid))) return false;
         get_tlv_str(r, TlvTag::WIFI_PSK, psk, sizeof(psk));
-        features::wifi::connect_async(seq, ssid, psk);
+        features::wifi::request_connect(seq, ssid, psk);
         return true;
     }
 

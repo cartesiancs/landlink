@@ -51,6 +51,10 @@ enum class Opcode : uint8_t {
     OTA_CHUNK = 0x61,
     OTA_COMMIT = 0x62,
     OTA_STATUS = 0x63,
+    REMOTE_GET_IDENTITY = 0x80,
+    REMOTE_IDENTITY_RESULT = 0x81,
+    REMOTE_SET_CONFIG = 0x82,
+    REMOTE_STATUS = 0x83,
     ERROR = 0x7f,
 };
 
