@@ -357,6 +357,13 @@ export async function attachLandlinkClient(
     } catch (err) {
       console.warn("[landlink] RADIO_GET_REGION failed", err);
     }
+    // Refresh the persisted Wi-Fi status on every (re)connect so the UI shows
+    // the device's current Wi-Fi state, not a stale one.
+    try {
+      await sendLandlinkCommand(Opcode.WIFI_GET_STATUS);
+    } catch (err) {
+      console.warn("[landlink] WIFI_GET_STATUS failed", err);
+    }
   } catch (err) {
     await runStoppers();
     clearActive();

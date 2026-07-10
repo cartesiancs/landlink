@@ -33,6 +33,8 @@ NimBLECharacteristic* s_log_chr  = nullptr;
 
 CmdHandler      s_cmd_handler = nullptr;
 OtaChunkHandler s_ota_handler = nullptr;
+EvtTap          s_evt_tap     = nullptr;
+StateTap        s_state_tap   = nullptr;
 
 volatile bool s_connected = false;
 
@@ -42,6 +44,25 @@ uint32_t s_info_id  = 0;
 uint8_t  s_info_pv  = 0;
 
 uint8_t s_state_buf[2] = { 0, 0 };
+
+// Pack the INFO blob: [proto_version][node_id LE(4)][fw_len][fw][hw_len][hw].
+size_t pack_info(uint8_t* buf, size_t cap) {
+    const size_t fw_len = std::strlen(s_info_fw);
+    const size_t hw_len = std::strlen(s_info_hw);
+    const size_t total = 1 + 4 + 1 + fw_len + 1 + hw_len;
+    if (cap < total) return 0;
+    size_t pos = 0;
+    buf[pos++] = s_info_pv;
+    buf[pos++] = static_cast<uint8_t>(s_info_id & 0xff);
+    buf[pos++] = static_cast<uint8_t>((s_info_id >> 8) & 0xff);
+    buf[pos++] = static_cast<uint8_t>((s_info_id >> 16) & 0xff);
+    buf[pos++] = static_cast<uint8_t>((s_info_id >> 24) & 0xff);
+    buf[pos++] = static_cast<uint8_t>(fw_len);
+    std::memcpy(buf + pos, s_info_fw, fw_len);  pos += fw_len;
+    buf[pos++] = static_cast<uint8_t>(hw_len);
+    std::memcpy(buf + pos, s_info_hw, hw_len);  pos += hw_len;
+    return pos;
+}
 
 bool send_frame(NimBLECharacteristic* chr,
                 Opcode op, uint8_t seq,
@@ -104,18 +125,7 @@ class OtaCb : public NimBLECharacteristicCallbacks {
 class InfoCb : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* chr) override {
         uint8_t buf[64] = { 0 };
-        size_t  pos = 0;
-        buf[pos++] = s_info_pv;
-        buf[pos++] = static_cast<uint8_t>(s_info_id & 0xff);
-        buf[pos++] = static_cast<uint8_t>((s_info_id >> 8) & 0xff);
-        buf[pos++] = static_cast<uint8_t>((s_info_id >> 16) & 0xff);
-        buf[pos++] = static_cast<uint8_t>((s_info_id >> 24) & 0xff);
-        const size_t fw_len = std::strlen(s_info_fw);
-        buf[pos++] = fw_len;
-        std::memcpy(buf + pos, s_info_fw, fw_len);  pos += fw_len;
-        const size_t hw_len = std::strlen(s_info_hw);
-        buf[pos++] = hw_len;
-        std::memcpy(buf + pos, s_info_hw, hw_len);  pos += hw_len;
+        const size_t pos = pack_info(buf, sizeof(buf));
         chr->setValue(buf, pos);
     }
 };
@@ -178,7 +188,10 @@ void stop_advertising() {
 
 bool notify_evt(Opcode op, uint8_t seq,
                 const uint8_t* payload, size_t payload_len) {
-    return send_frame(s_evt_chr, op, seq, payload, payload_len);
+    const bool ok = send_frame(s_evt_chr, op, seq, payload, payload_len);
+    // Mirror to the remote relay (if attached). The tap enqueues and returns.
+    if (s_evt_tap) s_evt_tap(op, seq, payload, payload_len);
+    return ok;
 }
 
 void set_state(FsmState state, uint8_t flags) {
@@ -188,7 +201,15 @@ void set_state(FsmState state, uint8_t flags) {
         s_st_chr->setValue(s_state_buf, sizeof(s_state_buf));
         s_st_chr->notify();
     }
+    if (s_state_tap) s_state_tap(state, flags);
 }
+
+size_t get_info(uint8_t* buf, size_t cap) {
+    return pack_info(buf, cap);
+}
+
+void set_evt_tap(EvtTap tap)     { s_evt_tap = tap; }
+void set_state_tap(StateTap tap) { s_state_tap = tap; }
 
 void set_info(const char* firmware_version, const char* hardware_rev,
               uint32_t node_id, uint8_t proto_version) {

@@ -42,6 +42,7 @@ opcodes:
   WIFI_SCAN_RESULT:      { code: 0x02, dir: F_TO_C }
   WIFI_CONNECT:          { code: 0x03, dir: C_TO_F }
   WIFI_STATUS:           { code: 0x04, dir: F_TO_C }
+  WIFI_GET_STATUS:       { code: 0x05, dir: C_TO_F, note: "Request the current WIFI_STATUS (state/ip/rssi). Lets the client refresh the persisted Wi-Fi state on every (re)connect." }
 
   # Radio region
   RADIO_GET_REGION:      { code: 0x10, dir: C_TO_F }

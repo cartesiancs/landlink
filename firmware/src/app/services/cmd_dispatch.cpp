@@ -6,6 +6,8 @@
 #include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/ota/ota.h"
+#include "features/remote_relay/remote_identity.h"
+#include "features/remote_relay/remote_relay.h"
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/storage/storage.h"
 #include "mesh/channel/registry.h"
@@ -57,12 +59,44 @@ bool handle_cmd(Opcode op, uint8_t seq,
         features::wifi::request_scan(seq);
         return true;
 
+    case Opcode::WIFI_GET_STATUS:
+        features::wifi::emit_current_status(seq);
+        return true;
+
     case Opcode::WIFI_CONNECT: {
         char ssid[33] = { 0 };
         char psk[65]  = { 0 };
         if (!get_tlv_str(r, TlvTag::WIFI_SSID, ssid, sizeof(ssid))) return false;
         get_tlv_str(r, TlvTag::WIFI_PSK, psk, sizeof(psk));
         features::wifi::request_connect(seq, ssid, psk);
+        return true;
+    }
+
+    case Opcode::REMOTE_GET_IDENTITY: {
+        uint8_t buf[128];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put(TlvTag::REMOTE_DEVICE_PUBKEY, features::remote::device_pubkey(),
+              features::remote::device_pubkey_len());
+        b.put(TlvTag::REMOTE_RENDEZVOUS_ID, features::remote::rendezvous_id_raw(),
+              features::remote::rendezvous_id_raw_len());
+        transport::ble::notify_evt(Opcode::REMOTE_IDENTITY_RESULT, seq, b.data(),
+                                   b.size());
+        return true;
+    }
+
+    case Opcode::REMOTE_SET_CONFIG: {
+        char url[128] = { 0 };
+        if (!get_tlv_str(r, TlvTag::REMOTE_SERVER_URL, url, sizeof(url))) {
+            return false;
+        }
+        const uint8_t* bind_ptr = nullptr;
+        size_t bind_len = 0;
+        landlink::Tlv bind_tlv;
+        if (r.find(TlvTag::REMOTE_ACCOUNT_BIND, bind_tlv)) {
+            bind_ptr = bind_tlv.data;
+            bind_len = bind_tlv.len;
+        }
+        features::remote::relay_set_config(url, bind_ptr, bind_len);
         return true;
     }
 

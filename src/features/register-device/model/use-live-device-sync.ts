@@ -15,6 +15,7 @@ import {
 } from "@/entities/registered-device";
 import { reconnectController } from "@/features/auto-reconnect";
 import { listPermittedDevices } from "@/shared/api";
+import { isRelayConfigured } from "@/shared/config";
 
 // WHY: backoff lets a momentarily-offline device come back without spamming
 // connect attempts. Past the last entry we stop and wait for focus/visibility
@@ -65,7 +66,15 @@ async function attemptPrimaryReconnect(): Promise<void> {
 
   if (!Capacitor.isNativePlatform()) {
     const permitted = await listPermittedDevices();
-    if (!permitted.some((p) => p.id === id)) return;
+    const bleReady = permitted.some((p) => p.id === id);
+    // A remote-enrolled device can be reached over the relay even when Web
+    // Bluetooth has no permission for it (BLE off, different browser, or an
+    // engine without Web Bluetooth). Only bail if neither path is viable.
+    const remoteReady =
+      device.remoteEnrolled === true &&
+      Boolean(device.rendezvousId) &&
+      isRelayConfigured();
+    if (!bleReady && !remoteReady) return;
   }
 
   retryAttempts.delete(id);

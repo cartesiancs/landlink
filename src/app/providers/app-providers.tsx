@@ -3,6 +3,7 @@ import { StrictMode, type ReactNode } from "react";
 import { ThemeProvider, useTheme } from "@/entities/theme";
 import { useLoraDiscovery } from "@/features/lora-discovery";
 import { useMeshtasticPkiCache } from "@/features/meshtastic-pki-cache";
+import { useWifiStatusSync } from "@/features/provision-wifi";
 import { useLiveDeviceSync } from "@/features/register-device";
 import { useSyncDeviceChannels } from "@/features/sync-device-channels";
 import { useTrackRecorder } from "@/features/track-position";
@@ -45,6 +46,11 @@ function MeshtasticPkiCacheBridge() {
   return null;
 }
 
+function WifiStatusSyncBridge() {
+  useWifiStatusSync();
+  return null;
+}
+
 function KeyboardInsetBridge() {
   useKeyboardInset();
   return null;
@@ -63,6 +69,7 @@ export function AppProviders({ children }: AppProvidersProps) {
         <LoraDiscoveryBridge />
         <ChannelSyncBridge />
         <MeshtasticPkiCacheBridge />
+        <WifiStatusSyncBridge />
         <KeyboardInsetBridge />
         <TrackRecorderBridge />
         {children}

@@ -33,4 +33,9 @@ export type RegisteredDevice = {
   remoteEnrolled?: boolean;
   rendezvousId?: string;
   devicePubKey?: string;
+  // When true, reach this device over the Wi-Fi relay instead of Bluetooth —
+  // a first-class transport choice, not just a fallback. Set when the user
+  // disconnects Bluetooth on an enrolled device; the reconnect logic then skips
+  // BLE and connects over the relay.
+  preferRemote?: boolean;
 };

@@ -27,6 +27,11 @@ void tick(uint32_t now_ms);
 // True while associated (the STA interface has an IP).
 bool is_connected();
 
+// Emit a WIFI_STATUS EVT with the last-known state/ip/rssi (from cache — no
+// WiFi.* call, so it is safe to call from the BLE/relay dispatch thread). Lets
+// the client refresh its persisted Wi-Fi state on every (re)connect.
+void emit_current_status(uint8_t seq);
+
 // Reconnect backoff schedule: 2 s, doubling to a 60 s cap. Pure function so it
 // is unit-testable on the native host (see test/test_wifi_backoff).
 inline uint32_t next_backoff_ms(uint32_t cur_ms) {

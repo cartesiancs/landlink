@@ -21,6 +21,8 @@
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/pki_identity/pki_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
+#include "features/remote_relay/remote_identity.h"
+#include "features/remote_relay/remote_relay.h"
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/button/button.h"
 #include "hal/gps/gps.h"
@@ -273,6 +275,16 @@ void setup() {
     // before spawn_tasks() (it touches WiFi.* on this thread; afterwards only
     // wifi_task does). BLE is already up so WIFI_STATUS EVTs can be emitted.
     landlink::features::wifi::init();
+
+    // Remote relay: device keypair/rendezvous identity + the relay client that
+    // tunnels opaque frames to the server when Wi-Fi is up and enrolled. A
+    // relayed CMD is dispatched exactly like a BLE CMD write.
+    if (!landlink::features::remote::identity_init()) {
+        LL_LOG_W(kTag, "remote identity init failed — remote access disabled");
+    }
+    landlink::features::remote::relay_init();
+    landlink::features::remote::relay_set_inbound_handler(
+        landlink::app::services::handle_cmd);
 
     landlink::app::fsm::init();
     landlink::app::services::spawn_tasks();

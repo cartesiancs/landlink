@@ -16,6 +16,7 @@ enum class Opcode : uint8_t {
     WIFI_SCAN_RESULT = 0x02,
     WIFI_CONNECT = 0x03,
     WIFI_STATUS = 0x04,
+    WIFI_GET_STATUS = 0x05,
     RADIO_GET_REGION = 0x10,
     RADIO_SET_REGION = 0x11,
     RADIO_REGION_RESULT = 0x12,

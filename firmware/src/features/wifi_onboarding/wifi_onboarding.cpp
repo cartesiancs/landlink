@@ -64,6 +64,12 @@ uint32_t s_next_attempt_ms = 0;
 bool s_scanning = false;
 uint8_t s_scan_reply_seq = 0;
 
+// Last emitted status, cached so it can be re-reported on demand from another
+// thread (WIFI_GET_STATUS) without touching WiFi.*.
+uint8_t s_pub_state = kStateIdle;
+uint8_t s_pub_ip[4] = {0};
+int8_t s_pub_rssi = 0;
+
 void lock() {
     if (s_mtx) xSemaphoreTake(s_mtx, portMAX_DELAY);
 }
@@ -72,6 +78,12 @@ void unlock() {
 }
 
 void emit_status(uint8_t seq, uint8_t state, const uint8_t ip[4], int8_t rssi) {
+    // Cache for WIFI_GET_STATUS replies.
+    s_pub_state = state;
+    if (ip) std::memcpy(s_pub_ip, ip, 4);
+    else std::memset(s_pub_ip, 0, 4);
+    s_pub_rssi = rssi;
+
     uint8_t buf[32];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u8(TlvTag::WIFI_STATE, state);
@@ -227,6 +239,11 @@ void request_connect(uint8_t seq, const char* ssid, const char* password) {
 
 bool is_connected() {
     return s_state == St::Connected;
+}
+
+void emit_current_status(uint8_t seq) {
+    const bool connected = s_pub_state == kStateConnected;
+    emit_status(seq, s_pub_state, connected ? s_pub_ip : nullptr, s_pub_rssi);
 }
 
 void tick(uint32_t now_ms) {

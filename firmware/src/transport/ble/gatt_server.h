@@ -38,6 +38,19 @@ bool notify_evt(Opcode op, uint8_t seq,
 // Update the STATE characteristic (FSM state + flag byte).
 void set_state(FsmState state, uint8_t flags);
 
+// Pack the same bytes the INFO characteristic returns into `buf`. Returns the
+// length written (0 if it doesn't fit). Used by the relay to answer INFO_REQ.
+size_t get_info(uint8_t* buf, size_t cap);
+
+// Optional taps that mirror every EVT / STATE emission to another transport
+// (the remote relay). The tap runs on the caller's thread and MUST be
+// cheap/non-blocking — the relay enqueues and returns.
+using EvtTap = void (*)(Opcode op, uint8_t seq,
+                        const uint8_t* payload, size_t payload_len);
+using StateTap = void (*)(FsmState state, uint8_t flags);
+void set_evt_tap(EvtTap tap);
+void set_state_tap(StateTap tap);
+
 // Inject stringified device info that the INFO read handler returns.
 void set_info(const char* firmware_version,
               const char* hardware_rev,

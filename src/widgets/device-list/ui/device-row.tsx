@@ -31,6 +31,7 @@ export function DeviceRow({ device }: DeviceRowProps) {
     isConnected &&
     liveDevice?.deviceId === device.id &&
     liveDevice.status === "connected";
+  const isLiveRemote = isLive && liveDevice?.transport === "remote";
   const isNearby = !isLive && device.source === "ble" && peer !== null;
   const canReconnect = device.source === "ble" && device.enabled && !isLive;
   const isReconnecting = reconnectStatus === "reconnecting";
@@ -52,6 +53,10 @@ export function DeviceRow({ device }: DeviceRowProps) {
     ? "Reconnecting..."
     : reconnectStatus === "error" && reconnectError
     ? reconnectError
+    : isLiveRemote
+    ? "Connected via Wi-Fi relay"
+    : isLive
+    ? "Connected via Bluetooth"
     : isNearby && peer
     ? `Nearby via LoRa · ${peer.batteryPct ?? "?"}% · heartbeat ${formatLastConnected(
         peer.lastSeenAt,
@@ -60,11 +65,14 @@ export function DeviceRow({ device }: DeviceRowProps) {
         device.lastConnectedAt,
       )}`;
 
-  // Blue = BLE directly attached (the one and only "primary").
-  // Green = LoRa heartbeat seen but not BLE-attached.
+  // Indigo = connected over the Wi-Fi relay (a first-class transport).
+  // Blue = BLE directly attached.
+  // Green = LoRa heartbeat seen but not attached.
   // Amber pulse = reconnect attempt in flight.
-  // Gray = registered but neither BLE nor LoRa is reachable.
-  const dotClass = isLive
+  // Gray = registered but not reachable.
+  const dotClass = isLiveRemote
+    ? "bg-indigo-500"
+    : isLive
     ? "bg-sky-500"
     : isReconnecting
     ? "animate-pulse bg-amber-400"

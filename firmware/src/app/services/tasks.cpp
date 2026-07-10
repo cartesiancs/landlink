@@ -9,6 +9,7 @@
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
+#include "features/remote_relay/remote_relay.h"
 #include "features/telemetry/telemetry.h"
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/button/button.h"
@@ -117,6 +118,16 @@ constexpr const char* kTag = "tasks";
     }
 }
 
+[[noreturn]] void relay_task(void*) {
+    // Owns the relay WebSocket client. Pumps the socket often (RX handling),
+    // manages connect/reconnect, and drains the outbound queue. Large stack: a
+    // TLS (wss) handshake is stack-hungry.
+    for (;;) {
+        features::remote::relay_loop();
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
 [[noreturn]] void lora_tx_task(void*) {
     // ack_tick() is gone — mesh_chat now enqueues ACKs directly to the MAC
     // priority queue (with TxRequest::not_before_ms for broadcast-ACK jitter)
@@ -165,6 +176,7 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(mesh_identity_task, "mt_id",     4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(wifi_task,       "wifi",        4096, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(relay_task,      "relay",      16384, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);
 }
