@@ -12,7 +12,7 @@ import {
 } from "@/entities/landlink-device";
 import { updateRegisteredDevice } from "@/entities/registered-device";
 import { enrollDevice } from "@/entities/remote-session";
-import { isRelayConfigured, RELAY_BASE_URL } from "@/shared/config";
+import { isValidRelayUrl, relayBaseUrl, useRelayConfig } from "@/shared/config";
 import { bytesToBase64Url } from "@/shared/lib";
 import { decodeTlvs, Opcode, TlvTag } from "@/shared/protocol";
 
@@ -110,15 +110,18 @@ function requestDeviceCosig(accountPublicKeyRaw: Uint8Array): Promise<Uint8Array
 export function useEnrollRemoteDevice(): UseEnrollRemoteDeviceResult {
   const device = useLandlinkDevice();
   const isDeviceConnected = device?.status === "connected";
-  const relayConfigured = isRelayConfigured();
+  // Reactive: re-render when the user enables/disables relay or edits the URL.
+  const cfg = useRelayConfig();
+  const relayConfigured = cfg.relayEnabled && isValidRelayUrl(cfg.relayUrl);
 
   const [status, setStatus] = useState<EnrollRemoteStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
   const enroll = useCallback(async (): Promise<boolean> => {
-    if (!relayConfigured || !RELAY_BASE_URL) {
+    const relayUrl = relayBaseUrl();
+    if (!relayConfigured || !relayUrl) {
       setStatus("error");
-      setError("No relay is configured.");
+      setError("Remote relay is off. Enable it in Settings first.");
       return false;
     }
     if (!isDeviceConnected || !device) {
@@ -157,7 +160,7 @@ export function useEnrollRemoteDevice(): UseEnrollRemoteDeviceResult {
       //    device so it can open its outbound relay connection and derive the
       //    shared E2E frame key (H2).
       await sendLandlinkCommand(Opcode.REMOTE_SET_CONFIG, [
-        { tag: TlvTag.REMOTE_SERVER_URL, value: encoder.encode(RELAY_BASE_URL) },
+        { tag: TlvTag.REMOTE_SERVER_URL, value: encoder.encode(relayUrl) },
         { tag: TlvTag.REMOTE_ACCOUNT_BIND, value: identity.publicKeyRaw },
         { tag: TlvTag.REMOTE_ACCOUNT_ECDH_PUB, value: accountEcdhPub },
       ]);

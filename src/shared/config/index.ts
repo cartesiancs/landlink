@@ -9,8 +9,15 @@ export {
 export { SITE_URL } from "./site";
 export { APP_STORE_URL } from "./app-store";
 export {
-  RELAY_BASE_URL,
+  getRelayConfig,
   isRelayConfigured,
+  isValidRelayUrl,
+  relayBaseUrl,
   relayHttpBase,
   relayWsUrl,
+  setRelayConfig,
+  subscribeRelayConfig,
+  _resetRelayConfigStore,
+  type RelayConfig,
 } from "./relay";
+export { useRelayConfig } from "./use-relay-config";

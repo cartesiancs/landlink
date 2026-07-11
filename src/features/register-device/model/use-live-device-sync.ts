@@ -73,6 +73,8 @@ async function attemptPrimaryReconnect(): Promise<void> {
     const remoteReady =
       device.remoteEnrolled === true &&
       Boolean(device.rendezvousId) &&
+      // Needs the ECDH key to derive the E2E frame key; matches isRemoteEligible.
+      Boolean(device.deviceEcdhPub) &&
       isRelayConfigured();
     if (!bleReady && !remoteReady) return;
   }

@@ -7,6 +7,7 @@ import {
 } from "@/entities/registered-device";
 import { closeRelaySession } from "@/entities/remote-session";
 import { _resetWifiStatusStore } from "@/entities/wifi-status";
+import { _resetRelayConfigStore } from "@/shared/config";
 
 const VISION_KEY_PREFIX = "vision.";
 
@@ -41,6 +42,7 @@ export function resetAppData(): { keysRemoved: number } {
   _resetRegisteredDevicesStore();
   _resetDebugModeStore();
   _resetWifiStatusStore();
+  _resetRelayConfigStore();
   // Persisted channel-chat history lives in IndexedDB, not localStorage,
   // so the prefix sweep above doesn't reach it. Fire-and-forget: any IDB
   // error is warn-logged inside clearAllMessages and must not block the

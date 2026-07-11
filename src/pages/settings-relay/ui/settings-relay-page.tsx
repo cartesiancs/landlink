@@ -1,18 +1,17 @@
-import { AnonAccountCard } from "@/features/register-anon-account";
+import { RelayConfigForm } from "@/features/configure-relay";
 import { ROUTES } from "@/shared/config";
 import { PageHeader } from "@/widgets/page-header";
 
-export function SettingsAccountPage() {
+export function SettingsRelayPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-background">
       <PageHeader
-        title="Account"
+        title="Remote relay"
         fallback={ROUTES.settings}
         backLabel="Back to Settings"
       />
-
-      <section className="space-y-4 px-4 pt-2 pb-8">
-        <AnonAccountCard />
+      <section className="flex flex-col gap-3 px-4 pt-2 pb-8">
+        <RelayConfigForm />
       </section>
     </main>
   );

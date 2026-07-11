@@ -7,7 +7,7 @@ export function RemoteEnrollCard() {
     useEnrollRemoteDevice();
 
   const disabledReason = !relayConfigured
-    ? "No relay is configured for this build."
+    ? "Remote relay is off. Enable it in Settings > Remote relay first."
     : !isDeviceConnected
       ? "Connect the device over Bluetooth first."
       : null;

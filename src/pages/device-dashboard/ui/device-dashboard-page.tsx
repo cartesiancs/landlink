@@ -13,7 +13,7 @@ import { clearWifiStatus, useWifiStatus } from "@/entities/wifi-status";
 import { disconnectDevice } from "@/features/disconnect-device";
 import { RemoteEnrollCard } from "@/features/enroll-remote-device";
 import { WifiProvisionForm } from "@/features/provision-wifi";
-import { ROUTES } from "@/shared/config";
+import { isValidRelayUrl, ROUTES, useRelayConfig } from "@/shared/config";
 import { cn, hapticTick } from "@/shared/lib";
 import {
   Button,
@@ -122,6 +122,8 @@ export function DeviceDashboardPage() {
   const isConnected = device?.status === "connected";
   const isRemote = isConnected && device?.transport === "remote";
   const wifi = useWifiStatus(device?.deviceId ?? null);
+  const relayCfg = useRelayConfig();
+  const relayReady = relayCfg.relayEnabled && isValidRelayUrl(relayCfg.relayUrl);
   const telemetry = device?.telemetry ?? null;
 
   const handleConfirmRemove = () => {
@@ -180,15 +182,17 @@ export function DeviceDashboardPage() {
                 <Wifi aria-hidden="true" />
                 Connect Wi-Fi
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  hapticTick();
-                  setRemoteOpen(true);
-                }}
-              >
-                <Globe aria-hidden="true" />
-                Remote access
-              </DropdownMenuItem>
+              {relayReady ? (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    hapticTick();
+                    setRemoteOpen(true);
+                  }}
+                >
+                  <Globe aria-hidden="true" />
+                  Remote access
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onSelect={handleDisconnect}>
                 <Unplug aria-hidden="true" />
                 Disconnect

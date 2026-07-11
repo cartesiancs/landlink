@@ -55,5 +55,6 @@ export {
   type CarouselApi,
 } from "./carousel";
 export { RadioGroup, RadioGroupItem } from "./radio-group";
+export { Input } from "./input";
 export { Toaster, toast } from "./sonner";
 export { Switch } from "./switch";

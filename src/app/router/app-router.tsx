@@ -30,6 +30,7 @@ import { SettingsPage } from "@/pages/settings";
 import { SettingsDebugPage } from "@/pages/settings-debug";
 import { SettingsRegionPage } from "@/pages/settings-region";
 import { SettingsAccountPage } from "@/pages/settings-account";
+import { SettingsRelayPage } from "@/pages/settings-relay";
 import { SettingsResetPage } from "@/pages/settings-reset";
 import { SettingsThemePage } from "@/pages/settings-theme";
 import { SupportPage } from "@/pages/support";
@@ -80,6 +81,7 @@ const routes: RouteObject[] = [
       { path: ROUTES.settingsReset, element: <SettingsResetPage /> },
       { path: ROUTES.settingsRegion, element: <SettingsRegionPage /> },
       { path: ROUTES.settingsAccount, element: <SettingsAccountPage /> },
+      { path: ROUTES.settingsRelay, element: <SettingsRelayPage /> },
       { path: ROUTES.error, element: <ErrorPage /> },
       { path: "*", element: <AppLayout /> },
     ],

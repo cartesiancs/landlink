@@ -60,10 +60,14 @@ type Handshake = { type?: unknown; nonce?: unknown; message?: unknown };
 
 let active: RelaySession | null = null;
 let connecting: Promise<RelaySession> | null = null;
+// Bumped by closeRelaySession so an in-flight connect started against an old URL
+// (before it reached "ready") can't revive itself as the active session.
+let generation = 0;
 
 async function openSession(signer: RelaySigner): Promise<RelaySession> {
   const url = relayWsUrl();
   if (!url) throw new Error("Relay is not configured.");
+  const gen = generation;
 
   setRelayStatus("connecting");
   const ws = createSocket(url);
@@ -181,10 +185,21 @@ async function openSession(signer: RelaySigner): Promise<RelaySession> {
           return;
         }
         if (msg.type === "ready") {
-          ready = true;
           if (!settled) {
             settled = true;
             clearTimeout(timer);
+            if (gen !== generation) {
+              // Superseded by a closeRelaySession (URL change / disable) while
+              // connecting — drop this socket instead of becoming active.
+              try {
+                ws.close();
+              } catch {
+                // ignore
+              }
+              reject(new Error("Relay session superseded."));
+              return;
+            }
+            ready = true;
             active = session;
             setRelayStatus("online");
             resolve(session);
@@ -262,6 +277,8 @@ export function getRelaySession(): RelaySession | null {
 }
 
 export function closeRelaySession(): void {
+  generation += 1; // invalidate any in-flight connect
+  connecting = null;
   active?.close();
   active = null;
 }

@@ -27,6 +27,7 @@ export const ROUTES = {
   settingsReset: "/settings/reset",
   settingsRegion: "/settings/region",
   settingsAccount: "/settings/account",
+  settingsRelay: "/settings/relay",
   error: "/error",
   notFound: "*",
 } as const;
