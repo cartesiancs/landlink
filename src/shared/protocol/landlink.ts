@@ -50,6 +50,8 @@ export const Opcode = {
   REMOTE_IDENTITY_RESULT: 0x81,
   REMOTE_SET_CONFIG: 0x82,
   REMOTE_STATUS: 0x83,
+  REMOTE_COSIGN_ENROLL: 0x84,
+  REMOTE_COSIGN_RESULT: 0x85,
   ERROR: 0x7f,
 } as const;
 export type OpcodeName = keyof typeof Opcode;
@@ -124,6 +126,9 @@ export const TlvTag = {
   REMOTE_RENDEZVOUS_ID: 0xd2,
   REMOTE_ACCOUNT_BIND: 0xd3,
   REMOTE_STATE: 0xd4,
+  REMOTE_ENROLL_SIG: 0xd5,
+  REMOTE_ACCOUNT_ECDH_PUB: 0xd6,
+  REMOTE_DEVICE_ECDH_PUB: 0xd7,
   ERR_CODE: 0xf0,
   ERR_CONTEXT: 0xf1,
 } as const;

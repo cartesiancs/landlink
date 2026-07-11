@@ -1,6 +1,10 @@
 import { useCallback, useState } from "react";
 
-import { ensureAnonIdentity, getAnonSigner } from "@/entities/anon-identity";
+import {
+  ensureAnonIdentity,
+  exportAccountEcdhPublicRaw,
+  getAnonSigner,
+} from "@/entities/anon-identity";
 import {
   onLandlinkEvt,
   sendLandlinkCommand,
@@ -9,7 +13,8 @@ import {
 import { updateRegisteredDevice } from "@/entities/registered-device";
 import { enrollDevice } from "@/entities/remote-session";
 import { isRelayConfigured, RELAY_BASE_URL } from "@/shared/config";
-import { Opcode, TlvTag } from "@/shared/protocol";
+import { bytesToBase64Url } from "@/shared/lib";
+import { decodeTlvs, Opcode, TlvTag } from "@/shared/protocol";
 
 import {
   parseRemoteIdentity,
@@ -64,6 +69,44 @@ function readDeviceIdentity(): Promise<DeviceRemoteIdentity> {
   });
 }
 
+// Ask the device to co-sign the enrollment binding (H1). We hand it the account
+// public key; it signs (account, device, rid) with its own identity key so the
+// relay can prove the physical device consented. Returns the raw signature.
+function requestDeviceCosig(accountPublicKeyRaw: Uint8Array): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      unsub();
+      reject(new Error("Device did not co-sign the enrollment."));
+    }, IDENTITY_TIMEOUT_MS);
+    const unsub = onLandlinkEvt((frame) => {
+      if (frame.opcode !== Opcode.REMOTE_COSIGN_RESULT) return;
+      let sig: Uint8Array | null = null;
+      for (const t of decodeTlvs(frame.payload)) {
+        if (t.tag === TlvTag.REMOTE_ENROLL_SIG && t.value.byteLength > 0) {
+          sig = t.value;
+        }
+      }
+      if (!sig || settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsub();
+      resolve(sig);
+    });
+    void sendLandlinkCommand(Opcode.REMOTE_COSIGN_ENROLL, [
+      { tag: TlvTag.REMOTE_ACCOUNT_BIND, value: accountPublicKeyRaw },
+    ]).catch((err: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsub();
+      reject(err instanceof Error ? err : new Error("REMOTE_COSIGN_ENROLL failed."));
+    });
+  });
+}
+
 export function useEnrollRemoteDevice(): UseEnrollRemoteDeviceResult {
   const device = useLandlinkDevice();
   const isDeviceConnected = device?.status === "connected";
@@ -92,31 +135,40 @@ export function useEnrollRemoteDevice(): UseEnrollRemoteDeviceResult {
       const signer = getAnonSigner();
       if (!signer) throw new Error("Account identity is unavailable.");
 
-      // 2. Read the device's self-generated identity over the trusted BLE link.
+      // 2. Read the device's self-generated identity + ECDH key over the
+      //    trusted BLE link.
       setStatus("reading");
       const remote = await readDeviceIdentity();
 
-      // 3. Bind the device's key to the account at the relay.
+      // 3. Have the device co-sign the enrollment binding (H1), then bind its
+      //    key to the account at the relay with that co-signature.
+      const deviceSig = await requestDeviceCosig(identity.publicKeyRaw);
+      const accountEcdhPub = await exportAccountEcdhPublicRaw();
+
       setStatus("enrolling");
       await enrollDevice({
         signer,
         devicePublicKey: remote.devicePublicKey,
         rendezvousId: remote.rendezvousId,
+        deviceSig,
       });
 
-      // 4. Push the relay URL + account binding to the device so it can open
-      //    its own outbound relay connection. The bind blob is the account
-      //    public key the relay verified the device against.
+      // 4. Push the relay URL + account binding + account ECDH public key to the
+      //    device so it can open its outbound relay connection and derive the
+      //    shared E2E frame key (H2).
       await sendLandlinkCommand(Opcode.REMOTE_SET_CONFIG, [
         { tag: TlvTag.REMOTE_SERVER_URL, value: encoder.encode(RELAY_BASE_URL) },
         { tag: TlvTag.REMOTE_ACCOUNT_BIND, value: identity.publicKeyRaw },
+        { tag: TlvTag.REMOTE_ACCOUNT_ECDH_PUB, value: accountEcdhPub },
       ]);
 
-      // 5. Persist enrollment on the device record so reconnect can fall back
-      //    to remote without re-reading the identity.
+      // 5. Persist enrollment + the device keys so reconnect can go remote and
+      //    re-derive the E2E key without re-reading the identity.
       updateRegisteredDevice(deviceId, {
         remoteEnrolled: true,
         rendezvousId: remote.rendezvousId,
+        devicePubKey: bytesToBase64Url(remote.devicePublicKey),
+        deviceEcdhPub: bytesToBase64Url(remote.deviceEcdhPub),
       });
 
       setStatus("enrolled");

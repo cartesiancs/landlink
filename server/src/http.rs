@@ -84,6 +84,10 @@ pub struct EnrollReq {
     device_pubkey: String,
     #[serde(rename = "rendezvousId")]
     rendezvous_id: String,
+    // H1: the device's signature over the enrollment binding, proving the
+    // physical device consents to being enrolled to this account + rid.
+    #[serde(rename = "deviceSig")]
+    device_sig: String,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +211,22 @@ pub async fn enroll(
     };
 
     if crypto::parse_pubkey_b64(&req.device_pubkey).is_none() || !valid_rid(&req.rendezvous_id) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "bad_device"})),
+        );
+    }
+
+    // H1: require the device to have co-signed this exact (account, device, rid)
+    // binding. Without a valid device signature we refuse to bind the device
+    // pubkey, so an attacker who merely knows the pubkey cannot squat it.
+    if !crypto::verify_device_cosig(
+        &req.device_pubkey,
+        &req.pubkey,
+        &req.rendezvous_id,
+        &req.device_sig,
+    ) {
+        incr(&state.metrics.enroll_rejected_total);
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "bad_device"})),

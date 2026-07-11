@@ -14,6 +14,7 @@ export {
   type RelaySigner,
 } from "./api/relay-client";
 export { createRemoteTransport } from "./api/remote-transport";
+export { createFrameCrypto, type FrameCrypto } from "./lib/frame-crypto";
 export { enrollDevice, type EnrollDeviceInput } from "./api/enroll";
 export {
   getRelayState,

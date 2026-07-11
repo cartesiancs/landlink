@@ -8,6 +8,16 @@ export {
   sha256,
 } from "./encoding";
 export {
+  aesGcmOpen,
+  aesGcmSeal,
+  deriveEcdhSecret,
+  exportEcdhPublicRaw,
+  generateEcdhKeyPair,
+  hkdfSha256,
+  importAesGcmKey,
+  importEcdhPublicRaw,
+} from "./crypto";
+export {
   BROADCAST_NODE_NUM,
   bytesLEToNodeNum,
   hexToNodeNum,

@@ -33,4 +33,8 @@ export type RegisteredDevice = {
   remoteEnrolled?: boolean;
   rendezvousId?: string;
   devicePubKey?: string;
+  // Device ECDH public key (base64url, raw SEC1) captured at enroll. Combined
+  // with the account ECDH key it derives the E2E key that encrypts relay frames,
+  // so the relay only ever sees ciphertext (H2). Required for a remote connect.
+  deviceEcdhPub?: string;
 };

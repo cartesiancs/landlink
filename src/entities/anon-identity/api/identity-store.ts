@@ -8,12 +8,22 @@
 // server cannot learn who the user is.
 
 import { openDb, requestToPromise, tx } from "@/shared/api";
-import { bytesToBase64Url, sha256 } from "@/shared/lib";
+import {
+  bytesToBase64Url,
+  deriveEcdhSecret,
+  exportEcdhPublicRaw,
+  generateEcdhKeyPair,
+  importEcdhPublicRaw,
+  sha256,
+} from "@/shared/lib";
 
 const DB_NAME = "landlink-identity";
 const DB_VERSION = 1;
 const STORE = "identity";
 const RECORD_KEY = "self";
+// A separate P-256 ECDH keypair used only for E2E relay-frame encryption (H2).
+// Kept apart from the ECDSA identity: signing and key agreement never share a key.
+const RECORD_KEY_ECDH = "ecdh-self";
 
 export type StoredIdentity = {
   keyPair: CryptoKeyPair;
@@ -91,6 +101,47 @@ export async function deleteStoredIdentity(): Promise<void> {
   await tx(conn, STORE, "readwrite", (store) =>
     requestToPromise(store.delete(RECORD_KEY)),
   );
+  await tx(conn, STORE, "readwrite", (store) =>
+    requestToPromise(store.delete(RECORD_KEY_ECDH)),
+  );
+}
+
+// The account's ECDH keypair (H2), generated lazily on first use and persisted
+// non-extractably alongside the identity. Same account may have been created
+// before H2 existed, so this upgrades in place without disturbing the identity.
+async function getAccountEcdhKeyPair(): Promise<CryptoKeyPair> {
+  const conn = await db();
+  const rec = await tx(conn, STORE, "readonly", (store) =>
+    requestToPromise<unknown>(store.get(RECORD_KEY_ECDH)),
+  );
+  if (rec && typeof rec === "object") {
+    const kp = (rec as { keyPair?: CryptoKeyPair }).keyPair;
+    if (kp) return kp;
+  }
+  const keyPair = await generateEcdhKeyPair();
+  await tx(conn, STORE, "readwrite", (store) =>
+    requestToPromise(store.put({ keyPair }, RECORD_KEY_ECDH)),
+  );
+  return keyPair;
+}
+
+// The account's ECDH public key (raw SEC1, 65 bytes) — handed to the device over
+// BLE at enroll so it can derive the shared E2E key.
+export async function exportAccountEcdhPublicRaw(): Promise<Uint8Array> {
+  const kp = await getAccountEcdhKeyPair();
+  return exportEcdhPublicRaw(kp.publicKey);
+}
+
+// The raw ECDH shared secret (32-byte X) between this account and a device's
+// ECDH public key. The E2E AES key is HKDF'd from this by the remote-session
+// layer (which owns the protocol's salt/info); the account private key never
+// leaves here.
+export async function deriveAccountSharedSecret(
+  deviceEcdhPubRaw: Uint8Array,
+): Promise<Uint8Array> {
+  const kp = await getAccountEcdhKeyPair();
+  const pub = await importEcdhPublicRaw(deviceEcdhPubRaw);
+  return deriveEcdhSecret(kp.privateKey, pub);
 }
 
 // Sign an arbitrary challenge with the account's private key. Returns the raw

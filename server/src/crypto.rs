@@ -51,6 +51,52 @@ pub fn account_id_from_pubkey_b64(pubkey_b64: &str) -> Option<String> {
     Some(B64.encode(Sha256::digest(&raw)))
 }
 
+/// Domain separator for the device's enrollment co-signature (H1). The physical
+/// device signs this binding with its identity key to prove it consents to being
+/// enrolled to a specific account + rendezvous id, which defeats device squatting
+/// (an attacker who only knows the device's public key cannot produce it).
+pub const DOMAIN_DEVICE_ENROLL: &[u8] = b"landlink-relay/device-enroll/v1";
+
+/// The exact bytes a device signs to co-sign its enrollment. The device and this
+/// server build it identically from the base64url strings, newline-separated so
+/// the fields are unambiguous.
+pub fn device_enroll_binding(
+    account_pubkey_b64: &str,
+    device_pubkey_b64: &str,
+    rid: &str,
+) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(
+        DOMAIN_DEVICE_ENROLL.len()
+            + account_pubkey_b64.len()
+            + device_pubkey_b64.len()
+            + rid.len()
+            + 3,
+    );
+    msg.extend_from_slice(DOMAIN_DEVICE_ENROLL);
+    msg.push(b'\n');
+    msg.extend_from_slice(account_pubkey_b64.as_bytes());
+    msg.push(b'\n');
+    msg.extend_from_slice(device_pubkey_b64.as_bytes());
+    msg.push(b'\n');
+    msg.extend_from_slice(rid.as_bytes());
+    msg
+}
+
+/// Verify the device co-signed the enrollment binding (H1). `false` on a bad
+/// device pubkey or a signature that doesn't match the binding.
+pub fn verify_device_cosig(
+    device_pubkey_b64: &str,
+    account_pubkey_b64: &str,
+    rid: &str,
+    sig_b64: &str,
+) -> bool {
+    let Some(vk) = parse_pubkey_b64(device_pubkey_b64) else {
+        return false;
+    };
+    let msg = device_enroll_binding(account_pubkey_b64, device_pubkey_b64, rid);
+    verify_sig_b64(&vk, &msg, sig_b64)
+}
+
 /// First 8 hex chars of SHA-256(input) — for logs only, never a full key.
 pub fn short_hash(input: &str) -> String {
     let d = Sha256::digest(input.as_bytes());
@@ -219,5 +265,51 @@ mod tests {
         // account id derivation is stable and 43 base64url chars (SHA-256).
         let id = account_id_from_pubkey_b64(&pubkey_b64).unwrap();
         assert_eq!(id.len(), 43);
+    }
+
+    // H1: the device co-signature must bind exactly (account, device, rid), and
+    // only the device's own key can produce it (defeats squatting).
+    #[test]
+    fn device_cosig_binds_account_device_rid() {
+        use p256::ecdsa::signature::Signer as _;
+        use p256::ecdsa::{Signature, SigningKey};
+
+        let dsk = SigningKey::from_slice(&[9u8; 32]).unwrap();
+        let device_pk_b64 = B64.encode(dsk.verifying_key().to_encoded_point(false).as_bytes());
+        let account_pk_b64 = "BLaccountpubkeyb64";
+        let rid = "cnYtYWJjZGVm";
+
+        let msg = device_enroll_binding(account_pk_b64, &device_pk_b64, rid);
+        let sig: Signature = dsk.sign(&msg);
+        let sig_b64 = B64.encode(sig.to_bytes());
+
+        assert!(verify_device_cosig(
+            &device_pk_b64,
+            account_pk_b64,
+            rid,
+            &sig_b64
+        ));
+        // Any field change breaks the binding.
+        assert!(!verify_device_cosig(
+            &device_pk_b64,
+            "BLotheraccount",
+            rid,
+            &sig_b64
+        ));
+        assert!(!verify_device_cosig(
+            &device_pk_b64,
+            account_pk_b64,
+            "other-rid",
+            &sig_b64
+        ));
+        // A squatter holding the device pubkey but not its private key cannot sign.
+        let other = SigningKey::from_slice(&[11u8; 32]).unwrap();
+        let osig: Signature = other.sign(&msg);
+        assert!(!verify_device_cosig(
+            &device_pk_b64,
+            account_pk_b64,
+            rid,
+            &B64.encode(osig.to_bytes())
+        ));
     }
 }

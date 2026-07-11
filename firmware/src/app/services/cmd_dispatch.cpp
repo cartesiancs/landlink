@@ -73,13 +73,32 @@ bool handle_cmd(Opcode op, uint8_t seq,
     }
 
     case Opcode::REMOTE_GET_IDENTITY: {
-        uint8_t buf[128];
+        uint8_t buf[256];
         landlink::TlvBuilder b(buf, sizeof(buf));
         b.put(TlvTag::REMOTE_DEVICE_PUBKEY, features::remote::device_pubkey(),
               features::remote::device_pubkey_len());
         b.put(TlvTag::REMOTE_RENDEZVOUS_ID, features::remote::rendezvous_id_raw(),
               features::remote::rendezvous_id_raw_len());
+        b.put(TlvTag::REMOTE_DEVICE_ECDH_PUB, features::remote::device_ecdh_pubkey(),
+              features::remote::device_ecdh_pubkey_len());
         transport::ble::notify_evt(Opcode::REMOTE_IDENTITY_RESULT, seq, b.data(),
+                                   b.size());
+        return true;
+    }
+
+    case Opcode::REMOTE_COSIGN_ENROLL: {
+        // H1: co-sign the enrollment binding with the account pubkey the phone
+        // provides, proving this physical device consents to the enrollment.
+        landlink::Tlv acct;
+        if (!r.find(TlvTag::REMOTE_ACCOUNT_BIND, acct) || acct.len == 0) return false;
+        uint8_t sig[64];
+        if (!features::remote::sign_enroll_binding(acct.data, acct.len, sig)) {
+            return false;
+        }
+        uint8_t buf[80];
+        landlink::TlvBuilder b(buf, sizeof(buf));
+        b.put(TlvTag::REMOTE_ENROLL_SIG, sig, sizeof(sig));
+        transport::ble::notify_evt(Opcode::REMOTE_COSIGN_RESULT, seq, b.data(),
                                    b.size());
         return true;
     }
@@ -88,6 +107,12 @@ bool handle_cmd(Opcode op, uint8_t seq,
         char url[128] = { 0 };
         if (!get_tlv_str(r, TlvTag::REMOTE_SERVER_URL, url, sizeof(url))) {
             return false;
+        }
+        // H2: derive the E2E frame key from the account's ECDH public key before
+        // the relay comes online, so the very first frames are encrypted.
+        landlink::Tlv ecdh_tlv;
+        if (r.find(TlvTag::REMOTE_ACCOUNT_ECDH_PUB, ecdh_tlv)) {
+            features::remote::derive_e2e_key(ecdh_tlv.data, ecdh_tlv.len);
         }
         const uint8_t* bind_ptr = nullptr;
         size_t bind_len = 0;

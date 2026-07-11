@@ -2,8 +2,10 @@
 
 #include <Arduino.h>
 #include <WebSocketsClient.h>
+#include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <mbedtls/gcm.h>
 
 #include <cstdio>
 #include <cstring>
@@ -50,11 +52,56 @@ bool s_tls = false;
 char s_host[96] = {0};
 uint16_t s_port = 0;
 
+// Sized for the largest Landlink frame (4 + 240) plus the E2E overhead
+// (12 IV + 16 tag) plus the 2-byte envelope header.
 struct OutItem {
     uint16_t len;
-    uint8_t data[248];
+    uint8_t data[288];
 };
 QueueHandle_t s_queue = nullptr;
+
+// E2E (H2): AES-256-GCM seal/open of a relay frame. Layout of the sealed body is
+// iv(12) || ciphertext || tag(16); the relay channel is bound in as AAD so a
+// frame can't be replayed on another channel. Returns the output length, or 0 on
+// failure (no key yet / overflow / bad tag). Applied only on the relay path.
+size_t frame_seal(uint8_t channel, const uint8_t* pt, size_t pt_len, uint8_t* out,
+                  size_t out_cap) {
+    const uint8_t* key = e2e_key();
+    if (!key) return 0;
+    if (12 + pt_len + 16 > out_cap) return 0;
+    esp_fill_random(out, 12); // iv
+    mbedtls_gcm_context g;
+    mbedtls_gcm_init(&g);
+    size_t out_len = 0;
+    if (mbedtls_gcm_setkey(&g, MBEDTLS_CIPHER_ID_AES, key, 256) == 0) {
+        if (mbedtls_gcm_crypt_and_tag(&g, MBEDTLS_GCM_ENCRYPT, pt_len, out, 12,
+                                      &channel, 1, pt, out + 12, 16,
+                                      out + 12 + pt_len) == 0) {
+            out_len = 12 + pt_len + 16;
+        }
+    }
+    mbedtls_gcm_free(&g);
+    return out_len;
+}
+
+size_t frame_open(uint8_t channel, const uint8_t* ct, size_t ct_len, uint8_t* out,
+                  size_t out_cap) {
+    const uint8_t* key = e2e_key();
+    if (!key || ct_len < 12 + 16) return 0;
+    const size_t pt_len = ct_len - 12 - 16;
+    if (pt_len > out_cap) return 0;
+    mbedtls_gcm_context g;
+    mbedtls_gcm_init(&g);
+    size_t out_len = 0;
+    if (mbedtls_gcm_setkey(&g, MBEDTLS_CIPHER_ID_AES, key, 256) == 0) {
+        if (mbedtls_gcm_auth_decrypt(&g, pt_len, ct, 12, &channel, 1,
+                                     ct + ct_len - 16, 16, ct + 12, out) == 0) {
+            out_len = pt_len;
+        }
+    }
+    mbedtls_gcm_free(&g);
+    return out_len;
+}
 
 void set_state_and_notify(St s) {
     if (s_state == s) return;
@@ -69,12 +116,14 @@ void set_state_and_notify(St s) {
 // stamps the device's real rendezvous id, so we send an empty rid.
 void enqueue_out(uint8_t channel, const uint8_t* frame, size_t frame_len) {
     if (!s_queue) return;
-    if (2 + frame_len > sizeof(OutItem::data)) return;
     OutItem it;
     it.data[0] = channel;
     it.data[1] = 0;
-    std::memcpy(it.data + 2, frame, frame_len);
-    it.len = static_cast<uint16_t>(2 + frame_len);
+    // E2E-seal the frame (device -> account frames always carry a payload).
+    const size_t sealed =
+        frame_seal(channel, frame, frame_len, it.data + 2, sizeof(it.data) - 2);
+    if (sealed == 0) return; // no key or overflow -> drop
+    it.len = static_cast<uint16_t>(2 + sealed);
     (void)xQueueSend(s_queue, &it, 0); // drop if full (backpressure)
 }
 
@@ -156,8 +205,19 @@ void handle_bin(const uint8_t* data, size_t len) {
     const uint8_t channel = data[0];
     const uint8_t rid_len = data[1];
     if (len < static_cast<size_t>(2) + rid_len) return;
-    const uint8_t* frame = data + 2 + rid_len;
-    const size_t frame_len = len - 2 - rid_len;
+    const uint8_t* sealed = data + 2 + rid_len;
+    const size_t sealed_len = len - 2 - rid_len;
+
+    // E2E-open the frame (account -> device frames are sealed; the empty
+    // INFO_REQ carries no payload and is passed through).
+    uint8_t plain[288];
+    const uint8_t* frame = sealed;
+    size_t frame_len = sealed_len;
+    if (sealed_len > 0) {
+        frame_len = frame_open(channel, sealed, sealed_len, plain, sizeof(plain));
+        if (frame_len == 0) return; // bad tag / no key -> drop
+        frame = plain;
+    }
 
     if (channel == kChCmd) {
         if (frame_len < 4 || !s_dispatch) return;

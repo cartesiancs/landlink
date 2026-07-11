@@ -12,3 +12,7 @@ export {
 } from "./model/store";
 export { useAnonIdentity } from "./model/use-anon-identity";
 export { shortAccountId } from "./lib/encoding";
+export {
+  deriveAccountSharedSecret,
+  exportAccountEcdhPublicRaw,
+} from "./api/identity-store";

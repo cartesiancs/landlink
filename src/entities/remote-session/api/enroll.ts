@@ -12,6 +12,9 @@ export type EnrollDeviceInput = {
   signer: RelaySigner;
   devicePublicKey: Uint8Array;
   rendezvousId: string;
+  // H1: the device's signature over the enrollment binding, proving the physical
+  // device consents to being bound to this account + rid (defeats squatting).
+  deviceSig: Uint8Array;
 };
 
 async function fetchNonce(base: string, pubkey: string): Promise<Uint8Array> {
@@ -35,7 +38,7 @@ async function fetchNonce(base: string, pubkey: string): Promise<Uint8Array> {
 export async function enrollDevice(input: EnrollDeviceInput): Promise<void> {
   const base = relayHttpBase();
   if (!base) throw new Error("Relay is not configured.");
-  const { signer, devicePublicKey, rendezvousId } = input;
+  const { signer, devicePublicKey, rendezvousId, deviceSig } = input;
   const pubkey = bytesToBase64Url(signer.publicKeyRaw);
 
   const nonce = await fetchNonce(base, pubkey);
@@ -50,6 +53,7 @@ export async function enrollDevice(input: EnrollDeviceInput): Promise<void> {
       sig: bytesToBase64Url(sig),
       devicePubkey: bytesToBase64Url(devicePublicKey),
       rendezvousId,
+      deviceSig: bytesToBase64Url(deviceSig),
     }),
   });
   if (!res.ok) {

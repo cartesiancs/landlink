@@ -1,6 +1,10 @@
 import { Capacitor } from "@capacitor/core";
 
-import { getAnonSigner, loadAnonIdentity } from "@/entities/anon-identity";
+import {
+  deriveAccountSharedSecret,
+  getAnonSigner,
+  loadAnonIdentity,
+} from "@/entities/anon-identity";
 import {
   attachLandlinkClient,
   detachLandlinkClient,
@@ -16,6 +20,7 @@ import {
   type RegisteredDevice,
 } from "@/entities/registered-device";
 import {
+  createFrameCrypto,
   createRemoteTransport,
   ensureRelaySession,
 } from "@/entities/remote-session";
@@ -27,6 +32,7 @@ import {
   reconnectLandlinkDevice,
 } from "@/shared/api";
 import { isRelayConfigured } from "@/shared/config";
+import { base64UrlToBytes } from "@/shared/lib";
 
 type Attempt = {
   promise: Promise<void>;
@@ -50,6 +56,9 @@ function isRemoteEligible(device: RegisteredDevice | null): boolean {
   return (
     device?.remoteEnrolled === true &&
     Boolean(device.rendezvousId) &&
+    // The device ECDH key is required to derive the E2E frame key (H2); without
+    // it we cannot open a secure relay link, so the device must be re-enrolled.
+    Boolean(device.deviceEcdhPub) &&
     device.protocol !== "meshtastic" &&
     isRelayConfigured()
   );
@@ -88,7 +97,7 @@ async function attachOverRemote(
   name: string,
   registered: RegisteredDevice | null,
 ): Promise<boolean> {
-  if (!isRemoteEligible(registered) || !registered?.rendezvousId) {
+  if (!isRemoteEligible(registered) || !registered?.rendezvousId || !registered.deviceEcdhPub) {
     return false;
   }
   try {
@@ -112,7 +121,18 @@ async function attachOverRemote(
       );
       return false;
     }
-    const transport = createRemoteTransport(session, deviceId, registered.rendezvousId);
+    // Derive the E2E frame key (H2) from our account ECDH key + the device's
+    // ECDH key captured at enroll, so relay frames are encrypted end-to-end.
+    const secret = await deriveAccountSharedSecret(
+      base64UrlToBytes(registered.deviceEcdhPub),
+    );
+    const frameCrypto = await createFrameCrypto(secret);
+    const transport = createRemoteTransport(
+      session,
+      deviceId,
+      registered.rendezvousId,
+      frameCrypto,
+    );
     await attachLandlinkClient(transport, name);
     return true;
   } catch (err) {

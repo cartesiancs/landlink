@@ -62,6 +62,9 @@ enum class TlvTag : uint8_t {
     REMOTE_RENDEZVOUS_ID = 0xd2,  // Opaque rendezvous id the relay routes frames by
     REMOTE_ACCOUNT_BIND = 0xd3,  // Account binding blob provisioned by the phone (server-verified)
     REMOTE_STATE = 0xd4,  // 0=off, 1=connecting, 2=online, 3=error
+    REMOTE_ENROLL_SIG = 0xd5,  // Device ECDSA P-256 signature (raw r||s, 64 B) over the enrollment binding
+    REMOTE_ACCOUNT_ECDH_PUB = 0xd6,  // Account ECDH P-256 public key (raw uncompressed, 65 B) for E2E key agreement
+    REMOTE_DEVICE_ECDH_PUB = 0xd7,  // Device ECDH P-256 public key (raw uncompressed, 65 B) for E2E key agreement
     ERR_CODE = 0xf0,
     ERR_CONTEXT = 0xf1,
 };

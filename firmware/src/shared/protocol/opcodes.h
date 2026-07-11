@@ -56,6 +56,8 @@ enum class Opcode : uint8_t {
     REMOTE_IDENTITY_RESULT = 0x81,
     REMOTE_SET_CONFIG = 0x82,
     REMOTE_STATUS = 0x83,
+    REMOTE_COSIGN_ENROLL = 0x84,
+    REMOTE_COSIGN_RESULT = 0x85,
     ERROR = 0x7f,
 };
 

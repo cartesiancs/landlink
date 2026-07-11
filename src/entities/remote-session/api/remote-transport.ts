@@ -5,27 +5,55 @@
 
 import type { LandlinkTransport } from "@/shared/api";
 
+import type { FrameCrypto } from "../lib/frame-crypto";
 import { RelayChannel } from "../lib/envelope";
 import type { RelaySession } from "./relay-client";
 
 const INFO_TIMEOUT_MS = 8_000;
 
+// E2E (H2): every app frame is AES-256-GCM sealed with `frameCrypto`. The relay
+// forwards only ciphertext. Empty control frames (DEVICE_ONLINE/OFFLINE and the
+// empty INFO_REQ) are never sealed, so both ends skip zero-length frames.
 export function createRemoteTransport(
   session: RelaySession,
   deviceId: string,
   rendezvousId: string,
+  frameCrypto: FrameCrypto,
 ): LandlinkTransport {
+  // Inbound decryption is async; chain it so frames reach the client in order.
+  let inbound: Promise<void> = Promise.resolve();
+  const onFrame = (
+    frame: Uint8Array,
+    channel: number,
+    cb: (frame: Uint8Array) => void,
+  ): void => {
+    if (frame.byteLength === 0) {
+      cb(frame);
+      return;
+    }
+    inbound = inbound.then(async () => {
+      try {
+        cb(await frameCrypto.open(frame, channel));
+      } catch (err) {
+        console.warn("[relay] frame decrypt failed", err);
+      }
+    });
+  };
+
   return {
     kind: "remote",
     deviceId,
-    sendCmd(frame) {
-      session.send(rendezvousId, RelayChannel.CMD, frame);
-      return Promise.resolve();
+    async sendCmd(frame) {
+      const sealed =
+        frame.byteLength === 0
+          ? frame
+          : await frameCrypto.seal(frame, RelayChannel.CMD);
+      session.send(rendezvousId, RelayChannel.CMD, sealed);
     },
     subscribeEvt(cb) {
       const unsub = session.onEnvelope((env) => {
         if (env.rendezvousId === rendezvousId && env.channel === RelayChannel.EVT) {
-          cb(env.frame);
+          onFrame(env.frame, RelayChannel.EVT, cb);
         }
       });
       return Promise.resolve(() => {
@@ -36,7 +64,7 @@ export function createRemoteTransport(
     subscribeState(cb) {
       const unsub = session.onEnvelope((env) => {
         if (env.rendezvousId === rendezvousId && env.channel === RelayChannel.STATE) {
-          cb(env.frame);
+          onFrame(env.frame, RelayChannel.STATE, cb);
         }
       });
       return Promise.resolve(() => {
@@ -61,9 +89,10 @@ export function createRemoteTransport(
           ) {
             clearTimeout(timer);
             cleanup();
-            resolve(env.frame);
+            frameCrypto.open(env.frame, RelayChannel.INFO_RESP).then(resolve, reject);
           }
         });
+        // INFO_REQ carries no payload, so it is sent unsealed (empty frame).
         session.send(rendezvousId, RelayChannel.INFO_REQ, new Uint8Array(0));
       });
     },
