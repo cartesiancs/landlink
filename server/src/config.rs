@@ -22,7 +22,10 @@ pub enum OriginPolicy {
 
 #[derive(Clone, Debug)]
 pub struct Limits {
-    /// Hard ceiling on concurrent connections (all states).
+    /// Hard ceiling on concurrent connections (all states). MEMORY-bound, not a
+    /// free ceiling: budget ~15k-40k connections per GB of RAM. The default suits
+    /// a large host; lower it on small boxes and pair with a container mem_limit /
+    /// systemd MemoryMax so a flood OOMs the service, not the host.
     pub max_connections: usize,
     /// Ceiling on concurrent connections that have not authenticated yet
     /// (slowloris guard). Much lower than `max_connections`.
@@ -62,13 +65,27 @@ impl Default for Limits {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub bind: SocketAddr,
     pub db_path: PathBuf,
     pub challenge_secret: [u8; 32],
     pub origins: OriginPolicy,
     pub limits: Limits,
+}
+
+// Manual Debug that redacts the HMAC secret, so an accidental `?config` / `dbg!`
+// can never leak the challenge key into logs.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("bind", &self.bind)
+            .field("db_path", &self.db_path)
+            .field("challenge_secret", &"[redacted]")
+            .field("origins", &self.origins)
+            .field("limits", &self.limits)
+            .finish()
+    }
 }
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::URL_SAFE_NO_PAD;

@@ -6,12 +6,17 @@
 # only the rightmost (Caddy-observed) entry for rate limiting.
 
 relay.example.com {
-	# Host/systemd deploy: relay on loopback. For docker-compose, use `relay:8080`.
-	reverse_proxy 127.0.0.1:8080
+	# Keep /metrics off the public internet by default — it exposes connection,
+	# enrollment, and auth-failure counts. Scrape it locally on 127.0.0.1:8080
+	# instead. Remove this handle only if you front /metrics with its own auth.
+	@metrics path /metrics
+	handle @metrics {
+		respond 403
+	}
 
-	# Optional: keep /metrics off the public internet (scrape it locally).
-	# @metrics path /metrics
-	# handle @metrics {
-	# 	respond 403
-	# }
+	# Everything else: proxy to the relay.
+	# Host/systemd deploy: relay on loopback. For docker-compose, use `relay:8080`.
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
 }

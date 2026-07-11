@@ -68,10 +68,11 @@ pub fn decode_nonce(nonce_b64: &str) -> Option<Vec<u8>> {
 
 /// Issue a stateless enroll challenge bound to `pubkey_b64` and the current time.
 /// nonce = ts(8) ‖ rand(16) ‖ HMAC-SHA256(secret, domain‖pubkey‖ts‖rand)[..16].
-pub fn issue_challenge(secret: &[u8; 32], pubkey_b64: &str, now_secs: u64) -> String {
+/// Returns `None` only if the platform CSPRNG is unavailable (caller → 500),
+/// rather than panicking a remote-reachable request task.
+pub fn issue_challenge(secret: &[u8; 32], pubkey_b64: &str, now_secs: u64) -> Option<String> {
     let mut rand = [0u8; NONCE_RAND_LEN];
-    // getrandom only fails on a broken platform RNG; fall back is not meaningful.
-    getrandom::getrandom(&mut rand).expect("platform RNG unavailable");
+    getrandom::getrandom(&mut rand).ok()?;
     let ts = now_secs.to_be_bytes();
     let tag = challenge_tag(secret, pubkey_b64, &ts, &rand);
 
@@ -79,7 +80,7 @@ pub fn issue_challenge(secret: &[u8; 32], pubkey_b64: &str, now_secs: u64) -> St
     nonce.extend_from_slice(&ts);
     nonce.extend_from_slice(&rand);
     nonce.extend_from_slice(&tag[..NONCE_TAG_LEN]);
-    B64.encode(nonce)
+    Some(B64.encode(nonce))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -146,7 +147,7 @@ mod tests {
     #[test]
     fn challenge_valid_then_expired_then_wrong_key() {
         let now = 1_000_000u64;
-        let nonce = issue_challenge(&SECRET, PK, now);
+        let nonce = issue_challenge(&SECRET, PK, now).unwrap();
         assert_eq!(verify_challenge(&SECRET, PK, &nonce, now, 30), Ok(()));
         // still fresh a few seconds later
         assert_eq!(verify_challenge(&SECRET, PK, &nonce, now + 10, 30), Ok(()));

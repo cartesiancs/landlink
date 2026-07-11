@@ -136,8 +136,13 @@ pub async fn challenge(
             Json(json!({"error": "bad_pubkey"})),
         );
     }
-    let nonce = crypto::issue_challenge(&state.config.challenge_secret, &req.pubkey, now_secs());
-    (StatusCode::OK, Json(json!({ "nonce": nonce })))
+    match crypto::issue_challenge(&state.config.challenge_secret, &req.pubkey, now_secs()) {
+        Some(nonce) => (StatusCode::OK, Json(json!({ "nonce": nonce }))),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "internal"})),
+        ),
+    }
 }
 
 /// Shared account-auth check for enroll/unenroll: valid+fresh+unused challenge
@@ -159,15 +164,16 @@ async fn authenticate_account(
     )
     .map_err(|_| (StatusCode::UNAUTHORIZED, "bad_challenge"))?;
 
-    // Single-use: reject a replayed nonce.
-    if !state.consume_nonce(nonce) {
-        return Err((StatusCode::UNAUTHORIZED, "bad_challenge"));
-    }
-
     let nonce_bytes =
         crypto::decode_nonce(nonce).ok_or((StatusCode::UNAUTHORIZED, "bad_challenge"))?;
     if !crypto::verify_sig_b64(&vk, &nonce_bytes, sig) {
         return Err((StatusCode::UNAUTHORIZED, "bad_signature"));
+    }
+
+    // Single-use: consume the nonce only AFTER the signature proves key
+    // ownership, so an unauthenticated caller cannot grow the dedupe set.
+    if !state.consume_nonce(nonce) {
+        return Err((StatusCode::UNAUTHORIZED, "bad_challenge"));
     }
 
     crypto::account_id_from_pubkey_b64(pubkey).ok_or((StatusCode::BAD_REQUEST, "bad_pubkey"))

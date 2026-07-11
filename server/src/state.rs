@@ -31,6 +31,33 @@ pub type Sender = mpsc::Sender<Outbound>;
 
 const NONCE_TTL: Duration = Duration::from_secs(45);
 const MAX_LIMITER_KEYS: usize = 200_000;
+/// Hard ceiling on the enroll-nonce dedupe set. A flood of freshly-issued
+/// challenges (all still within `NONCE_TTL`) must not grow it without bound, so
+/// once we hit this we evict the oldest entries. Sized to a few MB of short
+/// base64 strings.
+const MAX_NONCE_KEYS: usize = 262_144;
+
+/// Poison-tolerant lock: a lock is only poisoned if a thread panicked while
+/// holding it. Our critical sections are panic-free map ops, so recovering the
+/// guard is safe and keeps one connection's hypothetical panic from cascading
+/// into a whole-relay outage (which would defeat `panic = "unwind"`).
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Remove roughly the `count` oldest entries from a time-stamped set. Only runs
+/// when the nonce set hits its hard cap (i.e. under a flood), so an O(n log n)
+/// pass is acceptable; HashMap has no ordering to exploit cheaply.
+fn evict_oldest(set: &mut HashMap<String, Instant>, count: usize) {
+    if count >= set.len() {
+        set.clear();
+        return;
+    }
+    let mut times: Vec<Instant> = set.values().copied().collect();
+    times.sort_unstable();
+    let threshold = times[count];
+    set.retain(|_, t| *t >= threshold);
+}
 
 struct DeviceEntry {
     conn_id: ConnId,
@@ -134,7 +161,7 @@ impl AppState {
     /// Register an authenticated account connection. Returns false if the
     /// account is at its concurrent-connection cap (caller must reject).
     pub fn register_account(&self, account_id: &str, conn_id: ConnId, tx: Sender) -> bool {
-        let mut map = self.accounts.lock().unwrap();
+        let mut map = lock(&self.accounts);
         let conns = map.entry(account_id.to_string()).or_default();
         if conns.len() >= self.config.limits.max_conns_per_account {
             if conns.is_empty() {
@@ -147,7 +174,7 @@ impl AppState {
     }
 
     pub fn unregister_account(&self, account_id: &str, conn_id: ConnId) {
-        let mut map = self.accounts.lock().unwrap();
+        let mut map = lock(&self.accounts);
         if let Some(conns) = map.get_mut(account_id) {
             conns.remove(&conn_id);
             if conns.is_empty() {
@@ -160,7 +187,7 @@ impl AppState {
     /// (fan-out of device frames + control notifications). The conn id lets a
     /// caller evict a specific slow connection on backpressure.
     pub fn account_senders(&self, account_id: &str) -> Vec<(ConnId, Sender)> {
-        let map = self.accounts.lock().unwrap();
+        let map = lock(&self.accounts);
         map.get(account_id)
             .map(|conns| conns.iter().map(|(id, tx)| (*id, tx.clone())).collect())
             .unwrap_or_default()
@@ -177,7 +204,7 @@ impl AppState {
         conn_id: ConnId,
         tx: Sender,
     ) -> Option<Sender> {
-        let mut map = self.devices.lock().unwrap();
+        let mut map = lock(&self.devices);
         let per_account = map.entry(account_id.to_string()).or_default();
         let old = per_account.insert(rid.to_string(), DeviceEntry { conn_id, tx });
         old.map(|e| e.tx)
@@ -192,7 +219,7 @@ impl AppState {
         rid: &str,
         conn_id: ConnId,
     ) -> bool {
-        let mut map = self.devices.lock().unwrap();
+        let mut map = lock(&self.devices);
         let Some(per_account) = map.get_mut(account_id) else {
             return false;
         };
@@ -211,7 +238,7 @@ impl AppState {
     /// write timeout, forcing a reconnect + resync rather than a silent
     /// mid-stream drop.
     pub fn remove_device(&self, account_id: &str, rid: &str) {
-        let mut map = self.devices.lock().unwrap();
+        let mut map = lock(&self.devices);
         if let Some(per_account) = map.get_mut(account_id) {
             per_account.remove(rid);
             if per_account.is_empty() {
@@ -221,14 +248,14 @@ impl AppState {
     }
 
     pub fn device_sender(&self, account_id: &str, rid: &str) -> Option<Sender> {
-        let map = self.devices.lock().unwrap();
+        let map = lock(&self.devices);
         map.get(account_id)
             .and_then(|m| m.get(rid))
             .map(|e| e.tx.clone())
     }
 
     pub fn online_rids_for_account(&self, account_id: &str) -> Vec<String> {
-        let map = self.devices.lock().unwrap();
+        let map = lock(&self.devices);
         map.get(account_id)
             .map(|m| m.keys().cloned().collect())
             .unwrap_or_default()
@@ -240,9 +267,14 @@ impl AppState {
     /// already consumed (replay). Bounded by TTL sweep.
     pub fn consume_nonce(&self, nonce: &str) -> bool {
         let now = Instant::now();
-        let mut set = self.consumed_nonces.lock().unwrap();
+        let mut set = lock(&self.consumed_nonces);
         if set.len() > 4096 {
             set.retain(|_, t| now.saturating_duration_since(*t) < NONCE_TTL);
+        }
+        // Hard cap: if a flood keeps every entry within TTL so the sweep above
+        // reclaims nothing, evict the oldest entries so the set stays bounded.
+        if set.len() >= MAX_NONCE_KEYS {
+            evict_oldest(&mut set, MAX_NONCE_KEYS / 8);
         }
         if let Some(t) = set.get(nonce) {
             if now.saturating_duration_since(*t) < NONCE_TTL {
@@ -255,14 +287,14 @@ impl AppState {
 
     /// Ask every live connection to close (graceful shutdown). Best-effort.
     pub fn close_all(&self) {
-        let accounts = self.accounts.lock().unwrap();
+        let accounts = lock(&self.accounts);
         for conns in accounts.values() {
             for tx in conns.values() {
                 let _ = tx.try_send(Outbound::Close);
             }
         }
         drop(accounts);
-        let devices = self.devices.lock().unwrap();
+        let devices = lock(&self.devices);
         for per_account in devices.values() {
             for entry in per_account.values() {
                 let _ = entry.tx.try_send(Outbound::Close);
@@ -337,5 +369,32 @@ impl Drop for ConnGuard {
                 s.preauth_conns.fetch_sub(1, Ordering::AcqRel);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evict_oldest_drops_the_oldest_and_bounds_the_set() {
+        let mut set: HashMap<String, Instant> = HashMap::new();
+        let base = Instant::now();
+        for i in 0..100u64 {
+            set.insert(format!("n{i}"), base + Duration::from_millis(i));
+        }
+        evict_oldest(&mut set, 30);
+        assert!(set.len() <= 70, "expected the oldest ~30 to be evicted");
+        assert!(!set.contains_key("n0"), "oldest entry should be gone");
+        assert!(set.contains_key("n99"), "newest entry should remain");
+    }
+
+    #[test]
+    fn evict_oldest_clears_when_count_exceeds_len() {
+        let mut set: HashMap<String, Instant> = HashMap::new();
+        set.insert("a".into(), Instant::now());
+        set.insert("b".into(), Instant::now());
+        evict_oldest(&mut set, 10);
+        assert!(set.is_empty());
     }
 }

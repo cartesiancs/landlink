@@ -66,7 +66,10 @@ impl<K: Eq + Hash + Clone> KeyedRateLimiter<K> {
 
     /// Returns true if the request is allowed.
     pub fn check(&self, key: &K) -> bool {
-        let mut m = self.inner.lock().unwrap();
+        // Poison-tolerant: the only critical section is panic-free map ops, so
+        // recovering a poisoned guard keeps a hypothetical panic elsewhere from
+        // disabling rate limiting process-wide.
+        let mut m = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if !m.contains_key(key) && m.len() >= self.max_keys {
             let now = Instant::now();
             m.retain(|_, b| now.saturating_duration_since(b.last) < IDLE_EVICT);

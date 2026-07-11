@@ -16,8 +16,18 @@ services:
       RELAY_CHALLENGE_SECRET: ${RELAY_CHALLENGE_SECRET:-}
       # Comma-separated browser origins. Native apps need no entry.
       RELAY_ALLOWED_ORIGINS: ${RELAY_ALLOWED_ORIGINS:-}
+      # Connections are MEMORY-bound (~15k-40k per GB): keep this proportional to
+      # mem_limit below rather than at the 100k code default. Override as needed.
+      RELAY_MAX_CONNECTIONS: ${RELAY_MAX_CONNECTIONS:-20000}
     volumes:
       - relay-data:/data
+    # Bound the blast radius of a connection flood: cap memory and file
+    # descriptors. Keep mem_limit and RELAY_MAX_CONNECTIONS in step for your host.
+    mem_limit: 1g
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # No `ports:` — intentionally unreachable from the host.
 
   caddy:

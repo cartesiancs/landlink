@@ -21,6 +21,11 @@ RestartSec=2s
 # Sized to the concurrent-connection target (~one FD per socket + headroom).
 LimitNOFILE=200000
 
+# Bound memory so a connection flood can't take the host down (OOM the service
+# instead). Connections are memory-bound: budget ~15k-40k per GB and keep
+# RELAY_MAX_CONNECTIONS proportional. Tune both to your box.
+MemoryMax=2G
+
 # Hardening.
 NoNewPrivileges=yes
 ProtectSystem=strict
