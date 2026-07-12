@@ -54,9 +54,11 @@ fn decode_env(bytes: &[u8]) -> (u8, String, Vec<u8>) {
     (ch, rid, bytes[2 + rid_len..].to_vec())
 }
 
-async fn start_server() -> SocketAddr {
+/// Returns (http/ws addr, device-TCP addr), both served off the SAME AppState.
+async fn start_server() -> (SocketAddr, SocketAddr) {
     let config = Config {
         bind: "127.0.0.1:0".parse().unwrap(),
+        tcp_bind: "127.0.0.1:0".parse().unwrap(),
         db_path: temp_db_path(),
         challenge_secret: [0u8; 32],
         origins: OriginPolicy::Any,
@@ -64,7 +66,7 @@ async fn start_server() -> SocketAddr {
     };
     let db = Db::open(&config.db_path).unwrap();
     let state: Arc<AppState> = AppState::new(config, db);
-    let app = build_router(state);
+    let app = build_router(state.clone());
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -76,8 +78,16 @@ async fn start_server() -> SocketAddr {
         .await
         .unwrap();
     });
+
+    let tcp_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tcp_addr = tcp_listener.local_addr().unwrap();
+    let tcp_state = state.clone();
+    tokio::spawn(async move {
+        landlink_relay::tcp::serve_tcp(tcp_listener, tcp_state).await;
+    });
+
     tokio::time::sleep(Duration::from_millis(50)).await;
-    addr
+    (addr, tcp_addr)
 }
 
 fn temp_db_path() -> std::path::PathBuf {
@@ -189,7 +199,7 @@ async fn next_text(ws: &mut Ws) -> String {
 
 async fn next_binary(ws: &mut Ws) -> Option<Vec<u8>> {
     loop {
-        match tokio::time::timeout(Duration::from_millis(600), ws.next()).await {
+        match tokio::time::timeout(Duration::from_millis(1500), ws.next()).await {
             Ok(Some(Ok(Message::Binary(b)))) => return Some(b.to_vec()),
             Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
             Ok(Some(Ok(_))) => continue,
@@ -204,7 +214,7 @@ async fn next_binary(ws: &mut Ws) -> Option<Vec<u8>> {
 async fn end_to_end_routing_and_isolation() {
     use landlink_relay::envelope::channel;
 
-    let addr = start_server().await;
+    let (addr, _tcp) = start_server().await;
 
     let (acct_a, acct_a_pub) = keypair(1);
     let (dev_a, dev_a_pub) = keypair(2);
@@ -276,7 +286,7 @@ async fn end_to_end_routing_and_isolation() {
 // enroll it (the co-signature check rejects the forged binding).
 #[tokio::test]
 async fn enroll_rejects_forged_device_cosig() {
-    let addr = start_server().await;
+    let (addr, _tcp) = start_server().await;
     let (acct, acct_pub) = keypair(1);
     let (_dev, dev_pub) = keypair(2); // attacker knows dev_pub, not its key
     let (squatter, _) = keypair(9);
@@ -308,4 +318,90 @@ async fn enroll_rejects_forged_device_cosig() {
         serde_json::Value::Bool(true),
         "forged device co-sig must be rejected: {resp}"
     );
+}
+
+// --- raw-TCP device transport ----------------------------------------------
+
+fn tcp_frame(typ: u8, payload: &[u8]) -> Vec<u8> {
+    let len = 1 + payload.len();
+    let mut out = Vec::with_capacity(2 + len);
+    out.extend_from_slice(&(len as u16).to_be_bytes());
+    out.push(typ);
+    out.extend_from_slice(payload);
+    out
+}
+
+async fn read_tcp_frame(s: &mut TcpStream) -> (u8, Vec<u8>) {
+    let mut len_buf = [0u8; 2];
+    s.read_exact(&mut len_buf).await.unwrap();
+    let len = u16::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; len];
+    s.read_exact(&mut buf).await.unwrap();
+    let typ = buf[0];
+    (typ, buf.split_off(1))
+}
+
+// Connect a device over the raw-TCP transport: CHALLENGE -> AUTH -> READY.
+async fn tcp_device_connect(addr: SocketAddr, dev: &SigningKey) -> TcpStream {
+    let mut s = TcpStream::connect(addr).await.unwrap();
+    let (typ, nonce) = read_tcp_frame(&mut s).await;
+    assert_eq!(typ, 0x01, "expected CHALLENGE");
+    assert_eq!(nonce.len(), 32);
+
+    let sig: Signature = dev.sign(&nonce);
+    let pk = dev.verifying_key().to_encoded_point(false);
+    let mut auth = Vec::with_capacity(1 + 65 + 64);
+    auth.push(2u8); // role=device
+    auth.extend_from_slice(pk.as_bytes()); // 65
+    auth.extend_from_slice(&sig.to_bytes()); // 64
+    s.write_all(&tcp_frame(0x02, &auth)).await.unwrap();
+
+    let (typ, _) = read_tcp_frame(&mut s).await;
+    assert_eq!(typ, 0x03, "expected READY");
+    s
+}
+
+#[tokio::test]
+async fn tcp_device_routes_with_ws_account() {
+    use landlink_relay::envelope::channel;
+
+    let (http, tcp) = start_server().await;
+    let (acct, acct_pub) = keypair(1);
+    let (dev, dev_pub) = keypair(2);
+    enroll(http, &acct, &acct_pub, &dev, &dev_pub, "ridT").await;
+
+    let mut a = ws_connect(http, "account", &acct, &acct_pub).await;
+    let mut d = tcp_device_connect(tcp, &dev).await;
+
+    // Account learns the TCP device is online.
+    let online = next_binary(&mut a).await.expect("expected DEVICE_ONLINE");
+    let (ch, rid, _) = decode_env(&online);
+    assert_eq!(ch, channel::DEVICE_ONLINE);
+    assert_eq!(rid, "ridT");
+
+    // Account (WS) -> device (TCP): CMD arrives as an ENVELOPE frame.
+    a.send(Message::Binary(encode_env(
+        channel::CMD,
+        "ridT",
+        &[1, 2, 3],
+    )))
+    .await
+    .unwrap();
+    let (typ, payload) = read_tcp_frame(&mut d).await;
+    assert_eq!(typ, 0x10, "expected ENVELOPE");
+    let (ch, rid, frame) = decode_env(&payload);
+    assert_eq!(ch, channel::CMD);
+    assert_eq!(rid, "ridT");
+    assert_eq!(frame, vec![1, 2, 3]);
+
+    // Device (TCP) -> account (WS): server stamps the device's real rid even
+    // though the device sends an empty one.
+    let mut env = vec![channel::EVT, 0u8]; // [channel][ridLen=0]
+    env.extend_from_slice(&[9]);
+    d.write_all(&tcp_frame(0x10, &env)).await.unwrap();
+    let got = next_binary(&mut a).await.expect("account did not get EVT");
+    let (ch, rid, frame) = decode_env(&got);
+    assert_eq!(ch, channel::EVT);
+    assert_eq!(rid, "ridT");
+    assert_eq!(frame, vec![9]);
 }

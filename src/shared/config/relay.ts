@@ -7,9 +7,13 @@
 export type RelayConfig = {
   relayEnabled: boolean;
   relayUrl: string;
+  // TCP port devices dial (host derived from relayUrl). Constrained devices use
+  // a plain-TCP link (no TLS), separate from the account wss URL.
+  relayDevicePort: number;
 };
 
 const STORAGE_KEY = "vision.relay-config.v1";
+const DEFAULT_DEVICE_PORT = 9000;
 
 // The build-time env value is only a DEFAULT for the URL field; it never enables
 // the relay on its own.
@@ -18,6 +22,7 @@ const ENV_DEFAULT_URL = import.meta.env.VITE_LANDLINK_RELAY_URL?.trim() ?? "";
 const DEFAULT_CONFIG: RelayConfig = {
   relayEnabled: false,
   relayUrl: ENV_DEFAULT_URL,
+  relayDevicePort: DEFAULT_DEVICE_PORT,
 };
 
 let snapshot: RelayConfig | null = null;
@@ -39,9 +44,14 @@ function load(): RelayConfig {
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
       const p = parsed as Partial<RelayConfig>;
+      const port = p.relayDevicePort;
       return {
         relayEnabled: typeof p.relayEnabled === "boolean" ? p.relayEnabled : false,
         relayUrl: typeof p.relayUrl === "string" ? p.relayUrl : ENV_DEFAULT_URL,
+        relayDevicePort:
+          typeof port === "number" && port > 0 && port < 65536
+            ? port
+            : DEFAULT_DEVICE_PORT,
       };
     }
   } catch {
@@ -80,10 +90,12 @@ export function setRelayConfig(patch: Partial<RelayConfig>): void {
   const next: RelayConfig = {
     relayEnabled: patch.relayEnabled ?? current.relayEnabled,
     relayUrl: patch.relayUrl ?? current.relayUrl,
+    relayDevicePort: patch.relayDevicePort ?? current.relayDevicePort,
   };
   if (
     next.relayEnabled === current.relayEnabled &&
-    next.relayUrl === current.relayUrl
+    next.relayUrl === current.relayUrl &&
+    next.relayDevicePort === current.relayDevicePort
   ) {
     return; // no-op keeps the snapshot identity stable
   }
@@ -147,4 +159,18 @@ export function relayHttpBase(): string | null {
   const base = relayBaseUrl();
   if (!base) return null;
   return base.replace(/^ws/, "http");
+}
+
+// The device's plain-TCP endpoint `host:port` (host from relayUrl, port from
+// relayDevicePort), pushed to the device at enroll. Null when relay is off.
+export function relayDeviceEndpoint(): string | null {
+  if (!isRelayConfigured()) return null;
+  const cfg = ensureHydrated();
+  try {
+    const host = new URL(cfg.relayUrl).hostname;
+    if (!host) return null;
+    return `${host}:${cfg.relayDevicePort.toString()}`;
+  } catch {
+    return null;
+  }
 }

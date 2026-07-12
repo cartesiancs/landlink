@@ -119,9 +119,8 @@ constexpr const char* kTag = "tasks";
 }
 
 [[noreturn]] void relay_task(void*) {
-    // Owns the relay WebSocket client. Pumps the socket often (RX handling),
-    // manages connect/reconnect, and drains the outbound queue. Large stack: a
-    // TLS (wss) handshake is stack-hungry.
+    // Owns the raw-TCP relay client (no TLS). Pumps the socket (RX framing),
+    // manages connect/reconnect, and drains the outbound queue.
     for (;;) {
         features::remote::relay_loop();
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -176,7 +175,7 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(mesh_identity_task, "mt_id",     4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(wifi_task,       "wifi",        4096, nullptr, 2, nullptr, 0);
-    xTaskCreatePinnedToCore(relay_task,      "relay",      16384, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(relay_task,      "relay",      8192, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);
 }

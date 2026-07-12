@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     environment:
       RELAY_BIND: 0.0.0.0:8080
+      # Raw-TCP device link (no TLS; frames are E2E-encrypted). Published below.
+      RELAY_TCP_BIND: 0.0.0.0:9000
       RELAY_DB_PATH: /data/relay.db
       # Pin a shared secret so enroll nonces survive restarts (and match across
       # instances). Generate: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`
@@ -21,6 +23,10 @@ services:
       RELAY_MAX_CONNECTIONS: ${RELAY_MAX_CONNECTIONS:-20000}
     volumes:
       - relay-data:/data
+    # The WS/HTTP port (8080) stays private (only Caddy reaches it). Publish only
+    # the device raw-TCP port so ESP32s can dial it directly.
+    ports:
+      - "9000:9000"
     # Bound the blast radius of a connection flood: cap memory and file
     # descriptors. Keep mem_limit and RELAY_MAX_CONNECTIONS in step for your host.
     mem_limit: 1g
@@ -28,7 +34,6 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    # No `ports:` — intentionally unreachable from the host.
 
   caddy:
     image: caddy:2

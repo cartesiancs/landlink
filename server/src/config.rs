@@ -68,6 +68,9 @@ impl Default for Limits {
 #[derive(Clone)]
 pub struct Config {
     pub bind: SocketAddr,
+    /// Raw-TCP listener for constrained devices (ESP32) that can't afford TLS.
+    /// The account link stays on `bind` (WS); this is the device-only endpoint.
+    pub tcp_bind: SocketAddr,
     pub db_path: PathBuf,
     pub challenge_secret: [u8; 32],
     pub origins: OriginPolicy,
@@ -80,6 +83,7 @@ impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config")
             .field("bind", &self.bind)
+            .field("tcp_bind", &self.tcp_bind)
             .field("db_path", &self.db_path)
             .field("challenge_secret", &"[redacted]")
             .field("origins", &self.origins)
@@ -109,6 +113,7 @@ fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> Result<T, String> {
 impl Config {
     pub fn from_env() -> Result<Self, String> {
         let bind: SocketAddr = env_parse("RELAY_BIND", "127.0.0.1:8080".parse().unwrap())?;
+        let tcp_bind: SocketAddr = env_parse("RELAY_TCP_BIND", "0.0.0.0:9000".parse().unwrap())?;
         let db_path = PathBuf::from(env_opt("RELAY_DB_PATH").unwrap_or_else(|| "relay.db".into()));
 
         let challenge_secret = load_or_create_secret(&db_path)?;
@@ -176,6 +181,7 @@ impl Config {
 
         Ok(Self {
             bind,
+            tcp_bind,
             db_path,
             challenge_secret,
             origins,

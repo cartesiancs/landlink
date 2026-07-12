@@ -324,7 +324,7 @@ async fn run_device(mut socket: WebSocket, state: Arc<AppState>, conn_id: ConnId
     }
 }
 
-fn new_inbound_bucket(state: &AppState) -> TokenBucket {
+pub(crate) fn new_inbound_bucket(state: &AppState) -> TokenBucket {
     let rate = f64::from(state.config.limits.inbound_frame_rate_per_sec).max(1.0);
     TokenBucket::new(rate, rate)
 }
@@ -383,7 +383,7 @@ fn route_from_account(
 
 /// Device → account fan-out. The device's own rendezvous id is stamped
 /// server-side; any client-supplied rid in the envelope is ignored.
-fn route_from_device(state: &AppState, account_id: &str, rid: &str, data: &[u8]) {
+pub(crate) fn route_from_device(state: &AppState, account_id: &str, rid: &str, data: &[u8]) {
     let env = match envelope::decode(data) {
         Some(e) => e,
         None => {
@@ -411,7 +411,7 @@ fn route_from_device(state: &AppState, account_id: &str, rid: &str, data: &[u8])
     incr(&state.metrics.frames_routed_total);
 }
 
-fn notify_account(state: &AppState, account_id: &str, ch: u8, rid: &str) {
+pub(crate) fn notify_account(state: &AppState, account_id: &str, ch: u8, rid: &str) {
     let Some(env) = envelope::encode(ch, rid.as_bytes(), &[]) else {
         return;
     };

@@ -13,6 +13,7 @@ export {
   isRelayConfigured,
   isValidRelayUrl,
   relayBaseUrl,
+  relayDeviceEndpoint,
   relayHttpBase,
   relayWsUrl,
   setRelayConfig,

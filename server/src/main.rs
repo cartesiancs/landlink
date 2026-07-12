@@ -43,8 +43,16 @@ async fn main() {
     };
 
     let bind = config.bind;
+    let tcp_bind = config.tcp_bind;
     let state = AppState::new(config, db);
     let app = build_router(state.clone());
+
+    // Raw-TCP device listener (TLS-free) alongside the WS/HTTP server. Devices
+    // that can't afford TLS connect here; browsers/accounts stay on the WS port.
+    tokio::spawn(landlink_relay::tcp::run_tcp_listener(
+        state.clone(),
+        tcp_bind,
+    ));
 
     let listener = match tokio::net::TcpListener::bind(bind).await {
         Ok(l) => l,

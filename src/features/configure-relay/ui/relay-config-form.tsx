@@ -18,34 +18,42 @@ export function RelayConfigForm() {
   const cfg = useRelayConfig();
   const relay = useRelayStatus();
   const [draftUrl, setDraftUrl] = useState(cfg.relayUrl);
+  const [draftPort, setDraftPort] = useState(String(cfg.relayDevicePort));
 
   const trimmed = draftUrl.trim();
   const draftValid = isValidRelayUrl(trimmed);
+  const port = Number.parseInt(draftPort, 10);
+  const portValid = Number.isInteger(port) && port > 0 && port < 65536;
   const dirty =
-    trimmed.replace(/\/+$/, "") !== cfg.relayUrl.trim().replace(/\/+$/, "");
+    trimmed.replace(/\/+$/, "") !== cfg.relayUrl.trim().replace(/\/+$/, "") ||
+    port !== cfg.relayDevicePort;
 
   const onToggle = (enabled: boolean): void => {
     hapticTick();
     applyRelayConfig({ relayEnabled: enabled });
   };
 
-  const onSaveUrl = (): void => {
+  const onSave = (): void => {
     if (!draftValid) {
       toast.error("Enter a valid ws:// or wss:// relay URL.");
       return;
     }
+    if (!portValid) {
+      toast.error("Enter a valid device port (1-65535).");
+      return;
+    }
     hapticTick();
-    applyRelayConfig({ relayUrl: trimmed });
-    toast.success("Relay URL saved.");
+    applyRelayConfig({ relayUrl: trimmed, relayDevicePort: port });
+    toast.success("Relay settings saved.");
   };
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm leading-relaxed text-muted-foreground">
-        Remote relay lets you reach your devices over the internet when Bluetooth
-        is out of range. It is off by default. Turn it on and set your relay
-        server to use it. Messages are end-to-end encrypted, so the relay only
-        forwards ciphertext.
+        Remote relay lets you reach your devices over the internet when
+        Bluetooth is out of range. It is off by default. Turn it on and set your
+        relay server to use it. Messages are end-to-end encrypted, so the relay
+        only forwards ciphertext.
       </p>
 
       <label className="flex items-center justify-between rounded-md border border-border px-4 py-3">
@@ -61,30 +69,49 @@ export function RelayConfigForm() {
       {cfg.relayEnabled ? (
         <div className="flex flex-col gap-2 rounded-md border border-border px-4 py-3">
           <label htmlFor="relay-url" className="text-sm font-medium">
-            Relay server URL
+            Relay server URL (account)
           </label>
-          <div className="flex gap-2">
-            <Input
-              id="relay-url"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder="wss://relay.example.com"
-              value={draftUrl}
-              onChange={(e) => {
-                setDraftUrl(e.target.value);
-              }}
-            />
-            <Button onClick={onSaveUrl} disabled={!draftValid || !dirty}>
-              Save
-            </Button>
-          </div>
+          <Input
+            id="relay-url"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="wss://relay.example.com"
+            value={draftUrl}
+            onChange={(e) => {
+              setDraftUrl(e.target.value);
+            }}
+          />
           {trimmed.length > 0 && !draftValid ? (
             <p className="text-xs text-destructive">
               Enter a full ws:// or wss:// URL.
             </p>
           ) : null}
+
+          <label
+            htmlFor="relay-device-port"
+            className="mt-1 text-sm font-medium"
+          >
+            Device port (TCP)
+          </label>
+          <div className="flex gap-2">
+            <Input
+              id="relay-device-port"
+              inputMode="numeric"
+              placeholder="9000"
+              value={draftPort}
+              onChange={(e) => {
+                setDraftPort(e.target.value);
+              }}
+            />
+            <Button
+              onClick={onSave}
+              disabled={!draftValid || !portValid || !dirty}
+            >
+              Save
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
             Relay: {RELAY_LABEL[relay.status] ?? relay.status}
             {relay.error ? ` (${relay.error})` : ""}

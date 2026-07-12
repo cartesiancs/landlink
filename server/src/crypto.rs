@@ -51,6 +51,25 @@ pub fn account_id_from_pubkey_b64(pubkey_b64: &str) -> Option<String> {
     Some(B64.encode(Sha256::digest(&raw)))
 }
 
+/// Parse a raw SEC1 uncompressed public key (65 bytes). The raw-TCP device
+/// handshake sends bytes rather than base64url.
+pub fn parse_pubkey_raw(raw: &[u8]) -> Option<VerifyingKey> {
+    VerifyingKey::from_sec1_bytes(raw).ok()
+}
+
+/// Verify a raw 64-byte IEEE-P1363 signature over `msg` (raw-TCP handshake).
+pub fn verify_sig_raw(vk: &VerifyingKey, msg: &[u8], sig_raw: &[u8]) -> bool {
+    match Signature::from_slice(sig_raw) {
+        Ok(sig) => vk.verify(msg, &sig).is_ok(),
+        Err(_) => false,
+    }
+}
+
+/// base64url of a raw public key — the string devices are stored/looked up by.
+pub fn pubkey_raw_to_b64(raw: &[u8]) -> String {
+    B64.encode(raw)
+}
+
 /// Domain separator for the device's enrollment co-signature (H1). The physical
 /// device signs this binding with its identity key to prove it consents to being
 /// enrolled to a specific account + rendezvous id, which defeats device squatting

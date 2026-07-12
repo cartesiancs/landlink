@@ -5,6 +5,7 @@ import {
   getRelayConfig,
   isRelayConfigured,
   isValidRelayUrl,
+  relayDeviceEndpoint,
   relayHttpBase,
   relayWsUrl,
   setRelayConfig,
@@ -38,6 +39,14 @@ describe("relay config store", () => {
     setRelayConfig({ relayEnabled: true, relayUrl: "ws://192.168.0.9:8080/" });
     expect(relayWsUrl()).toBe("ws://192.168.0.9:8080/v1/relay");
     expect(relayHttpBase()).toBe("http://192.168.0.9:8080");
+  });
+
+  it("derives the device TCP endpoint from the host + device port", () => {
+    expect(relayDeviceEndpoint()).toBeNull(); // disabled
+    setRelayConfig({ relayEnabled: true, relayUrl: "wss://relay.example.com" });
+    expect(relayDeviceEndpoint()).toBe("relay.example.com:9000");
+    setRelayConfig({ relayDevicePort: 9443 });
+    expect(relayDeviceEndpoint()).toBe("relay.example.com:9443");
   });
 
   it("validates protocols", () => {

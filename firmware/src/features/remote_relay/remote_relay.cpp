@@ -1,13 +1,12 @@
 #include "features/remote_relay/remote_relay.h"
 
 #include <Arduino.h>
-#include <WebSocketsClient.h>
+#include <WiFi.h>
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <mbedtls/gcm.h>
 
-#include <cstdio>
 #include <cstring>
 
 #include "features/remote_relay/remote_identity.h"
@@ -15,7 +14,6 @@
 #include "hal/storage/storage.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
-#include "shared/util/base64url.h"
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
@@ -41,16 +39,30 @@ constexpr uint8_t kChInfoResp = 0x05; // device -> account
 enum class St : uint8_t { Off = 0, Connecting = 1, Online = 2, Error = 3 };
 
 St s_state = St::Off;
-WebSocketsClient s_ws;
-bool s_ws_started = false;
+WiFiClient s_tcp;
+bool s_connected = false; // TCP connected (handshake may still be in progress)
 CmdDispatch s_dispatch = nullptr;
 
 char s_url[128] = {0};
 bool s_have_config = false;
 
-bool s_tls = false;
 char s_host[96] = {0};
 uint16_t s_port = 0;
+uint32_t s_next_connect_ms = 0; // reconnect backoff gate
+
+// Frame types (mirror server/src/tcp.rs).
+constexpr uint8_t kTChallenge = 0x01;
+constexpr uint8_t kTAuth = 0x02;
+constexpr uint8_t kTReady = 0x03;
+constexpr uint8_t kTError = 0x04;
+constexpr uint8_t kTEnvelope = 0x10;
+constexpr uint8_t kTPing = 0x11;
+constexpr uint8_t kTPong = 0x12;
+
+// Inbound frame reassembly for the [u16 len][u8 type][payload] stream.
+uint8_t s_rx[512];
+uint16_t s_rx_len = 0; // 0 = awaiting the 2-byte length; else the full frame length
+uint16_t s_rx_have = 0;
 
 // Sized for the largest Landlink frame (4 + 240) plus the E2E overhead
 // (12 IV + 16 tag) plus the 2-byte envelope header.
@@ -149,55 +161,31 @@ void on_state(landlink::proto::FsmState st, uint8_t flags) {
     enqueue_out(kChState, sb, sizeof(sb));
 }
 
-bool extract_field(const char* json, const char* key, char* out, size_t cap) {
-    char pat[24];
-    std::snprintf(pat, sizeof(pat), "\"%s\":\"", key);
-    const char* p = std::strstr(json, pat);
-    if (!p) return false;
-    p += std::strlen(pat);
-    size_t i = 0;
-    while (*p && *p != '"' && i + 1 < cap) out[i++] = *p++;
-    out[i] = '\0';
-    return *p == '"';
+// Write one [u16 len BE][u8 type][payload] frame to the TCP socket.
+bool write_frame(uint8_t type, const uint8_t* payload, size_t len) {
+    if (!s_connected) return false;
+    const uint16_t fl = static_cast<uint16_t>(1 + len);
+    const uint8_t hdr[3] = {static_cast<uint8_t>(fl >> 8),
+                            static_cast<uint8_t>(fl & 0xff), type};
+    if (s_tcp.write(hdr, sizeof(hdr)) != sizeof(hdr)) return false;
+    if (len && s_tcp.write(payload, len) != len) return false;
+    return true;
 }
 
-void handle_text(const uint8_t* payload, size_t length) {
-    char txt[256];
-    const size_t m = length < sizeof(txt) - 1 ? length : sizeof(txt) - 1;
-    std::memcpy(txt, payload, m);
-    txt[m] = '\0';
-
-    if (std::strstr(txt, "\"challenge\"")) {
-        char nonce_b64[128];
-        if (!extract_field(txt, "nonce", nonce_b64, sizeof(nonce_b64))) return;
-        uint8_t nonce[96];
-        const size_t nl = util::b64url::decode(nonce_b64, std::strlen(nonce_b64),
-                                               nonce, sizeof(nonce));
-        if (nl == 0) return;
-        uint8_t sig[64];
-        if (!sign(nonce, nl, sig)) {
-            set_state_and_notify(St::Error);
-            return;
-        }
-        char pub_b64[128];
-        char sig_b64[128];
-        util::b64url::encode(device_pubkey(), device_pubkey_len(), pub_b64,
-                             sizeof(pub_b64));
-        util::b64url::encode(sig, sizeof(sig), sig_b64, sizeof(sig_b64));
-        char msg[320];
-        const int n = std::snprintf(
-            msg, sizeof(msg),
-            "{\"type\":\"auth\",\"role\":\"device\",\"pubkey\":\"%s\",\"sig\":\"%s\"}",
-            pub_b64, sig_b64);
-        if (n > 0) s_ws.sendTXT(reinterpret_cast<uint8_t*>(msg), static_cast<size_t>(n));
-        LL_LOG_I(kTag, "auth sent");
-    } else if (std::strstr(txt, "\"ready\"")) {
-        LL_LOG_I(kTag, "relay online");
-        set_state_and_notify(St::Online);
-    } else if (std::strstr(txt, "\"error\"")) {
-        LL_LOG_W(kTag, "relay rejected: %s", txt);
+// Respond to the server CHALLENGE: sign the 32-byte nonce with the device
+// identity key and send AUTH = role(1)=device | pubkey(65) | sig(64), raw bytes.
+void send_auth(const uint8_t* nonce, size_t nlen) {
+    uint8_t sig[64];
+    if (!sign(nonce, nlen, sig)) {
         set_state_and_notify(St::Error);
+        return;
     }
+    uint8_t auth[1 + 65 + 64];
+    auth[0] = 0x02; // role = device
+    std::memcpy(auth + 1, device_pubkey(), 65);
+    std::memcpy(auth + 66, sig, sizeof(sig));
+    write_frame(kTAuth, auth, sizeof(auth));
+    LL_LOG_I(kTag, "auth sent");
 }
 
 void handle_bin(const uint8_t* data, size_t len) {
@@ -247,56 +235,75 @@ void handle_bin(const uint8_t* data, size_t len) {
     // DEVICE_ONLINE/OFFLINE and unknown channels are ignored.
 }
 
-void on_ws_event(WStype_t type, uint8_t* payload, size_t length) {
+void handle_frame(uint8_t type, const uint8_t* payload, size_t len) {
     switch (type) {
-    case WStype_CONNECTED:
-        LL_LOG_I(kTag, "ws connected; awaiting challenge");
+    case kTChallenge:
+        send_auth(payload, len);
         break;
-    case WStype_DISCONNECTED:
-        LL_LOG_W(kTag, "ws disconnected");
-        if (s_queue) xQueueReset(s_queue);
-        set_state_and_notify(St::Connecting); // library will retry
+    case kTReady:
+        LL_LOG_I(kTag, "relay online");
+        set_state_and_notify(St::Online);
         break;
-    case WStype_TEXT:
-        handle_text(payload, length);
-        break;
-    case WStype_BIN:
-        handle_bin(payload, length);
-        break;
-    case WStype_ERROR:
+    case kTError:
+        LL_LOG_W(kTag, "relay rejected device");
         set_state_and_notify(St::Error);
         break;
+    case kTEnvelope:
+        handle_bin(payload, len);
+        break;
+    case kTPing:
+        write_frame(kTPong, nullptr, 0);
+        break;
+    case kTPong:
     default:
         break;
     }
 }
 
-bool parse_url(const char* url, bool& tls, char* host, size_t hostcap,
-               uint16_t& port) {
-    const char* p = url;
-    if (!std::strncmp(p, "wss://", 6)) {
-        tls = true;
-        p += 6;
-        port = 443;
-    } else if (!std::strncmp(p, "ws://", 5)) {
-        tls = false;
-        p += 5;
-        port = 80;
-    } else if (!std::strncmp(p, "https://", 8)) {
-        tls = true;
-        p += 8;
-        port = 443;
-    } else if (!std::strncmp(p, "http://", 7)) {
-        tls = false;
-        p += 7;
-        port = 80;
-    } else {
-        return false;
+// Drain readable bytes into complete frames and dispatch them. Handles partial
+// reads across calls via s_rx_len / s_rx_have.
+void pump_rx() {
+    while (s_tcp.available() > 0) {
+        if (s_rx_len == 0) {
+            if (s_tcp.available() < 2) break;
+            uint8_t lb[2];
+            s_tcp.read(lb, 2);
+            const uint16_t fl = (static_cast<uint16_t>(lb[0]) << 8) | lb[1];
+            if (fl == 0 || fl > sizeof(s_rx)) {
+                LL_LOG_W(kTag, "bad frame len %u", fl);
+                s_tcp.stop();
+                s_connected = false;
+                return;
+            }
+            s_rx_len = fl;
+            s_rx_have = 0;
+        }
+        const int avail = s_tcp.available();
+        if (avail <= 0) break;
+        const size_t want = static_cast<size_t>(s_rx_len - s_rx_have);
+        const size_t take =
+            (static_cast<size_t>(avail) < want) ? static_cast<size_t>(avail) : want;
+        const int n = s_tcp.read(s_rx + s_rx_have, take);
+        if (n <= 0) break;
+        s_rx_have = static_cast<uint16_t>(s_rx_have + n);
+        if (s_rx_have == s_rx_len) {
+            handle_frame(s_rx[0], s_rx + 1, static_cast<size_t>(s_rx_len - 1));
+            s_rx_len = 0;
+            s_rx_have = 0;
+        }
     }
+}
+
+// Parse `host:port` (an optional scheme prefix is tolerated and ignored). The
+// device link is plain TCP with no TLS, so there is no ws/wss distinction.
+bool parse_host_port(const char* url, char* host, size_t hostcap, uint16_t& port) {
+    const char* p = std::strstr(url, "://");
+    p = p ? p + 3 : url; // skip any scheme
     size_t i = 0;
     while (*p && *p != ':' && *p != '/' && i + 1 < hostcap) host[i++] = *p++;
     host[i] = '\0';
     if (i == 0) return false;
+    port = 9000; // default device port
     if (*p == ':') {
         ++p;
         uint32_t pt = 0;
@@ -306,27 +313,25 @@ bool parse_url(const char* url, bool& tls, char* host, size_t hostcap,
     return true;
 }
 
-void start_ws() {
-    if (!parse_url(s_url, s_tls, s_host, sizeof(s_host), s_port)) {
-        LL_LOG_E(kTag, "bad relay url: %s", s_url);
+// Open the plain-TCP device link. The server sends the CHALLENGE first, so we
+// just connect and let pump_rx() drive the handshake.
+void start_tcp() {
+    if (!parse_host_port(s_url, s_host, sizeof(s_host), s_port)) {
+        LL_LOG_E(kTag, "bad relay endpoint: %s", s_url);
         return;
     }
-    LL_LOG_I(kTag, "connecting %s:%u tls=%d path=/v1/relay", s_host, s_port,
-             s_tls ? 1 : 0);
+    LL_LOG_I(kTag, "connecting %s:%u (tcp)", s_host, s_port);
     set_state_and_notify(St::Connecting);
-    if (s_tls) {
-        // NOTE: no CA pinned. Device auth is by ECDSA signature and LoRa
-        // payloads are E2E-encrypted, so a MITM cannot read traffic; to also
-        // prevent an active MITM, pin the relay's CA here with
-        // s_ws.beginSslWithCA(host, port, "/v1/relay", <PEM>) instead.
-        s_ws.beginSSL(s_host, s_port, "/v1/relay");
+    s_rx_len = 0;
+    s_rx_have = 0;
+    if (s_tcp.connect(s_host, s_port)) {
+        s_tcp.setNoDelay(true);
+        s_connected = true;
+        LL_LOG_I(kTag, "tcp connected; awaiting challenge");
     } else {
-        s_ws.begin(s_host, s_port, "/v1/relay");
+        LL_LOG_W(kTag, "tcp connect failed");
+        s_connected = false;
     }
-    s_ws.onEvent(on_ws_event);
-    s_ws.setReconnectInterval(5000);
-    s_ws.enableHeartbeat(15000, 3000, 2);
-    s_ws_started = true;
 }
 } // namespace
 
@@ -364,25 +369,41 @@ void relay_set_config(const char* server_url, const uint8_t* account_bind,
     LL_LOG_I(kTag, "config set url=%s", s_url);
 
     // Restart the connection so the new endpoint takes effect immediately.
-    if (s_ws_started) {
-        s_ws.disconnect();
-        s_ws_started = false;
+    if (s_connected) {
+        s_tcp.stop();
+        s_connected = false;
         if (s_queue) xQueueReset(s_queue);
         set_state_and_notify(St::Off);
     }
+    s_next_connect_ms = 0; // reconnect promptly
 }
 
 void relay_loop() {
-    if (s_ws_started) s_ws.loop();
-
-    if (s_have_config && !s_ws_started && features::wifi::is_connected()) {
-        start_ws();
+    // Detect a dropped link.
+    if (s_connected && !s_tcp.connected()) {
+        LL_LOG_W(kTag, "tcp disconnected");
+        s_tcp.stop();
+        s_connected = false;
+        if (s_queue) xQueueReset(s_queue);
+        set_state_and_notify(St::Connecting);
+        s_next_connect_ms = millis() + 5000; // backoff before retry
     }
 
-    if (s_ws_started && s_state == St::Online && s_queue) {
+    // (Re)connect when configured + on Wi-Fi, rate-limited by the backoff gate.
+    if (s_have_config && !s_connected && features::wifi::is_connected() &&
+        static_cast<int32_t>(millis() - s_next_connect_ms) >= 0) {
+        start_tcp();
+        if (!s_connected) s_next_connect_ms = millis() + 5000;
+    }
+
+    // Read + dispatch inbound frames (handshake + relayed CMD/INFO_REQ).
+    if (s_connected) pump_rx();
+
+    // Drain outbound frames once the handshake is done.
+    if (s_connected && s_state == St::Online && s_queue) {
         OutItem it;
         while (xQueueReceive(s_queue, &it, 0) == pdTRUE) {
-            s_ws.sendBIN(it.data, it.len);
+            if (!write_frame(kTEnvelope, it.data, it.len)) break;
         }
     }
 }

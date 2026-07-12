@@ -10,6 +10,7 @@ pub mod envelope;
 pub mod http;
 pub mod limits;
 pub mod state;
+pub mod tcp;
 pub mod ws;
 
 use std::sync::Arc;
