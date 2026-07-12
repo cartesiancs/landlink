@@ -67,7 +67,10 @@ async fn main() {
     };
     let v: serde_json::Value = serde_json::from_str(&challenge).unwrap();
     let nonce = B64.decode(v["nonce"].as_str().unwrap()).unwrap();
-    let sig: Signature = sk.sign(&nonce);
+    // Sign the domain-separated auth message: DOMAIN_AUTH || nonce.
+    let mut auth_msg = b"landlink-relay/auth/v1".to_vec();
+    auth_msg.extend_from_slice(&nonce);
+    let sig: Signature = sk.sign(&auth_msg);
     let auth = serde_json::json!({
         "type": "auth", "role": "device", "pubkey": pubkey, "sig": B64.encode(sig.to_bytes()),
     });

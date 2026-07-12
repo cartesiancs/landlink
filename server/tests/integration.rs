@@ -37,6 +37,14 @@ fn sign_b64(sk: &SigningKey, msg: &[u8]) -> String {
     B64.encode(sig.to_bytes())
 }
 
+// The domain-separated connection-auth message: DOMAIN_AUTH || nonce.
+fn auth_message(nonce: &[u8]) -> Vec<u8> {
+    let mut m = Vec::new();
+    m.extend_from_slice(b"landlink-relay/auth/v1");
+    m.extend_from_slice(nonce);
+    m
+}
+
 fn encode_env(channel: u8, rid: &str, frame: &[u8]) -> Vec<u8> {
     let rid = rid.as_bytes();
     let mut out = Vec::with_capacity(2 + rid.len() + frame.len());
@@ -175,7 +183,7 @@ async fn ws_connect(addr: SocketAddr, role: &str, sk: &SigningKey, pubkey: &str)
     let v: serde_json::Value = serde_json::from_str(&challenge).unwrap();
     assert_eq!(v["type"], "challenge");
     let nonce = B64.decode(v["nonce"].as_str().unwrap()).unwrap();
-    let sig = sign_b64(sk, &nonce);
+    let sig = sign_b64(sk, &auth_message(&nonce));
     let auth = serde_json::json!({ "type": "auth", "role": role, "pubkey": pubkey, "sig": sig });
     ws.send(Message::Text(auth.to_string())).await.unwrap();
     let ready = next_text(&mut ws).await;
@@ -332,13 +340,18 @@ fn tcp_frame(typ: u8, payload: &[u8]) -> Vec<u8> {
 }
 
 async fn read_tcp_frame(s: &mut TcpStream) -> (u8, Vec<u8>) {
-    let mut len_buf = [0u8; 2];
-    s.read_exact(&mut len_buf).await.unwrap();
-    let len = u16::from_be_bytes(len_buf) as usize;
-    let mut buf = vec![0u8; len];
-    s.read_exact(&mut buf).await.unwrap();
-    let typ = buf[0];
-    (typ, buf.split_off(1))
+    loop {
+        let mut len_buf = [0u8; 2];
+        s.read_exact(&mut len_buf).await.unwrap();
+        let len = u16::from_be_bytes(len_buf) as usize;
+        let mut buf = vec![0u8; len];
+        s.read_exact(&mut buf).await.unwrap();
+        let typ = buf[0];
+        if typ == 0x11 || typ == 0x12 {
+            continue; // skip PING/PONG keepalives
+        }
+        return (typ, buf.split_off(1));
+    }
 }
 
 // Connect a device over the raw-TCP transport: CHALLENGE -> AUTH -> READY.
@@ -348,7 +361,7 @@ async fn tcp_device_connect(addr: SocketAddr, dev: &SigningKey) -> TcpStream {
     assert_eq!(typ, 0x01, "expected CHALLENGE");
     assert_eq!(nonce.len(), 32);
 
-    let sig: Signature = dev.sign(&nonce);
+    let sig: Signature = dev.sign(&auth_message(&nonce));
     let pk = dev.verifying_key().to_encoded_point(false);
     let mut auth = Vec::with_capacity(1 + 65 + 64);
     auth.push(2u8); // role=device

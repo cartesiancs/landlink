@@ -150,7 +150,7 @@ async fn handle(mut socket: WebSocket, state: Arc<AppState>) {
         send_error(&mut socket, "bad pubkey").await;
         return;
     };
-    if !crypto::verify_sig_b64(&vk, &nonce, &auth.sig) {
+    if !crypto::verify_auth_sig_b64(&vk, &nonce, &auth.sig) {
         incr(&state.metrics.auth_failures_total);
         send_error(&mut socket, "bad signature").await;
         return;

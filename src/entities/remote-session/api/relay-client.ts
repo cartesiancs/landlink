@@ -13,6 +13,12 @@
 import { relayWsUrl } from "@/shared/config";
 import { base64UrlToBytes, bytesToBase64Url } from "@/shared/lib";
 
+// Domain separator for the auth signature (must match the server's DOMAIN_AUTH).
+// We sign `AUTH_DOMAIN ‖ nonce`, never the raw nonce, so a captured auth
+// signature can never be a valid enroll/unenroll signature (defeats a
+// malicious relay using the challenge as a signing oracle).
+const AUTH_DOMAIN = new TextEncoder().encode("landlink-relay/auth/v1");
+
 import {
   decodeEnvelope,
   encodeEnvelope,
@@ -159,8 +165,11 @@ async function openSession(signer: RelaySigner): Promise<RelaySession> {
         }
         if (msg.type === "challenge" && typeof msg.nonce === "string") {
           const nonce = base64UrlToBytes(msg.nonce);
+          const authMsg = new Uint8Array(AUTH_DOMAIN.length + nonce.length);
+          authMsg.set(AUTH_DOMAIN, 0);
+          authMsg.set(nonce, AUTH_DOMAIN.length);
           void signer
-            .sign(nonce)
+            .sign(authMsg)
             .then((sig) => {
               ws.send(
                 JSON.stringify({

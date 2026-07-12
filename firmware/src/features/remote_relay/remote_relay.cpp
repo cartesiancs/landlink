@@ -41,6 +41,7 @@ enum class St : uint8_t { Off = 0, Connecting = 1, Online = 2, Error = 3 };
 St s_state = St::Off;
 WiFiClient s_tcp;
 bool s_connected = false; // TCP connected (handshake may still be in progress)
+bool s_auth_sent = false; // we have replied to the CHALLENGE (gates READY)
 CmdDispatch s_dispatch = nullptr;
 
 char s_url[128] = {0};
@@ -48,7 +49,8 @@ bool s_have_config = false;
 
 char s_host[96] = {0};
 uint16_t s_port = 0;
-uint32_t s_next_connect_ms = 0; // reconnect backoff gate
+uint32_t s_next_connect_ms = 0;    // reconnect backoff gate
+uint32_t s_handshake_deadline = 0; // drop if the handshake stalls
 
 // Frame types (mirror server/src/tcp.rs).
 constexpr uint8_t kTChallenge = 0x01;
@@ -59,8 +61,10 @@ constexpr uint8_t kTEnvelope = 0x10;
 constexpr uint8_t kTPing = 0x11;
 constexpr uint8_t kTPong = 0x12;
 
-// Inbound frame reassembly for the [u16 len][u8 type][payload] stream.
-uint8_t s_rx[512];
+// Inbound frame reassembly. Sized to hold the server's largest frame
+// (max_message_bytes 4096 + envelope/framing overhead) so a legit large inbound
+// frame is delivered rather than tearing down the link.
+uint8_t s_rx[4160];
 uint16_t s_rx_len = 0; // 0 = awaiting the 2-byte length; else the full frame length
 uint16_t s_rx_have = 0;
 
@@ -172,11 +176,20 @@ bool write_frame(uint8_t type, const uint8_t* payload, size_t len) {
     return true;
 }
 
-// Respond to the server CHALLENGE: sign the 32-byte nonce with the device
-// identity key and send AUTH = role(1)=device | pubkey(65) | sig(64), raw bytes.
+// Respond to the server CHALLENGE. Sign DOMAIN_AUTH || nonce (domain-separated
+// so this signature can NEVER be a valid enrollment signature — a hostile relay
+// / MITM must not be able to use the challenge as a signing oracle). The nonce
+// is always exactly 32 bytes; reject anything else.
 void send_auth(const uint8_t* nonce, size_t nlen) {
+    if (nlen != 32) return;
+    static const char kAuthDomain[] = "landlink-relay/auth/v1";
+    const size_t dl = sizeof(kAuthDomain) - 1;
+    uint8_t msg[64];
+    std::memcpy(msg, kAuthDomain, dl);
+    std::memcpy(msg + dl, nonce, nlen);
+
     uint8_t sig[64];
-    if (!sign(nonce, nlen, sig)) {
+    if (!sign(msg, dl + nlen, sig)) {
         set_state_and_notify(St::Error);
         return;
     }
@@ -185,6 +198,7 @@ void send_auth(const uint8_t* nonce, size_t nlen) {
     std::memcpy(auth + 1, device_pubkey(), 65);
     std::memcpy(auth + 66, sig, sizeof(sig));
     write_frame(kTAuth, auth, sizeof(auth));
+    s_auth_sent = true;
     LL_LOG_I(kTag, "auth sent");
 }
 
@@ -241,8 +255,12 @@ void handle_frame(uint8_t type, const uint8_t* payload, size_t len) {
         send_auth(payload, len);
         break;
     case kTReady:
-        LL_LOG_I(kTag, "relay online");
-        set_state_and_notify(St::Online);
+        // Only accept READY after we've actually authenticated, so a hostile
+        // relay can't skip the challenge and drive us "online".
+        if (s_auth_sent) {
+            LL_LOG_I(kTag, "relay online");
+            set_state_and_notify(St::Online);
+        }
         break;
     case kTError:
         LL_LOG_W(kTag, "relay rejected device");
@@ -324,9 +342,11 @@ void start_tcp() {
     set_state_and_notify(St::Connecting);
     s_rx_len = 0;
     s_rx_have = 0;
+    s_auth_sent = false;
     if (s_tcp.connect(s_host, s_port)) {
         s_tcp.setNoDelay(true);
         s_connected = true;
+        s_handshake_deadline = millis() + 10000; // 10s to reach Online
         LL_LOG_I(kTag, "tcp connected; awaiting challenge");
     } else {
         LL_LOG_W(kTag, "tcp connect failed");
@@ -379,9 +399,14 @@ void relay_set_config(const char* server_url, const uint8_t* account_bind,
 }
 
 void relay_loop() {
-    // Detect a dropped link.
-    if (s_connected && !s_tcp.connected()) {
-        LL_LOG_W(kTag, "tcp disconnected");
+    // Detect a dropped link, or a handshake that stalls (relay never sends
+    // CHALLENGE/READY) so we don't sit connected-but-not-online forever.
+    const bool handshake_stalled =
+        s_connected && s_state != St::Online &&
+        static_cast<int32_t>(millis() - s_handshake_deadline) >= 0;
+    if ((s_connected && !s_tcp.connected()) || handshake_stalled) {
+        if (handshake_stalled) LL_LOG_W(kTag, "relay handshake timed out");
+        else LL_LOG_W(kTag, "tcp disconnected");
         s_tcp.stop();
         s_connected = false;
         if (s_queue) xQueueReset(s_queue);

@@ -32,6 +32,32 @@ pub fn parse_pubkey_b64(pubkey_b64: &str) -> Option<VerifyingKey> {
     VerifyingKey::from_sec1_bytes(&raw).ok()
 }
 
+/// Domain separator for connection-auth signatures (WS account + TCP device).
+/// The signer signs `DOMAIN_AUTH ‖ nonce`, NOT the raw nonce, so an auth
+/// signature can never be a valid enrollment/unenrollment signature (those sign
+/// different, domain-tagged messages). Without this, a peer that chooses the
+/// challenge "nonce" (a malicious relay, or an MITM on the TLS-free device link)
+/// could turn the identity key into a signing oracle and forge enroll consent.
+pub const DOMAIN_AUTH: &[u8] = b"landlink-relay/auth/v1";
+
+/// The exact bytes a client/device signs to authenticate a connection.
+fn auth_message(nonce: &[u8]) -> Vec<u8> {
+    let mut m = Vec::with_capacity(DOMAIN_AUTH.len() + nonce.len());
+    m.extend_from_slice(DOMAIN_AUTH);
+    m.extend_from_slice(nonce);
+    m
+}
+
+/// Verify a connection-auth signature (base64url) over `DOMAIN_AUTH ‖ nonce`.
+pub fn verify_auth_sig_b64(vk: &VerifyingKey, nonce: &[u8], sig_b64: &str) -> bool {
+    verify_sig_b64(vk, &auth_message(nonce), sig_b64)
+}
+
+/// Verify a connection-auth signature (raw 64 bytes) over `DOMAIN_AUTH ‖ nonce`.
+pub fn verify_auth_sig_raw(vk: &VerifyingKey, nonce: &[u8], sig_raw: &[u8]) -> bool {
+    verify_sig_raw(vk, &auth_message(nonce), sig_raw)
+}
+
 /// Verify an ECDSA/SHA-256 signature (IEEE-P1363, 64 bytes, base64url) over
 /// `msg`. Does NOT enforce low-S normalization (WebCrypto emits non-normalized
 /// signatures; the default verifier accepts them).
@@ -329,6 +355,47 @@ mod tests {
             account_pk_b64,
             rid,
             &B64.encode(osig.to_bytes())
+        ));
+    }
+
+    // The auth signature is domain-separated: a raw-nonce signature and an
+    // enrollment-binding signature must both be REJECTED as auth signatures, so a
+    // challenge cannot be used as a signing oracle to forge enroll consent.
+    #[test]
+    fn auth_sig_is_domain_separated() {
+        use p256::ecdsa::signature::Signer as _;
+        use p256::ecdsa::{Signature, SigningKey};
+
+        let sk = SigningKey::from_slice(&[5u8; 32]).unwrap();
+        let pk_b64 = B64.encode(sk.verifying_key().to_encoded_point(false).as_bytes());
+        let vk = parse_pubkey_b64(&pk_b64).unwrap();
+        let nonce = [7u8; 32];
+
+        // Correct auth signature (over DOMAIN_AUTH ‖ nonce) verifies.
+        let mut auth_msg = DOMAIN_AUTH.to_vec();
+        auth_msg.extend_from_slice(&nonce);
+        let good: Signature = sk.sign(&auth_msg);
+        assert!(verify_auth_sig_b64(
+            &vk,
+            &nonce,
+            &B64.encode(good.to_bytes())
+        ));
+
+        // A signature over the RAW nonce (the old scheme / a naive oracle) fails.
+        let raw: Signature = sk.sign(&nonce);
+        assert!(!verify_auth_sig_b64(
+            &vk,
+            &nonce,
+            &B64.encode(raw.to_bytes())
+        ));
+
+        // An enrollment-binding signature cannot be replayed as an auth signature.
+        let binding = device_enroll_binding("acct", &pk_b64, "rid");
+        let enroll_sig: Signature = sk.sign(&binding);
+        assert!(!verify_auth_sig_b64(
+            &vk,
+            &nonce,
+            &B64.encode(enroll_sig.to_bytes())
         ));
     }
 }

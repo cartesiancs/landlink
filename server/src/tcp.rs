@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio::time::{interval, timeout};
+use tokio::time::{interval_at, timeout, Instant};
 
 use crate::crypto;
 use crate::envelope::channel;
@@ -156,7 +156,7 @@ async fn handle_device(mut stream: TcpStream, state: Arc<AppState>, peer: Socket
         incr(&state.metrics.auth_failures_total);
         return;
     };
-    if !crypto::verify_sig_raw(&vk, &nonce, sig_raw) {
+    if !crypto::verify_auth_sig_raw(&vk, &nonce, sig_raw) {
         incr(&state.metrics.auth_failures_total);
         return;
     }
@@ -194,7 +194,9 @@ async fn handle_device(mut stream: TcpStream, state: Arc<AppState>, peer: Socket
     // --- relay loop --------------------------------------------------------
     let (mut rd, mut wr) = stream.split();
     let mut inbound = new_inbound_bucket(&state);
-    let mut ping = interval(PING_INTERVAL);
+    // interval_at (not interval) so the FIRST tick is one interval out, avoiding
+    // a redundant PING immediately after the handshake.
+    let mut ping = interval_at(Instant::now() + PING_INTERVAL, PING_INTERVAL);
 
     loop {
         tokio::select! {
