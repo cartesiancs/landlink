@@ -18,6 +18,7 @@
 #include "app/services/tasks.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
+#include "features/peer_report/peer_report.h"
 #include "features/pki_identity/pki_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
 #include "features/remote_relay/remote_identity.h"
@@ -78,18 +79,10 @@ void emit_peer_found(uint32_t src,
         return;
     }
     uint8_t buf[32];
-    landlink::TlvBuilder b(buf, sizeof(buf));
-    b.put_u32(landlink::proto::TlvTag::NODE_ID, src);  // 4 LE bytes
-    if (pos != nullptr && pos->has_latitude && pos->has_longitude) {
-        b.put_i32(landlink::proto::TlvTag::LAT_E7, pos->latitude_i);
-        b.put_i32(landlink::proto::TlvTag::LON_E7, pos->longitude_i);
-        if (pos->has_altitude) {
-            b.put_u16(landlink::proto::TlvTag::ALT_M,
-                      static_cast<uint16_t>(pos->altitude));
-        }
-    }
+    const size_t n = landlink::features::peer_report::build_peer_found_tlvs(
+        src, pos, buf, sizeof(buf));
     landlink::transport::ble::notify_evt(landlink::proto::Opcode::LORA_PEER_FOUND,
-                                         0, b.data(), b.size());
+                                         0, buf, n);
 }
 
 // Meshtastic router sink. Dispatches by Data.portnum.
