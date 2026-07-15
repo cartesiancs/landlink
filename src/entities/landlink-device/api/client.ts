@@ -351,16 +351,8 @@ export async function attachLandlinkClient(
     }
 
     setConnected();
-    // Pin firmware to Meshtastic-compatible mode. Landlink-native wire
-    // protocol is deprecated — every connection must run on the LongFast
-    // modulation so traffic is interoperable with stock Meshtastic nodes.
-    try {
-      await sendLandlinkCommand(Opcode.RADIO_SET_PROTOCOL, [
-        { tag: TlvTag.PROTOCOL, value: Uint8Array.of(1) },
-      ]);
-    } catch (err) {
-      console.warn("[landlink] RADIO_SET_PROTOCOL failed", err);
-    }
+    // The firmware speaks Meshtastic (LongFast) unconditionally now, so there
+    // is no radio-protocol mode to pin on connect.
     try {
       await sendLandlinkCommand(Opcode.RADIO_GET_REGION);
     } catch (err) {
@@ -396,7 +388,7 @@ export async function detachLandlinkClient(_deviceId: string): Promise<void> {
 // Web Bluetooth serializes GATT ops per-device but throws synchronously when
 // a second op starts before the first completes ("GATT operation already in
 // progress"). When the device first connects we have multiple callers
-// queuing writes back-to-back (RADIO_SET_PROTOCOL from attachLandlinkClient,
+// queuing writes back-to-back (RADIO_GET_REGION from attachLandlinkClient,
 // CHANNEL_LIST from useSyncDeviceChannels, future channel reads), so we
 // serialize at this layer via a per-process chain rather than asking each
 // caller to coordinate. A single FIFO is fine because we only ever talk to

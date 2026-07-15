@@ -1,8 +1,7 @@
 #pragma once
 
-// Meshtastic-compatible managed-flooding router. Mirrors the API of
-// landlink::mesh::Router so that the protocol abstraction layer can swap
-// between the two at runtime.
+// Meshtastic-compatible managed-flooding router. This is the sole over-the-air
+// router — the firmware speaks Meshtastic unconditionally.
 //
 // On RX:
 //   * unpack 16B header

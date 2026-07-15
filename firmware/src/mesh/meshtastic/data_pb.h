@@ -100,4 +100,18 @@ size_t encode_position(int32_t latitude_i, int32_t longitude_i,
                        uint32_t location_source,
                        uint8_t* out, size_t out_cap);
 
+// Decoded Position message (subset). latitude_i / longitude_i are degrees*1e7.
+struct PositionMessage {
+    int32_t latitude_i   = 0;
+    int32_t longitude_i  = 0;
+    int32_t altitude     = 0;
+    bool    has_latitude  = false;
+    bool    has_longitude = false;
+    bool    has_altitude  = false;
+};
+
+// Decode a Position protobuf carried in a POSITION_APP Data.payload. Returns
+// false on malformed input. Unknown fields are skipped.
+bool decode_position(const uint8_t* buf, size_t buf_len, PositionMessage& out);
+
 } // namespace landlink::mesh::meshtastic

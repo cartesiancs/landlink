@@ -16,7 +16,6 @@
 #include "app/fsm/fsm.h"
 #include "app/services/cmd_dispatch.h"
 #include "app/services/tasks.h"
-#include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/pki_identity/pki_identity.h"
@@ -30,30 +29,21 @@
 #include "hal/pmu/pmu.h"
 #include "hal/storage/storage.h"
 #include "mesh/channel/registry.h"
-#include "mesh/frame/frame.h"
 #include "mesh/meshtastic/data_pb.h"
 #include "mesh/meshtastic/frame.h"
 #include "mesh/protocol/protocol.h"
-#include "mesh/router/router.h"
 #include "shared/config/build_info.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
 #include "transport/ble/gatt_server.h"
+#include "transport/lora/mac.h"
 #include "transport/lora/priority.h"
 #include "transport/lora/sx1262_driver.h"
 
-namespace landlink::app::services {
-landlink::mesh::Router g_router;
-}
-
 namespace {
 constexpr const char* kTag = "main";
-
-// Captured at setup() time so the landlink_payload_sink can filter self-loops
-// (broadcasts that the radio overhears from itself via the mesh repeater).
-uint32_t g_self_node_id = 0;
 
 uint32_t load_or_create_salt(uint8_t out[8]) {
     size_t len = 8;
@@ -77,56 +67,29 @@ landlink::transport::lora::Role load_role() {
     return static_cast<landlink::transport::lora::Role>(r);
 }
 
-// Mesh router decrypted-payload sink: read the KIND TLV and dispatch to the
-// matching feature handler. Without this hook, MESH_RECV BLE events never fire.
-//
-// `duplicate` is true when the router has already seen (src, pkt_id). For
-// CHAT_TEXT we still dispatch (mesh_chat re-ACKs duplicates so a sender whose
-// ACK was lost can recover); for all other kinds we drop duplicates.
-void landlink_payload_sink(const landlink::mesh::Header& h,
-                           uint8_t channel_index,
-                           const uint8_t* payload, size_t payload_len,
-                           bool duplicate) {
-    landlink::TlvReader r(payload, payload_len);
-    landlink::Tlv kind;
-    if (!r.find(landlink::proto::TlvTag::KIND, kind) || kind.len != 1) {
-        LL_LOG_W(kTag, "rx sink: missing KIND src=%08x",
-                 static_cast<unsigned>(h.src));
+// Surface a heard mesh peer to the connected host so it can populate its node
+// list + map. Sourced from Meshtastic NodeInfo (identity only) and Position
+// (adds GPS). Reuses the LORA_PEER_FOUND host event + TLV shape the app's peer
+// parser already understands, so no client-side wire change is needed.
+void emit_peer_found(uint32_t src,
+                     const landlink::mesh::meshtastic::PositionMessage* pos) {
+    if (src == 0 ||
+        src == landlink::mesh::protocol::meshtastic_router().self_id()) {
         return;
     }
-    LL_LOG_I(kTag, "rx sink: ch=%u src=%08x kind=0x%02x len=%u dup=%d",
-             static_cast<unsigned>(channel_index),
-             static_cast<unsigned>(h.src),
-             static_cast<unsigned>(kind.data[0]),
-             static_cast<unsigned>(payload_len),
-             duplicate ? 1 : 0);
-
-    // Drop self-loops (own broadcasts received back via mesh repeater) to
-    // avoid sending an ACK to ourselves.
-    if (h.src == g_self_node_id) {
-        return;
-    }
-
-    switch (kind.data[0]) {
-    case 0x01:  // MeshKind::CHAT_TEXT
-        landlink::features::mesh_chat::on_chat(h, channel_index,
-                                               payload, payload_len, duplicate);
-        break;
-    case 0x04:  // MeshKind::ACK
-        if (!duplicate) {
-            landlink::features::mesh_chat::on_ack(h, channel_index,
-                                                  payload, payload_len);
+    uint8_t buf[32];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put_u32(landlink::proto::TlvTag::NODE_ID, src);  // 4 LE bytes
+    if (pos != nullptr && pos->has_latitude && pos->has_longitude) {
+        b.put_i32(landlink::proto::TlvTag::LAT_E7, pos->latitude_i);
+        b.put_i32(landlink::proto::TlvTag::LON_E7, pos->longitude_i);
+        if (pos->has_altitude) {
+            b.put_u16(landlink::proto::TlvTag::ALT_M,
+                      static_cast<uint16_t>(pos->altitude));
         }
-        break;
-    case 0x05:  // MeshKind::BEACON
-        if (!duplicate) {
-            landlink::features::lora_pair::on_beacon_rx(h.src,
-                                                        payload, payload_len);
-        }
-        break;
-    default:
-        break;
     }
+    landlink::transport::ble::notify_evt(landlink::proto::Opcode::LORA_PEER_FOUND,
+                                         0, b.data(), b.size());
 }
 
 // Meshtastic router sink. Dispatches by Data.portnum.
@@ -177,6 +140,15 @@ void meshtastic_payload_sink(uint8_t channel_index,
         if (data.has_want_response && data.want_response && h.src != 0) {
             (void)landlink::features::mesh_identity::send_nodeinfo_to(h.src);
         }
+        // Surface the peer's identity to the host so silent nodes (heard via
+        // NodeInfo but not chatting) still appear in the node list.
+        emit_peer_found(h.src, nullptr);
+    } else if (data.portnum == kPortnumPositionApp && data.payload != nullptr) {
+        // Surface the peer's GPS so the host can plot it on the map.
+        PositionMessage pos;
+        if (decode_position(data.payload, data.payload_len, pos)) {
+            emit_peer_found(h.src, &pos);
+        }
     }
 }
 }
@@ -203,7 +175,6 @@ void setup() {
 
     uint8_t salt[8];
     const uint32_t node_id = load_or_create_salt(salt);
-    g_self_node_id = node_id;
     LL_LOG_I(kTag, "node_id=%08x", static_cast<unsigned>(node_id));
 
     landlink::hal::gps::init();
@@ -233,33 +204,20 @@ void setup() {
         LL_LOG_E(kTag, "channel registry init failed");
     }
 
-    uint16_t mesh_id = 0;
-    {
-        uint8_t raw[2] = { 0, 0 };
-        size_t  n      = 2;
-        landlink::hal::storage::get_blob("ll.net", "mesh_id", raw, n);
-        mesh_id = static_cast<uint16_t>(raw[0] | (static_cast<uint16_t>(raw[1]) << 8));
-    }
-
-    landlink::mesh::RouterConfig cfg;
-    cfg.mesh_id           = mesh_id;
-    cfg.self_id           = node_id;
-    cfg.default_hop_limit = 5;
-    cfg.role              = load_role();
-    landlink::app::services::g_router.init(cfg);
-    landlink::app::services::g_router.set_sink(&landlink_payload_sink);
+    // Apply the persisted radio role to the MAC (affects rebroadcast backoff:
+    // Router/Repeater relay ahead of Client nodes). Live updates arrive later
+    // via the RADIO_SET_ROLE command.
+    landlink::transport::lora::mac::set_role(load_role());
 
     landlink::mesh::protocol::InitContext pcx{};
     pcx.self_id = node_id;
-    pcx.region  = load_region();
-    landlink::mesh::protocol::init(pcx, landlink::app::services::g_router);
+    landlink::mesh::protocol::init(pcx);
     landlink::mesh::protocol::set_meshtastic_sink(&meshtastic_payload_sink);
     // Upstream-compatible implicit broadcast ACK: when a relay forwards one
     // of our own packets back to us, treat it as proof of delivery.
     landlink::mesh::protocol::meshtastic_router().set_own_echo_callback(
         &landlink::features::mesh_chat::on_meshtastic_own_echo);
 
-    landlink::features::lora_pair::init(node_id);
     landlink::features::mesh_identity::init(node_id);
     // Generate or load the device's persistent X25519 keypair. Must come
     // before any NodeInfo broadcast so the public_key field is populated.

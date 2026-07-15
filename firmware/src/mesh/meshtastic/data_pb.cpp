@@ -261,6 +261,36 @@ size_t encode_position(int32_t latitude_i, int32_t longitude_i,
     return off;
 }
 
+bool decode_position(const uint8_t* buf, size_t buf_len, PositionMessage& out) {
+    out = PositionMessage{};
+    size_t off = 0;
+    while (off < buf_len) {
+        uint64_t key;
+        if (!read_varint(buf, buf_len, off, key)) return false;
+        const uint32_t field = static_cast<uint32_t>(key >> 3);
+        const uint8_t  wire  = static_cast<uint8_t>(key & 0x7);
+        if (field == 1 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.latitude_i   = static_cast<int32_t>(v);
+            out.has_latitude = true;
+        } else if (field == 2 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.longitude_i   = static_cast<int32_t>(v);
+            out.has_longitude = true;
+        } else if (field == 3 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out.altitude     = static_cast<int32_t>(static_cast<int64_t>(v));
+            out.has_altitude = true;
+        } else {
+            if (!skip_field(buf, buf_len, off, wire)) return false;
+        }
+    }
+    return true;
+}
+
 bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out) {
     out = DataMessage{};
     size_t off = 0;

@@ -34,10 +34,6 @@ char     s_long_name[24]  = { 0 };  // "Landlink-AABBCCDD"
 char     s_short_name[5]  = { 0 };  // last 4 hex chars of node_id
 uint8_t  s_macaddr[6]     = { 0 };  // 2 zero bytes + 4 byte node_id
 
-bool is_meshtastic_mode() {
-    return mesh::protocol::active() == mesh::protocol::Mode::MESHTASTIC;
-}
-
 void format_identity(uint32_t node_id) {
     // Meshtastic id convention: "!" + 8 hex chars (lowercase).
     std::snprintf(s_id, sizeof(s_id), "!%08lx",
@@ -73,8 +69,7 @@ namespace {
 // and send_nodeinfo_to(dest) (unicast reply to want_response). Returns the
 // pkt_id queued, or 0 on any failure.
 uint32_t emit_nodeinfo(uint32_t dest, const char* tag_suffix) {
-    if (!is_meshtastic_mode()) return 0;
-    if (s_self_id == 0)        return 0;
+    if (s_self_id == 0) return 0;
 
     using mesh::meshtastic::kMaxFrame;
     using mesh::meshtastic::kMaxPayload;
@@ -150,8 +145,7 @@ bool send_nodeinfo_to(uint32_t dest) {
 }
 
 bool send_position() {
-    if (!is_meshtastic_mode()) return false;
-    if (s_self_id == 0)        return false;
+    if (s_self_id == 0) return false;
 
     using mesh::meshtastic::kBroadcastAddr;
     using mesh::meshtastic::kMaxFrame;

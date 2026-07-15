@@ -8,7 +8,7 @@
 
 #include <cstring>
 
-#include "mesh/frame/frame.h"
+#include "mesh/meshtastic/frame.h"
 #include "shared/config/board.h"
 #include "shared/util/log.h"
 #include "transport/lora/airtime.h"
@@ -44,7 +44,7 @@ SX1262Ext* s_radio_ptr = nullptr;
 #define s_radio (*s_radio_ptr)
 
 struct RxSlot {
-    uint8_t  buf[mesh::kMaxFrame];
+    uint8_t  buf[mesh::meshtastic::kMaxFrame];
     size_t   len     = 0;
     bool     ready   = false;
     int16_t  rssi    = 0;
@@ -65,15 +65,6 @@ bool       s_preset_applied = false;
 uint32_t s_active_rx_start_ms = 0;
 uint32_t s_preamble_time_ms   = 4;     // recomputed on preset apply
 uint32_t s_max_packet_time_ms = 1500;  // recomputed on preset apply
-
-float landlink_freq(Region r) {
-    switch (r) {
-        case Region::EU868: return 868.1f;
-        case Region::US915: return 915.0f;
-        case Region::KR923:
-        default:            return 922.1f;
-    }
-}
 
 float meshtastic_longfast_freq(Region r) {
     // LongFast slot = xorHash("LongFast") % numChannels.
@@ -107,7 +98,7 @@ void refresh_preset_cache(const LoraPreset& p) {
     const float symbol_ms = static_cast<float>(1u << p.sf) / p.bw_khz;
     const float pre_ms    = static_cast<float>(p.preamble) * symbol_ms;
     s_preamble_time_ms    = pre_ms < 1.0f ? 1u : static_cast<uint32_t>(pre_ms + 0.5f);
-    s_max_packet_time_ms  = airtime::packet_airtime_ms(mesh::kMaxFrame);
+    s_max_packet_time_ms  = airtime::packet_airtime_ms(mesh::meshtastic::kMaxFrame);
     if (s_max_packet_time_ms == 0) s_max_packet_time_ms = 1500;
 }
 
@@ -234,18 +225,6 @@ void drain_rx() {
 
 } // namespace
 
-LoraPreset preset_landlink(Region r) {
-    return LoraPreset{
-        /*freq_mhz*/     landlink_freq(r),
-        /*bw_khz*/       125.0f,
-        /*sf*/           9,
-        /*cr*/           5,
-        /*sync_word*/    RADIOLIB_SX126X_SYNC_WORD_PRIVATE,
-        /*preamble*/     8,
-        /*tx_power_dbm*/ 14,
-    };
-}
-
 LoraPreset preset_meshtastic_longfast(Region r) {
     return LoraPreset{
         /*freq_mhz*/     meshtastic_longfast_freq(r),
@@ -272,7 +251,7 @@ bool init(Region r) {
                                                pins::kLoraRst, pins::kLoraBusy,
                                                SPI));
     }
-    return apply_preset(preset_landlink(r));
+    return apply_preset(preset_meshtastic_longfast(r));
 }
 
 bool reconfigure(const LoraPreset& p) {
@@ -288,12 +267,12 @@ bool reconfigure(const LoraPreset& p) {
 }
 
 bool set_region(Region r) {
-    return reconfigure(preset_landlink(r));
+    return reconfigure(preset_meshtastic_longfast(r));
 }
 
 bool queue_tx(const uint8_t* frame, size_t frame_len) {
     if (frame == nullptr || frame_len == 0 ||
-        frame_len > mesh::kMaxFrame) return false;
+        frame_len > mesh::meshtastic::kMaxFrame) return false;
     TxRequest req{};
     std::memcpy(req.bytes, frame, frame_len);
     req.len            = frame_len;

@@ -26,14 +26,14 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "mesh/frame/frame.h"
+#include "mesh/meshtastic/frame.h"
 #include "transport/lora/priority.h"
 #include "transport/lora/sx1262_driver.h"
 
 namespace landlink::transport::lora {
 
 struct TxRequest {
-    uint8_t  bytes[mesh::kMaxFrame];
+    uint8_t  bytes[mesh::meshtastic::kMaxFrame];
     size_t   len             = 0;
     Priority priority        = Priority::Default;
     bool     is_rebroadcast  = false;

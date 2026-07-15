@@ -3,7 +3,6 @@
 #include <cstring>
 
 #include "app/fsm/fsm.h"
-#include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/ota/ota.h"
 #include "features/remote_relay/remote_identity.h"
@@ -11,7 +10,7 @@
 #include "features/wifi_onboarding/wifi_onboarding.h"
 #include "hal/storage/storage.h"
 #include "mesh/channel/registry.h"
-#include "mesh/frame/frame.h"
+#include "mesh/meshtastic/frame.h"
 #include "mesh/protocol/protocol.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
@@ -145,43 +144,6 @@ bool handle_cmd(Opcode op, uint8_t seq,
         return true;
     }
 
-    case Opcode::RADIO_GET_PROTOCOL: {
-        const uint8_t mode = static_cast<uint8_t>(mesh::protocol::active());
-        uint8_t buf[3];
-        landlink::TlvBuilder b(buf, sizeof(buf));
-        b.put_u8(TlvTag::PROTOCOL, mode);
-        transport::ble::notify_evt(Opcode::RADIO_PROTOCOL_RESULT, seq,
-                                   b.data(), b.size());
-        return true;
-    }
-
-    case Opcode::RADIO_SET_PROTOCOL: {
-        landlink::Tlv t;
-        if (!r.find(TlvTag::PROTOCOL, t) || t.len != 1) {
-            send_error(seq, 0x01 /* BAD_ARG */);
-            return true;
-        }
-        const uint8_t requested = t.data[0];
-        if (requested > 1) {
-            send_error(seq, 0x01 /* BAD_ARG */);
-            return true;
-        }
-        const auto target = (requested == 1)
-            ? mesh::protocol::Mode::MESHTASTIC
-            : mesh::protocol::Mode::LANDLINK;
-        if (!mesh::protocol::set_active(target)) {
-            send_error(seq, 0xFF /* INTERNAL */);
-            return true;
-        }
-        const uint8_t applied = static_cast<uint8_t>(mesh::protocol::active());
-        uint8_t buf[3];
-        landlink::TlvBuilder b(buf, sizeof(buf));
-        b.put_u8(TlvTag::PROTOCOL, applied);
-        transport::ble::notify_evt(Opcode::RADIO_PROTOCOL_RESULT, seq,
-                                   b.data(), b.size());
-        return true;
-    }
-
     case Opcode::RADIO_GET_ROLE: {
         uint8_t role = 0;
         hal::storage::get_u8("ll.radio", "role", role, 0);
@@ -215,21 +177,6 @@ bool handle_cmd(Opcode op, uint8_t seq,
         b.put_u8(TlvTag::ROLE, requested);
         transport::ble::notify_evt(Opcode::RADIO_ROLE_RESULT, seq,
                                    b.data(), b.size());
-        return true;
-    }
-
-    case Opcode::LORA_DISCOVER:
-        features::lora_pair::discover_async(seq);
-        return true;
-
-    case Opcode::LORA_PAIR: {
-        landlink::Tlv t;
-        if (!r.find(TlvTag::NODE_ID, t) || t.len != 4) return false;
-        const uint32_t peer = t.data[0] |
-                              (static_cast<uint32_t>(t.data[1]) << 8) |
-                              (static_cast<uint32_t>(t.data[2]) << 16) |
-                              (static_cast<uint32_t>(t.data[3]) << 24);
-        features::lora_pair::pair_async(seq, peer);
         return true;
     }
 
@@ -385,7 +332,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
     }
 
     case Opcode::MESH_SEND: {
-        landlink::Tlv kind, text, dst_tlv, retry_tlv, ch_tlv;
+        landlink::Tlv kind, text, dst_tlv, ch_tlv;
         if (!r.find(TlvTag::KIND, kind) || kind.len != 1 ||
             kind.data[0] != 0x01 /* MeshKind::CHAT_TEXT */) {
             LL_LOG_W(kTag, "MESH_SEND bad KIND");
@@ -398,19 +345,12 @@ bool handle_cmd(Opcode op, uint8_t seq,
             send_error(seq, 0x01 /* BAD_ARG */);
             return true;
         }
-        uint32_t dst = mesh::kBroadcastAddr;
+        uint32_t dst = mesh::meshtastic::kBroadcastAddr;
         if (r.find(TlvTag::NODE_ID, dst_tlv) && dst_tlv.len == 4) {
             dst = static_cast<uint32_t>(dst_tlv.data[0]) |
                   (static_cast<uint32_t>(dst_tlv.data[1]) << 8) |
                   (static_cast<uint32_t>(dst_tlv.data[2]) << 16) |
                   (static_cast<uint32_t>(dst_tlv.data[3]) << 24);
-        }
-        uint32_t retry_pkt_id = 0;
-        if (r.find(TlvTag::RETRY_PKT_ID, retry_tlv) && retry_tlv.len == 4) {
-            retry_pkt_id = static_cast<uint32_t>(retry_tlv.data[0]) |
-                           (static_cast<uint32_t>(retry_tlv.data[1]) << 8) |
-                           (static_cast<uint32_t>(retry_tlv.data[2]) << 16) |
-                           (static_cast<uint32_t>(retry_tlv.data[3]) << 24);
         }
         // Channel index defaults to 0 (Primary) when the host doesn't
         // supply it — keeps hosts that predate multi-channel support
@@ -431,15 +371,14 @@ bool handle_cmd(Opcode op, uint8_t seq,
             send_error(seq, 0x04 /* NOT_FOUND */);
             return true;
         }
-        LL_LOG_I(kTag, "MESH_SEND ch=%u dst=%08x len=%u retry=%u",
+        LL_LOG_I(kTag, "MESH_SEND ch=%u dst=%08x len=%u",
                  static_cast<unsigned>(channel_index),
-                 static_cast<unsigned>(dst), text.len,
-                 static_cast<unsigned>(retry_pkt_id));
+                 static_cast<unsigned>(dst), text.len);
         uint32_t assigned_pkt_id = 0;
         const bool ok = features::mesh_chat::send_chat(
             channel_index, dst,
             reinterpret_cast<const char*>(text.data), text.len,
-            /*reply_to*/0, retry_pkt_id, &assigned_pkt_id);
+            &assigned_pkt_id);
         if (!ok) {
             LL_LOG_W(kTag, "MESH_SEND send_chat failed");
             send_error(seq, 0x05 /* BUSY */);

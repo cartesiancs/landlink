@@ -5,7 +5,6 @@
 #include <freertos/task.h>
 
 #include "app/fsm/fsm.h"
-#include "features/lora_pairing/lora_pairing.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
@@ -16,7 +15,7 @@
 #include "hal/gps/gps.h"
 #include "hal/led/led.h"
 #include "hal/pmu/pmu.h"
-#include "mesh/frame/frame.h"
+#include "mesh/meshtastic/frame.h"
 #include "mesh/protocol/protocol.h"
 #include "shared/util/log.h"
 #include "transport/lora/mac.h"
@@ -72,19 +71,9 @@ constexpr const char* kTag = "tasks";
     }
 }
 
-[[noreturn]] void beacon_task(void*) {
-    // WHY: 30s strikes a balance between freshness for the discovery UI and
-    // airtime budget on shared LoRa channels.
-    for (;;) {
-        features::lora_pair::send_beacon();
-        vTaskDelay(pdMS_TO_TICKS(30000));
-    }
-}
-
 [[noreturn]] void mesh_identity_task(void*) {
-    // Periodic Meshtastic-compatible NodeInfo + Position broadcasts. The
-    // send functions are no-ops outside MESHTASTIC mode so this loop runs
-    // unconditionally. Initial 5s grace lets boot settle (LoRa init, NVS,
+    // Periodic Meshtastic-compatible NodeInfo + Position broadcasts. Initial
+    // 5s grace lets boot settle (LoRa init, NVS,
     // GPS first NMEA burst) before the first transmit. Interval 15min
     // matches upstream Meshtastic's position_broadcast_secs default; that
     // is also the interval real Meshtastic clients expect for NodeDB
@@ -138,11 +127,11 @@ constexpr const char* kTag = "tasks";
 }
 
 [[noreturn]] void lora_rx_task(void*) {
-    uint8_t buf[mesh::kMaxFrame];
+    uint8_t buf[mesh::meshtastic::kMaxFrame];
     transport::lora::RxReport rep;
     for (;;) {
         if (transport::lora::poll_rx(buf, sizeof(buf), rep)) {
-            uint8_t fwd[mesh::kMaxFrame];
+            uint8_t fwd[mesh::meshtastic::kMaxFrame];
             size_t  fwd_len = 0;
             mesh::protocol::on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len);
             if (fwd_len > 0) {
@@ -171,7 +160,6 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(led_tick_task,   "led_tick",    2048, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(button_task,     "button",      2048, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(telemetry_task,  "telemetry",   4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(beacon_task,     "beacon",      4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(mesh_identity_task, "mt_id",     4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(wifi_task,       "wifi",        4096, nullptr, 2, nullptr, 0);

@@ -223,7 +223,7 @@ void on_preset_change(const LoraPreset& p) {
     // Slot time formula is in mac_math.h; truncation (not ceil) matches
     // Meshtastic's implicit float→uint32_t cast bit-for-bit.
     s_slot_time_ms  = mac_math::compute_slot_time_ms(p.sf, p.bw_khz);
-    s_max_packet_ms = airtime::packet_airtime_ms(mesh::kMaxFrame);
+    s_max_packet_ms = airtime::packet_airtime_ms(mesh::meshtastic::kMaxFrame);
     if (s_max_packet_ms == 0) s_max_packet_ms = 1500;
     s_preset_ready  = true;
 

@@ -49,7 +49,6 @@ enum class TlvTag : uint8_t {
     OTA_CHUNK_CRC32 = 0x94,
     OTA_PROGRESS_PCT = 0x95,
     REGION = 0xa0,
-    PROTOCOL = 0xa1,  // Active radio protocol: 0=Landlink, 1=Meshtastic
     ROLE = 0xa2,  // Node CSMA/CA role: 0=client, 1=router, 2=repeater
     MESH_KEY = 0xb0,
     MESH_SALT = 0xb1,

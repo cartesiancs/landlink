@@ -1,12 +1,15 @@
 import type { LoraPeer, LoraPeerSource } from "./types";
 
-// WHY: discovery cadence is 30s; drop a peer after 3 missed cycles so a
-// device that went offline disappears from the list within ~90s.
-export const PEER_TTL_MS = 90_000;
+// WHY: peers are now heard via Meshtastic NodeInfo/Position, whose default
+// broadcast cadence is ~15 min. Keep a heard peer for 2h so a node that
+// missed a few broadcasts does not flicker off the list, while a truly-gone
+// node still eventually drops.
+export const PEER_TTL_MS = 2 * 60 * 60 * 1000;
 
-// Higher rank wins on collision. A beacon update carrying fresh telemetry
-// must not be downgraded by a later history hydrate; a chat-source entry
-// must not be overwritten by a history backfill that has no telemetry.
+// Higher rank wins on collision. A "heard" update carrying fresh GPS must not
+// be downgraded by a later history hydrate; a chat-source entry must not be
+// overwritten by a history backfill that has no location. ("beacon" is the
+// legacy name for the heard-over-the-air source, now fed by NodeInfo/Position.)
 const SOURCE_RANK: Record<LoraPeerSource, number> = {
   history: 0,
   chat: 1,
