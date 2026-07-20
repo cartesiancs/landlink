@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { Geolocation, type Position } from "@capacitor/geolocation";
 import { useEffect } from "react";
 
@@ -38,11 +39,15 @@ function toTrackPoint(pos: Position): TrackPoint {
 }
 
 // Subscribes to Capacitor Geolocation while the component is mounted.
-// Permission is requested lazily (no UI gate) — the OS dialog appears on
-// first watchPosition call. If the user denies, the watch yields no
-// samples and the recorder simply receives nothing.
+// Native only: on web we never start the watch, so the browser's location
+// permission prompt is not triggered on page load. On native, permission is
+// requested lazily (no UI gate) and the OS dialog appears on first
+// watchPosition call. If the user denies, the watch yields no samples and
+// the recorder simply receives nothing.
 export function usePhonePositionWatch(): void {
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
     let cancelled = false;
     let watchId: string | null = null;
 
