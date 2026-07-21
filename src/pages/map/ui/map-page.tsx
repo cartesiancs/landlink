@@ -15,7 +15,7 @@ export function MapPage() {
 
   return (
     <main className="relative flex h-dvh w-full flex-col bg-background">
-      {IS_NATIVE_APP && (
+      {IS_NATIVE_APP ? (
         <AppHeader
           onMenuOpen={() => {
             setSidebarOpen(true);
@@ -24,6 +24,19 @@ export function MapPage() {
             setSupportOpen(true);
           }}
         />
+      ) : (
+        // Web: same header as the other pages, floating above the
+        // fullscreen map. z-1100 keeps it over Leaflet panes (up to z-700)
+        // and the map control overlays (z-1000). Back lives in the header
+        // since the map has no other exit on web.
+        <div className="absolute inset-x-0 top-0 z-1100 mx-auto w-full max-w-[430px]">
+          <AppHeader
+            showBack
+            onSupportOpen={() => {
+              setSupportOpen(true);
+            }}
+          />
+        </div>
       )}
       <div className="relative min-h-0 flex-1">
         <LandlinkMap />

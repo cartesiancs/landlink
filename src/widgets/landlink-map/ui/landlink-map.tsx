@@ -21,7 +21,6 @@ import {
 import { useFitBoundsOnFirstData } from "../lib/use-fit-bounds";
 import { useTrackHistory } from "../lib/use-track-history";
 
-import { BackOverlay } from "./back-overlay";
 import { RecenterButton } from "./recenter-button";
 
 // CartoDB Dark Matter / Positron. Both are OSM-derived minimalist tile sets
@@ -185,8 +184,6 @@ export function LandlinkMap() {
 
         <RecenterButton target={recenterTarget} />
       </MapContainer>
-
-      <BackOverlay />
 
       <div
         className="pointer-events-none absolute bottom-[calc(env(safe-area-inset-bottom)+72px)] left-3 z-[400] text-[10px] text-muted-foreground/80"
