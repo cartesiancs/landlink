@@ -71,6 +71,8 @@ export function NavigationSidebar({
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     if (item.to === ROUTES.lists) return hasAnyDevice;
     if (item.to === ROUTES.channels) return hasAnyDevice;
+    if (item.to === ROUTES.map) return hasAnyDevice;
+
     return true;
   });
   const handleClose = () => {
