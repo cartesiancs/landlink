@@ -25,12 +25,16 @@ export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
           </DrawerDescription>
         </DrawerHeader>
         <div className="flex flex-col gap-3 px-4 pb-[max(env(safe-area-inset-bottom),1.5rem)] text-sm">
-          <a
-            href="mailto:jun@cartesiancs.com"
+          <Link
+            to={ROUTES.about}
+            viewTransition
+            onClick={() => {
+              onOpenChange(false);
+            }}
             className="rounded-md border border-border px-3 py-3 hover:bg-muted"
           >
-            Email support
-          </a>
+            About
+          </Link>
           <Link
             to={ROUTES.faq}
             viewTransition
@@ -39,8 +43,14 @@ export function SupportDrawer({ open, onOpenChange }: SupportDrawerProps) {
             }}
             className="rounded-md border border-border px-3 py-3 hover:bg-muted"
           >
-            Read the FAQ
+            FAQ
           </Link>
+          <a
+            href="mailto:jun@cartesiancs.com"
+            className="rounded-md border border-border px-3 py-3 hover:bg-muted"
+          >
+            Email support
+          </a>
         </div>
       </DrawerContent>
     </Drawer>

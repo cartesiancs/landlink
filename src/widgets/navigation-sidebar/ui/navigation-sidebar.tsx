@@ -3,7 +3,6 @@ import {
   Cpu,
   Hash as HashIcon,
   House,
-  Info,
   List,
   MapPin,
   Package,
@@ -44,7 +43,6 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: "Map", to: ROUTES.map, icon: MapPin },
   { label: "Channels", to: ROUTES.channels, icon: HashIcon },
   { label: "Settings", to: ROUTES.settings, icon: Settings },
-  { label: "About", to: ROUTES.about, icon: Info },
 ];
 
 const PRODUCT_ITEMS: readonly NavItem[] = [
