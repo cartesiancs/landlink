@@ -27,6 +27,11 @@ export {
   nodeNumToHex,
 } from "./node-id";
 export { hapticTick } from "./haptics";
+export {
+  springCurve,
+  type SpringCurve,
+  type SpringCurveOptions,
+} from "./spring-easing";
 export { isAppActive, subscribeAppState } from "./app-state";
 export {
   notifyIncomingChat,
