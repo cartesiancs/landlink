@@ -1,8 +1,6 @@
 import { type MouseEvent } from "react";
 import {
-  Building2,
   Cpu,
-  FileText,
   Hash as HashIcon,
   House,
   Info,
@@ -11,7 +9,6 @@ import {
   Package,
   Plane,
   Settings,
-  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
@@ -56,9 +53,9 @@ const PRODUCT_ITEMS: readonly NavItem[] = [
   { label: "Landlink Firmware", to: ROUTES.landlinkFirmware, icon: Cpu },
 ];
 
-const LEGAL_ITEMS: readonly NavItem[] = [
-  { label: "Privacy", to: ROUTES.privacy, icon: ShieldCheck },
-  { label: "Terms", to: ROUTES.terms, icon: FileText },
+const LEGAL_ITEMS: readonly { label: string; to: string }[] = [
+  { label: "Privacy", to: ROUTES.privacy },
+  { label: "Terms", to: ROUTES.terms },
 ];
 
 export function NavigationSidebar({
@@ -141,34 +138,28 @@ export function NavigationSidebar({
             })}
           </nav>
         )}
-        <div className="mt-auto flex flex-col gap-1 px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-          <nav className="flex flex-col gap-1 border-t border-border pt-3">
-            {LEGAL_ITEMS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={handleNavClick(item.to)}
-                  className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
-                >
-                  <Icon className="size-4" aria-hidden="true" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <a
-            href="https://cartesiancs.com"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="flex items-center gap-2 rounded-md px-1 py-2 text-sm transition-[padding] duration-200 hover:bg-muted hover:px-3"
-          >
-            <Building2 className="size-4" aria-hidden="true" />
-            cartesiancs
-          </a>
-          <p className="mt-1 px-1 text-xs leading-relaxed text-muted-foreground">
-            © {new Date().getFullYear()} cartesiancs.
+        <div className="mt-auto px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
+          <p className="border-t border-border px-1 pt-3 text-xs leading-relaxed text-muted-foreground">
+            {LEGAL_ITEMS.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={handleNavClick(item.to)}
+                className="mr-3 underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {item.label}
+              </Link>
+            ))}
+            © {new Date().getFullYear()}{" "}
+            <a
+              href="https://cartesiancs.com"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline-offset-2 hover:text-foreground hover:underline"
+            >
+              cartesiancs
+            </a>
+            .
             <br />
             All rights reserved.
           </p>
