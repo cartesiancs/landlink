@@ -1,9 +1,9 @@
 import { Capacitor } from "@capacitor/core";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { AppHeader } from "@/widgets/app-header";
 import { BottomNavBar } from "@/widgets/bottom-nav-bar";
-import { LandlinkMap } from "@/widgets/landlink-map";
+import { LandlinkMap, RecenterButton } from "@/widgets/landlink-map";
 import { NavigationSidebar } from "@/widgets/navigation-sidebar";
 import { SupportDrawer } from "@/widgets/support-drawer";
 
@@ -12,6 +12,14 @@ const IS_NATIVE_APP = Capacitor.isNativePlatform();
 export function MapPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [recenter, setRecenter] = useState<(() => void) | null>(null);
+
+  // Stable identity so RecenterBridge's effect doesn't rerun every render.
+  const handleRecenterChange = useCallback((fn: (() => void) | null) => {
+    setRecenter(() => fn);
+  }, []);
+
+  const headerActions = <RecenterButton onRecenter={recenter} />;
 
   return (
     <main className="relative flex h-dvh w-full flex-col bg-background">
@@ -23,6 +31,8 @@ export function MapPage() {
           onSupportOpen={() => {
             setSupportOpen(true);
           }}
+          actions={headerActions}
+          roundedBottom
         />
       ) : (
         // Web: same header as the other pages, floating above the
@@ -35,11 +45,13 @@ export function MapPage() {
             onSupportOpen={() => {
               setSupportOpen(true);
             }}
+            actions={headerActions}
+            roundedBottom
           />
         </div>
       )}
       <div className="relative min-h-0 flex-1">
-        <LandlinkMap />
+        <LandlinkMap onRecenterChange={handleRecenterChange} />
       </div>
       <NavigationSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
       <SupportDrawer open={supportOpen} onOpenChange={setSupportOpen} />

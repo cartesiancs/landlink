@@ -21,7 +21,7 @@ import {
 import { useFitBoundsOnFirstData } from "../lib/use-fit-bounds";
 import { useTrackHistory } from "../lib/use-track-history";
 
-import { RecenterButton } from "./recenter-button";
+import { RecenterBridge } from "./recenter-bridge";
 
 // CartoDB Dark Matter / Positron. Both are OSM-derived minimalist tile sets
 // from CARTO. Dark Matter for dark theme, Positron for light. Free for
@@ -45,7 +45,14 @@ function FitBoundsBridge({ markers }: { markers: readonly TrackPoint[] }) {
   return null;
 }
 
-export function LandlinkMap() {
+type LandlinkMapProps = {
+  // Receives a callback that recenters the map, or null when the map is
+  // unmounted. Lets pages surface a recenter control outside the map
+  // (e.g. in the app header). Must be referentially stable.
+  onRecenterChange?: (recenter: (() => void) | null) => void;
+};
+
+export function LandlinkMap({ onRecenterChange }: LandlinkMapProps) {
   const latestPoints = useLatestTrackPoints();
   const device = useLandlinkDevice();
   const peers = useLoraPeers();
@@ -182,7 +189,12 @@ export function LandlinkMap() {
           );
         })}
 
-        <RecenterButton target={recenterTarget} />
+        {onRecenterChange && (
+          <RecenterBridge
+            target={recenterTarget}
+            onRecenterChange={onRecenterChange}
+          />
+        )}
       </MapContainer>
 
       <div
