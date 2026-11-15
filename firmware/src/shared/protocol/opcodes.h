@@ -8,7 +8,7 @@
 
 namespace landlink::proto {
 
-inline constexpr uint8_t kProtoVersion = 2;
+inline constexpr uint8_t kProtoVersion = 3;
 
 
 enum class Opcode : uint8_t {
@@ -64,6 +64,7 @@ enum class Opcode : uint8_t {
     OTA_CHUNK = 0x61,
     OTA_COMMIT = 0x62,
     OTA_STATUS = 0x63,
+    OTA_ABORT = 0x6f,
     REMOTE_GET_IDENTITY = 0x80,
     REMOTE_IDENTITY_RESULT = 0x81,
     REMOTE_SET_CONFIG = 0x82,
@@ -128,6 +129,14 @@ enum class MediaPhase : uint8_t {
 };
 
 
+enum class OtaState : uint8_t {
+    READY = 0x01,
+    RECEIVING = 0x02,
+    REBOOTING = 0x03,
+    ABORTED = 0x04,
+};
+
+
 enum class ErrorCode : uint8_t {
     OK = 0x00,
     BAD_ARG = 0x01,
@@ -142,6 +151,7 @@ enum class ErrorCode : uint8_t {
     MESH_OFF = 0x0a,
     PEER_UNREACHABLE = 0x0b,
     PEER_BUSY = 0x0c,
+    WRONG_TARGET = 0x0d,
     INTERNAL = 0xff,
 };
 

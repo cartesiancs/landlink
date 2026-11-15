@@ -6,7 +6,7 @@
 
 version: 1
 firmware_name: "landlink"
-proto_version: 2
+proto_version: 3
 
 ble:
   # 128-bit custom UUIDs (8-4-4-4-12). Base encodes "LL-landlink-1" in ASCII
@@ -18,6 +18,9 @@ ble:
     EVT:   { uuid: "4c4c0003-6c61-6e64-6c69-6e6b2d310001", props: [notify] }
     STATE: { uuid: "4c4c0004-6c61-6e64-6c69-6e6b2d310001", props: [read, notify] }
     INFO:  { uuid: "4c4c0005-6c61-6e64-6c69-6e6b2d310001", props: [read] }
+    # Firmware image data during an OTA session. Raw binary frames, not
+    # CMD/TLV framing: [offset u32 LE][crc32 u32 LE][data]. crc32 is
+    # CRC-32/ISO-HDLC (zlib) over data only.
     OTA:   { uuid: "4c4c0006-6c61-6e64-6c69-6e6b2d310001", props: [write_no_response] }
     LOG:   { uuid: "4c4c0007-6c61-6e64-6c69-6e6b2d310001", props: [notify] }
     # Bulk media data. Raw binary frames, not CMD/TLV framing:
@@ -48,7 +51,7 @@ serial:
     EVT:       { code: 0x02, dir: F_TO_C, note: "Landlink EVT frame [opcode][seq][len LE][payload], byte-identical to the BLE EVT notify value. EVTs are broadcast to every host transport; match responses by seq." }
     STATE:     { code: 0x03, dir: F_TO_C, note: "[fsm_state][flags], same 2 bytes as the BLE STATE characteristic. Also sent once when a session opens." }
     INFO_REQ:  { code: 0x04, dir: C_TO_F, note: "Empty. Answered with INFO_RESP." }
-    INFO_RESP: { code: 0x05, dir: F_TO_C, note: "INFO blob, same bytes as the BLE INFO characteristic: [proto_version][node_id u32 LE][fw_len][fw][hw_len][hw]." }
+    INFO_RESP: { code: 0x05, dir: F_TO_C, note: "INFO blob, same bytes as the BLE INFO characteristic: [proto_version][node_id u32 LE][fw_len][fw][hw_len][hw], then since proto 3 [target_len][target]." }
     LOG:       { code: 0x06, dir: F_TO_C, note: "One UTF-8 log line, no trailing newline, e.g. \"[I][main] setup complete\"." }
     KEEPALIVE: { code: 0x07, dir: C_TO_F, note: "Empty. Only refreshes the session." }
   session:
@@ -164,11 +167,16 @@ opcodes:
   # Factory reset (requires pinned session)
   FACTORY_RESET:         { code: 0x50, dir: C_TO_F, requires: authed }
 
-  # OTA
-  OTA_BEGIN:             { code: 0x60, dir: C_TO_F, requires: authed }
-  OTA_CHUNK:             { code: 0x61, dir: C_TO_F, note: "via OTA characteristic" }
-  OTA_COMMIT:            { code: 0x62, dir: C_TO_F, requires: authed }
-  OTA_STATUS:            { code: 0x63, dir: F_TO_C }
+  # OTA (proto 3+). BLE only; refused over serial and the relay.
+  # Signed message: "LLOTA1" || sha256(image) || u8 len || OTA_TARGET || u8 len || OTA_VERSION,
+  # Ed25519 with the key embedded from firmware/keys/ota_pubkey.bin. The
+  # signature is the only gate (no authed()); it is checked before any flash
+  # is touched.
+  OTA_BEGIN:             { code: 0x60, dir: C_TO_F, note: "OTA_SIZE, OTA_SHA256, OTA_SIG_ED25519, OTA_TARGET, OTA_VERSION. Answered with OTA_STATUS(READY, OTA_OFFSET=0, OTA_CHUNK_MAX) on the same seq, or ERROR (WRONG_TARGET, CRYPTO_FAIL, NO_SPACE, BUSY, BAD_STATE)." }
+  OTA_CHUNK:             { code: 0x61, dir: C_TO_F, note: "Not a CMD frame; image data goes over the OTA characteristic." }
+  OTA_COMMIT:            { code: 0x62, dir: C_TO_F, note: "Device checks SHA-256, switches the boot slot, answers OTA_STATUS(REBOOTING) on the same seq, then restarts. ERROR(CRYPTO_FAIL) on hash mismatch." }
+  OTA_STATUS:            { code: 0x63, dir: F_TO_C, note: "OTA_STATE + OTA_OFFSET (+ OTA_CHUNK_MAX on READY). RECEIVING acks use seq 0 and are sent every 4 KiB and on every gap or bad CRC; OTA_OFFSET is the contiguous byte count written." }
+  OTA_ABORT:             { code: 0x6F, dir: C_TO_F, note: "Drops the session. The device also aborts after 30 s without a chunk or when the BLE link drops." }
 
   # Remote relay onboarding. The phone reads the device's self-generated
   # identity (pubkey + rendezvous id) over the trusted BLE link, enrolls it to
@@ -288,9 +296,14 @@ tlv_tags:
   OTA_SIZE:              { tag: 0x90, type: u32 }
   OTA_SHA256:            { tag: 0x91, type: bytes32 }
   OTA_SIG_ED25519:       { tag: 0x92, type: bytes64 }
-  OTA_CHUNK_SEQ:         { tag: 0x93, type: u32 }
-  OTA_CHUNK_CRC32:       { tag: 0x94, type: u32 }
-  OTA_PROGRESS_PCT:      { tag: 0x95, type: u8 }
+  OTA_CHUNK_SEQ:         { tag: 0x93, type: u32, desc: "Deprecated (proto 2 chunk framing). Unused." }
+  OTA_CHUNK_CRC32:       { tag: 0x94, type: u32, desc: "Deprecated (proto 2 chunk framing). Unused." }
+  OTA_PROGRESS_PCT:      { tag: 0x95, type: u8,  desc: "Deprecated. Unused." }
+  OTA_TARGET:            { tag: 0x96, type: utf8, desc: "Firmware target id, e.g. heltec-v3-sx1262" }
+  OTA_VERSION:           { tag: 0x97, type: utf8, desc: "Version string of the image, e.g. 0.3.1" }
+  OTA_OFFSET:            { tag: 0x98, type: u32 }
+  OTA_STATE:             { tag: 0x99, type: u8,   desc: "OtaState value" }
+  OTA_CHUNK_MAX:         { tag: 0x9A, type: u16,  desc: "Max data bytes per OTA characteristic write" }
 
   # BLE region
   REGION:                { tag: 0xA0, type: u8 }
@@ -365,6 +378,13 @@ media_phases:
   FAILED:                0x05
   CANCELLED:             0x06
 
+# OTA session states (values of the OTA_STATE TLV).
+ota_states:
+  READY:                 0x01
+  RECEIVING:             0x02
+  REBOOTING:             0x03
+  ABORTED:               0x04
+
 # Generic error codes (value of ERR_CODE TLV)
 errors:
   OK:                    0x00
@@ -380,4 +400,5 @@ errors:
   MESH_OFF:              0x0A
   PEER_UNREACHABLE:      0x0B
   PEER_BUSY:             0x0C
+  WRONG_TARGET:          0x0D
   INTERNAL:              0xFF

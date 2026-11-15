@@ -119,7 +119,7 @@ void send_state_now() {
 }
 
 void send_info() {
-    uint8_t info[64];
+    uint8_t info[transport::ble::kInfoMaxBytes];
     const size_t n = transport::ble::get_info(info, sizeof(info));
     if (n > 0) send_frame(sf::chan::kInfoResp, info, n);
 }

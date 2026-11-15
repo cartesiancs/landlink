@@ -8,6 +8,7 @@
 #include "app/services/wmesh_service.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
+#include "features/ota/ota.h"
 #include "features/pki_keystore/pki_keystore.h"
 #include "shared/config/build_info.h"
 #include "shared/config/node_mode.h"
@@ -88,7 +89,8 @@ constexpr const char* kTag = "tasks";
     for (;;) {
         // Receive-only nodes stay silent. Leaving that mode sends NodeInfo
         // right away (RADIO_SET_MODE handler), so no catch-up is needed here.
-        if (node_mode::can_transmit()) {
+        // Skip the beacon while a firmware update holds the device.
+        if (node_mode::can_transmit() && !features::ota::active()) {
             (void)features::mesh_identity::send_nodeinfo();
             // Space NodeInfo and Position by ~1s so the LoRa TX queue can drain
             // (CAD between frames) rather than concatenating them back-to-back.
@@ -188,6 +190,7 @@ void spawn_tasks() {
 #endif
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);
+    features::ota::spawn_task();
 }
 
 } // namespace landlink::app::services

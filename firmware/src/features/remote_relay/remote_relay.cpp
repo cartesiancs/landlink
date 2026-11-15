@@ -242,7 +242,7 @@ void handle_bin(const uint8_t* data, size_t len) {
             enqueue_out(kChEvt, f, sizeof(f));
         }
     } else if (channel == kChInfoReq) {
-        uint8_t info[64];
+        uint8_t info[transport::ble::kInfoMaxBytes];
         const size_t n = transport::ble::get_info(info, sizeof(info));
         if (n) enqueue_out(kChInfoResp, info, n);
     }

@@ -37,5 +37,6 @@ inline constexpr uint8_t     kProtoVersion    = LL_PROTO_VERSION;
 // Hardware revision reported over BLE INFO. Sourced from the board dispatch
 // header so a new env in platformio.ini is the only place to maintain.
 inline constexpr const char* kHardwareRev     = LL_BOARD_HW_REV;
+inline constexpr const char* kFirmwareTarget  = LL_BOARD_FW_TARGET;
 
 } // namespace landlink::build

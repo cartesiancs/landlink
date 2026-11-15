@@ -88,7 +88,7 @@ def emit_opcodes_h(spec: dict) -> str:
         lines.append(f"    {name} = {val:#04x},")
     lines.append("};\n")
 
-    for enum_name, key in (("MediaMime", "media_mimes"), ("MediaPhase", "media_phases")):
+    for enum_name, key in (("MediaMime", "media_mimes"), ("MediaPhase", "media_phases"), ("OtaState", "ota_states")):
         lines.append(f"\nenum class {enum_name} : uint8_t {{")
         for name, val in spec[key].items():
             lines.append(f"    {name} = {val:#04x},")
@@ -179,6 +179,8 @@ def emit_landlink_ts(spec: dict) -> str:
     lines.extend(enum_block("MediaMime", spec["media_mimes"]))
     lines.append("")
     lines.extend(enum_block("MediaPhase", spec["media_phases"]))
+    lines.append("")
+    lines.extend(enum_block("OtaState", spec["ota_states"]))
     lines.append("")
     lines.extend(enum_block("ErrorCode", errs))
     lines.append("")

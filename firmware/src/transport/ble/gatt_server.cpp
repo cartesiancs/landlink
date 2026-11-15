@@ -38,6 +38,11 @@ NimBLECharacteristic* s_bulk_chr = nullptr;
 CmdHandler      s_cmd_handler = nullptr;
 OtaChunkHandler s_ota_handler = nullptr;
 BulkHandler     s_bulk_handler = nullptr;
+LinkLostHandler s_link_lost_handler = nullptr;
+// Task that runs CMD write callbacks (the NimBLE host task). Lets handlers
+// tell a BLE command apart from one relayed by serial or the remote relay,
+// which call the same handler from their own tasks.
+volatile TaskHandle_t s_cmd_task = nullptr;
 EvtTap          s_evt_taps[kMaxTaps]   = {};
 StateTap        s_state_taps[kMaxTaps] = {};
 size_t          s_evt_tap_count   = 0;
@@ -47,17 +52,21 @@ volatile bool s_connected = false;
 volatile uint16_t s_conn_handle = 0xFFFF;
 
 char s_info_fw[16]  = "";
-char s_info_hw[32]  = "";
+char s_info_hw[48]  = "";
+char s_info_tgt[33] = "";
 uint32_t s_info_id  = 0;
 uint8_t  s_info_pv  = 0;
 
 uint8_t s_state_buf[2] = { 0, 0 };
 
-// Pack the INFO blob: [proto_version][node_id LE(4)][fw_len][fw][hw_len][hw].
+// Pack the INFO blob:
+//   [proto_version][node_id LE(4)][fw_len][fw][hw_len][hw][target_len][target]
+// The target field was appended in proto 3; older parsers stop after hw.
 size_t pack_info(uint8_t* buf, size_t cap) {
-    const size_t fw_len = std::strlen(s_info_fw);
-    const size_t hw_len = std::strlen(s_info_hw);
-    const size_t total = 1 + 4 + 1 + fw_len + 1 + hw_len;
+    const size_t fw_len  = std::strlen(s_info_fw);
+    const size_t hw_len  = std::strlen(s_info_hw);
+    const size_t tgt_len = std::strlen(s_info_tgt);
+    const size_t total = 1 + 4 + 1 + fw_len + 1 + hw_len + 1 + tgt_len;
     if (cap < total) return 0;
     size_t pos = 0;
     buf[pos++] = s_info_pv;
@@ -69,6 +78,8 @@ size_t pack_info(uint8_t* buf, size_t cap) {
     std::memcpy(buf + pos, s_info_fw, fw_len);  pos += fw_len;
     buf[pos++] = static_cast<uint8_t>(hw_len);
     std::memcpy(buf + pos, s_info_hw, hw_len);  pos += hw_len;
+    buf[pos++] = static_cast<uint8_t>(tgt_len);
+    std::memcpy(buf + pos, s_info_tgt, tgt_len); pos += tgt_len;
     return pos;
 }
 
@@ -98,6 +109,7 @@ class ServerCb : public NimBLEServerCallbacks {
         s_connected = false;
         s_conn_handle = 0xFFFF;
         LL_LOG_I(kTag, "disconnected");
+        if (s_link_lost_handler) s_link_lost_handler();
         NimBLEDevice::startAdvertising();
     }
 };
@@ -112,6 +124,7 @@ class CmdCb : public NimBLECharacteristicCallbacks {
         const uint16_t len = p[2] | (static_cast<uint16_t>(p[3]) << 8);
         if (v.size() < 4 + len) return;
 
+        s_cmd_task = xTaskGetCurrentTaskHandle();
         bool handled = false;
         if (s_cmd_handler) handled = s_cmd_handler(op, seq, p + 4, len);
         if (!handled) {
@@ -142,7 +155,7 @@ class BulkCb : public NimBLECharacteristicCallbacks {
 
 class InfoCb : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* chr) override {
-        uint8_t buf[64] = { 0 };
+        uint8_t buf[kInfoMaxBytes] = { 0 };
         const size_t pos = pack_info(buf, sizeof(buf));
         chr->setValue(buf, pos);
     }
@@ -257,9 +270,11 @@ bool add_state_tap(StateTap tap) {
 }
 
 void set_info(const char* firmware_version, const char* hardware_rev,
+              const char* firmware_target,
               uint32_t node_id, uint8_t proto_version) {
-    std::strncpy(s_info_fw, firmware_version, sizeof(s_info_fw) - 1);
-    std::strncpy(s_info_hw, hardware_rev,     sizeof(s_info_hw) - 1);
+    std::strncpy(s_info_fw,  firmware_version, sizeof(s_info_fw) - 1);
+    std::strncpy(s_info_hw,  hardware_rev,     sizeof(s_info_hw) - 1);
+    std::strncpy(s_info_tgt, firmware_target,  sizeof(s_info_tgt) - 1);
     s_info_id = node_id;
     s_info_pv = proto_version;
 }
@@ -295,6 +310,12 @@ uint16_t peer_mtu() {
     return mtu < 23 ? 23 : mtu;
 }
 void set_ota_chunk_handler(OtaChunkHandler h) { s_ota_handler = h; }
+void set_link_lost_handler(LinkLostHandler h) { s_link_lost_handler = h; }
+
+bool cmd_from_ble() {
+    const TaskHandle_t t = s_cmd_task;
+    return t != nullptr && xTaskGetCurrentTaskHandle() == t;
+}
 
 bool is_connected() { return s_connected; }
 

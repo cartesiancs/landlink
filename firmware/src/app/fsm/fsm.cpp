@@ -14,6 +14,8 @@ constexpr const char* kTag = "fsm";
 State    s_state = State::BOOT;
 uint8_t  s_flags = 0;
 uint32_t s_pairing_window_deadline = 0;
+// State to return to when an OTA session ends without rebooting.
+State    s_pre_ota_state = State::UNPROVISIONED;
 
 void publish() {
     landlink::transport::ble::set_state(s_state, s_flags);
@@ -112,13 +114,21 @@ void notify_pair_confirmed() {
 }
 
 void notify_ota_begin() {
+    if (s_state != State::OTA) s_pre_ota_state = s_state;
     s_flags |= bits::kOtaActive;
     enter(State::OTA);
 }
 
 void notify_ota_end(bool ok) {
     s_flags &= ~bits::kOtaActive;
-    enter(ok ? State::READY : State::FAULT);
+    // A failed or aborted update leaves the running image untouched, so the
+    // device simply carries on where it was. A successful one reboots.
+    (void)ok;
+    if (s_state == State::OTA) {
+        enter(s_pre_ota_state);
+    } else {
+        publish();
+    }
 }
 
 void notify_fault(const char* why) {

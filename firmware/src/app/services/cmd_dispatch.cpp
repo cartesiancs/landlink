@@ -442,8 +442,17 @@ bool handle_cmd(Opcode op, uint8_t seq,
     }
 
     case Opcode::WMESH_SET:
-    case Opcode::WMESH_GET_STATUS:
     case Opcode::MEDIA_UP_BEGIN:
+        // A media upload or a radio switch would compete with the image
+        // writes and the BLE link while a firmware update is running.
+        if (features::ota::active()) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+            return true;
+        }
+        forward_to_wmesh(op, seq, payload, payload_len);
+        return true;
+
+    case Opcode::WMESH_GET_STATUS:
     case Opcode::MEDIA_UP_COMMIT:
     case Opcode::MEDIA_DOWN_REQ:
     case Opcode::MEDIA_RELEASE:
@@ -543,26 +552,52 @@ bool handle_cmd(Opcode op, uint8_t seq,
         app::fsm::notify_button_very_long();
         return true;
 
+    // OTA is not gated on authed(): the Ed25519 signature over the image is
+    // the gate (only images built and signed by the Landlink release tooling
+    // install), and the same reasoning as CHANNEL_SET applies. Image data only
+    // flows over the BLE OTA characteristic, so the session must be started
+    // from BLE too; serial and the relay get BAD_STATE.
     case Opcode::OTA_BEGIN: {
-        if (!authed()) return false;
-        landlink::Tlv tsz, tsha, tsig;
-        if (!r.find(TlvTag::OTA_SIZE,       tsz)  || tsz.len  != 4) return false;
-        if (!r.find(TlvTag::OTA_SHA256,     tsha) || tsha.len != 32) return false;
-        if (!r.find(TlvTag::OTA_SIG_ED25519, tsig) || tsig.len != 64) return false;
-        const uint32_t sz = tsz.data[0] |
-                            (static_cast<uint32_t>(tsz.data[1]) << 8) |
-                            (static_cast<uint32_t>(tsz.data[2]) << 16) |
-                            (static_cast<uint32_t>(tsz.data[3]) << 24);
-        if (!features::ota::begin(sz, tsha.data, tsig.data)) return false;
-        app::fsm::notify_ota_begin();
+        if (!transport::ble::cmd_from_ble()) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_STATE));
+            return true;
+        }
+        landlink::Tlv tsz, tsha, tsig, ttarget, tver;
+        if (!r.find(TlvTag::OTA_SIZE,        tsz)  || tsz.len  != 4 ||
+            !r.find(TlvTag::OTA_SHA256,      tsha) || tsha.len != 32 ||
+            !r.find(TlvTag::OTA_SIG_ED25519, tsig) || tsig.len != 64 ||
+            !r.find(TlvTag::OTA_TARGET,      ttarget) || ttarget.len == 0 ||
+            !r.find(TlvTag::OTA_VERSION,     tver) || tver.len == 0) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+            return true;
+        }
+        features::ota::BeginRequest req;
+        req.seq         = seq;
+        req.size        = static_cast<uint32_t>(tsz.data[0]) |
+                          (static_cast<uint32_t>(tsz.data[1]) << 8) |
+                          (static_cast<uint32_t>(tsz.data[2]) << 16) |
+                          (static_cast<uint32_t>(tsz.data[3]) << 24);
+        req.sha256      = tsha.data;
+        req.sig         = tsig.data;
+        req.target      = reinterpret_cast<const char*>(ttarget.data);
+        req.target_len  = ttarget.len;
+        req.version     = reinterpret_cast<const char*>(tver.data);
+        req.version_len = tver.len;
+        if (!features::ota::post_begin(req)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+        }
         return true;
     }
 
     case Opcode::OTA_COMMIT:
-        if (!authed()) return false;
-        if (!features::ota::commit()) {
-            app::fsm::notify_ota_end(false);
-            return false;
+        if (!features::ota::post_commit(seq)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+        }
+        return true;
+
+    case Opcode::OTA_ABORT:
+        if (!features::ota::post_abort(seq)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
         }
         return true;
 
@@ -573,17 +608,9 @@ bool handle_cmd(Opcode op, uint8_t seq,
 }
 
 bool handle_ota_chunk(const uint8_t* chunk, size_t len) {
-    // Chunks are framed as [seq:u32 LE][crc32:u32 LE][data...]
-    if (len < 8) return false;
-    const uint32_t seq = chunk[0] |
-                         (static_cast<uint32_t>(chunk[1]) << 8) |
-                         (static_cast<uint32_t>(chunk[2]) << 16) |
-                         (static_cast<uint32_t>(chunk[3]) << 24);
-    const uint32_t crc = chunk[4] |
-                         (static_cast<uint32_t>(chunk[5]) << 8) |
-                         (static_cast<uint32_t>(chunk[6]) << 16) |
-                         (static_cast<uint32_t>(chunk[7]) << 24);
-    return features::ota::on_chunk(seq, crc, chunk + 8, len - 8);
+    // [offset u32 LE][crc32 u32 LE][data]; validated on the OTA task.
+    features::ota::post_frame(chunk, len);
+    return true;
 }
 
 } // namespace landlink::app::services

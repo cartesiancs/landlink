@@ -31,6 +31,12 @@ using OtaChunkHandler = bool (*)(const uint8_t* chunk, size_t chunk_len);
 // NimBLE host task; it may block briefly to apply backpressure.
 using BulkHandler = void (*)(const uint8_t* data, size_t len);
 
+// Called on the NimBLE host task when a central disconnects.
+using LinkLostHandler = void (*)();
+
+// Upper bound of the INFO blob (fw 15 + hw 47 + target 32 + headers).
+inline constexpr size_t kInfoMaxBytes = 128;
+
 bool init(uint32_t node_id);
 bool start_advertising();
 void stop_advertising();
@@ -65,14 +71,22 @@ bool add_evt_tap(EvtTap tap);
 bool add_state_tap(StateTap tap);
 
 // Inject stringified device info that the INFO read handler returns.
+// `firmware_target` is the release target id (LL_BOARD_FW_TARGET) the phone
+// uses to pick the matching firmware image.
 void set_info(const char* firmware_version,
               const char* hardware_rev,
+              const char* firmware_target,
               uint32_t    node_id,
               uint8_t     proto_version);
 
 void set_cmd_handler(CmdHandler h);
 void set_ota_chunk_handler(OtaChunkHandler h);
 void set_bulk_handler(BulkHandler h);
+void set_link_lost_handler(LinkLostHandler h);
+
+// True when called from inside a BLE CMD write callback (as opposed to the
+// same handler invoked by the serial link or the remote relay).
+bool cmd_from_ble();
 
 // Notify one raw frame on the BULK characteristic. Unlike notify_evt this
 // reports failure: it retries while the NimBLE mbuf pool is exhausted and

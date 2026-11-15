@@ -63,9 +63,14 @@ enum class TlvTag : uint8_t {
     OTA_SIZE = 0x90,
     OTA_SHA256 = 0x91,
     OTA_SIG_ED25519 = 0x92,
-    OTA_CHUNK_SEQ = 0x93,
-    OTA_CHUNK_CRC32 = 0x94,
-    OTA_PROGRESS_PCT = 0x95,
+    OTA_CHUNK_SEQ = 0x93,  // Deprecated (proto 2 chunk framing). Unused.
+    OTA_CHUNK_CRC32 = 0x94,  // Deprecated (proto 2 chunk framing). Unused.
+    OTA_PROGRESS_PCT = 0x95,  // Deprecated. Unused.
+    OTA_TARGET = 0x96,  // Firmware target id, e.g. heltec-v3-sx1262
+    OTA_VERSION = 0x97,  // Version string of the image, e.g. 0.3.1
+    OTA_OFFSET = 0x98,
+    OTA_STATE = 0x99,  // OtaState value
+    OTA_CHUNK_MAX = 0x9a,  // Max data bytes per OTA characteristic write
     REGION = 0xa0,
     NODE_MODE = 0xa1,  // Node mode: 0=relay, 1=tx only, 2=rx only
     ROLE = 0xa2,  // Node CSMA/CA role: 0=client, 1=router, 2=repeater

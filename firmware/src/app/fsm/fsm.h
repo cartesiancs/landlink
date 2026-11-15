@@ -30,6 +30,8 @@ void notify_ble_connected(bool v);
 void notify_wifi_up(bool v);
 void notify_pair_confirmed();
 void notify_ota_begin();
+// Ends an OTA session that did not reboot (aborted or failed). Returns to
+// the state the device was in before notify_ota_begin().
 void notify_ota_end(bool ok);
 void notify_fault(const char* why);
 

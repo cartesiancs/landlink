@@ -20,6 +20,7 @@
 #include "app/services/wmesh_service.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
+#include "features/ota/ota.h"
 #include "features/peer_report/peer_report.h"
 #include "features/pki_identity/pki_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
@@ -195,12 +196,16 @@ void setup() {
     landlink::transport::ble::set_info(
         landlink::build::kFirmwareVersion,
         landlink::build::kHardwareRev,
+        landlink::build::kFirmwareTarget,
         node_id,
         landlink::build::kProtoVersion);
     landlink::transport::ble::set_cmd_handler(
         landlink::app::services::handle_cmd);
+    landlink::features::ota::init();
     landlink::transport::ble::set_ota_chunk_handler(
         landlink::app::services::handle_ota_chunk);
+    landlink::transport::ble::set_link_lost_handler(
+        landlink::features::ota::on_link_lost);
     landlink::transport::ble::start_advertising();
 
     // USB serial host link: same CMD handler as BLE, EVT/STATE mirrored via

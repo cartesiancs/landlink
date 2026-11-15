@@ -12,6 +12,8 @@
 //   LL_BOARD_BUTTON_ACTIVE_LOW  0 or 1   user button polarity
 //   LL_BOARD_BUTTON_PULL_UP     0 or 1   INPUT_PULLUP vs INPUT_PULLDOWN
 //   LL_BOARD_HW_REV             string   reported over BLE INFO
+//   LL_BOARD_FW_TARGET          string   release target id (platformio env name),
+//                                        reported over BLE INFO and checked by OTA
 //   LL_BOARD_MT_HW_MODEL        uint32_t Meshtastic HardwareModel enum value
 //
 // Optional capabilities (defaults at the bottom keep older boards unchanged):
@@ -57,6 +59,7 @@
     #define LL_BOARD_PMU_RAILS          LL_PMU_RAILS_TBEAM_V11
     #define LL_BOARD_GPS_UBLOX          1
     #define LL_BOARD_HW_REV             "ttgo-t-beam-v1.1-sx1262"
+    #define LL_BOARD_FW_TARGET          "ttgo-t-beam-sx1262"
     // Meshtastic HardwareModel.TBEAM = 4. Drives the device icon shown by peer
     // clients; no impact on radio behavior.
     #define LL_BOARD_MT_HW_MODEL        4u
@@ -70,6 +73,7 @@
     #define LL_BOARD_BUTTON_ACTIVE_LOW  1
     #define LL_BOARD_BUTTON_PULL_UP     1
     #define LL_BOARD_HW_REV             "xiao-esp32s3-wio-sx1262"
+    #define LL_BOARD_FW_TARGET          "xiao-esp32s3-wio-sx1262"
     // Meshtastic upstream does not yet enumerate this specific kit, so we
     // report PRIVATE_HW. Peer clients fall back to a generic icon; mesh
     // routing, channels, and PKI are unaffected.
@@ -88,6 +92,7 @@
     #define LL_BOARD_BATT_ADC_CTRL      LL_BATT_CTRL_DRIVE
     #define LL_BOARD_BATT_ADC_CTRL_ACTIVE_HIGH 0
     #define LL_BOARD_HW_REV             "heltec-wifi-lora-32-v3-sx1262"
+    #define LL_BOARD_FW_TARGET          "heltec-v3-sx1262"
     // Meshtastic HardwareModel.HELTEC_V3 = 43.
     #define LL_BOARD_MT_HW_MODEL        43u
 
@@ -111,6 +116,7 @@
     #define LL_BOARD_HAS_GPS_WAKE       1
     #define LL_BOARD_LORA_FEM           LL_FEM_HELTEC_V4
     #define LL_BOARD_HW_REV             "heltec-wifi-lora-32-v4-sx1262"
+    #define LL_BOARD_FW_TARGET          "heltec-v4-sx1262"
     // Meshtastic HardwareModel.HELTEC_V4 = 110.
     #define LL_BOARD_MT_HW_MODEL        110u
 
@@ -127,6 +133,7 @@
     #define LL_BOARD_BATT_ADC_CTRL      LL_BATT_CTRL_PULLUP
     #define LL_BOARD_HAS_GPS_RESET      1
     #define LL_BOARD_HW_REV             "heltec-wireless-tracker-v1.1-sx1262"
+    #define LL_BOARD_FW_TARGET          "heltec-wireless-tracker-sx1262"
     // Meshtastic HardwareModel.HELTEC_WIRELESS_TRACKER = 48.
     #define LL_BOARD_MT_HW_MODEL        48u
 
@@ -140,6 +147,7 @@
     #define LL_BOARD_BUTTON_ACTIVE_LOW  1
     #define LL_BOARD_BUTTON_PULL_UP     1
     #define LL_BOARD_HW_REV             "lilygo-t-beam-supreme-sx1262"
+    #define LL_BOARD_FW_TARGET          "t-beam-supreme-sx1262"
     // Meshtastic HardwareModel.LILYGO_TBEAM_S3_CORE = 12.
     #define LL_BOARD_MT_HW_MODEL        12u
 
@@ -153,6 +161,7 @@
     #define LL_BOARD_HAS_BATT_ADC       1
     #define LL_BOARD_BATT_ADC_CTRL      LL_BATT_CTRL_NONE
     #define LL_BOARD_HW_REV             "lilygo-t3-s3-v1-sx1262"
+    #define LL_BOARD_FW_TARGET          "t3-s3-sx1262"
     // Meshtastic HardwareModel.TLORA_T3_S3 = 16.
     #define LL_BOARD_MT_HW_MODEL        16u
 
