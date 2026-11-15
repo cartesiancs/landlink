@@ -1,3 +1,6 @@
+
+
+
 <p align="center">
   <img src=".github/banner.jpg" alt="Landlink: a drone-powered alternative to Starlink" width="100%" />
 </p>
@@ -26,7 +29,8 @@ It lets phones talk to each other over LoRa when there is no internet.
 
 ## Demo
 
-https://github.com/user-attachments/assets/cd215b75-7e53-492d-968e-884c31c08897
+https://github.com/user-attachments/assets/626d68bd-df2c-47ec-abb1-35ba776f91af
+
 
 ### Firmware (Module I)
 
