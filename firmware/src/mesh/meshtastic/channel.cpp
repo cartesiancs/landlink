@@ -32,7 +32,11 @@ uint8_t xor_hash(const uint8_t* buf, size_t len) {
 }
 
 uint8_t channel_hash(const char* name, const ChannelKey& key) {
-    const size_t name_len = (name != nullptr) ? std::strlen(name) : 0;
+    // Upstream Channels::getName() substitutes the modem preset's display
+    // name for an empty channel name, so an unnamed channel hashes as
+    // "LongFast" on the default preset.
+    if (name == nullptr || name[0] == '\0') name = "LongFast";
+    const size_t name_len = std::strlen(name);
     return static_cast<uint8_t>(
         xor_hash(reinterpret_cast<const uint8_t*>(name), name_len)
         ^ xor_hash(key.bytes, key.len));

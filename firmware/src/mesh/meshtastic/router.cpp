@@ -209,26 +209,31 @@ void MeshtasticRouter::on_rx(const uint8_t* frame, size_t frame_len,
             break;
         }
     }
-    if (!matched) return;
-
     // Hearing our own (self_id, pkt_id) being relayed back is the implicit-ACK
     // signal upstream Meshtastic clients use to confirm broadcast delivery.
-    // Fire the callback and drop. The pending-send dedup at the host handles
-    // repeats across multiple hops.
+    // Fire the callback (only when we could decode it, so the channel is
+    // known) and drop. The pending-send dedup at the host handles repeats
+    // across multiple hops.
     if (h.src == cfg_.self_id) {
-        if (own_echo_cb_) own_echo_cb_(matched_index, h.pkt_id);
+        if (matched && own_echo_cb_) own_echo_cb_(matched_index, h.pkt_id);
         return;
     }
-    if (dedup_.seen_or_insert(h.src, h.pkt_id)) return;
+    if (dedup_.seen_or_insert(h.src, h.pkt_id)) {
+        if (duplicate_cb_) duplicate_cb_(h.src, h.pkt_id);
+        return;
+    }
 
+    // Undecodable frames (channels we do not hold, PKI DMs between other
+    // nodes) are still relayed below, matching upstream's default
+    // rebroadcast mode ALL. They are never surfaced to the host.
     const bool for_us = (h.dst == cfg_.self_id || h.dst == kBroadcastAddr);
-    if (for_us && sink_) {
+    if (matched && for_us && sink_) {
         sink_(matched_index, h, data, was_pki);
     }
 
     // Forward if there is hop budget and the packet is not uniquely for us.
-    // Re-emit the original ciphertext verbatim — AES-CTR has no auth tag, so
-    // byte-identical ciphertext continues to decrypt at the next hop.
+    // Re-emit the original ciphertext verbatim: we never re-encrypt, so the
+    // next hop decrypts (or relays) exactly what the originator sent.
     const bool should_forward = (h.hop_limit > 0) && (h.dst != cfg_.self_id);
     if (!should_forward) return;
     if (forward_cap < frame_len) return;

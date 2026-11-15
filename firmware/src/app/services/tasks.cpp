@@ -158,7 +158,8 @@ constexpr const char* kTag = "tasks";
                 // SNR-weighted backoff applies. Lower-SNR receivers (poor
                 // signal, likely on the edge of the originator's range) get
                 // a smaller CW and relay first; higher-SNR receivers wait
-                // longer and usually suppress on overhearing the relay.
+                // longer and cancel theirs on overhearing the relay
+                // (mac::cancel_rebroadcast).
                 transport::lora::TxRequest req{};
                 std::memcpy(req.bytes, fwd, fwd_len);
                 req.len            = fwd_len;

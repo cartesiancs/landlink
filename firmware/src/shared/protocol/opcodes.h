@@ -100,6 +100,7 @@ enum class MeshKind : uint8_t {
     PAIR_CONFIRM = 0x08,
     PING = 0x09,
     TRACEROUTE = 0x0a,
+    NAK = 0x0b,
 };
 
 

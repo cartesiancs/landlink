@@ -96,6 +96,16 @@ void test_constructed_channels_collide_on_single_byte_hash() {
     TEST_ASSERT_EQUAL_UINT8(ha, hb);
 }
 
+void test_empty_name_hashes_as_preset_name() {
+    // Upstream substitutes the preset display name for an empty channel
+    // name, so "" and "LongFast" must produce the same hash.
+    ChannelKey k;
+    const uint8_t one = 0x01;
+    TEST_ASSERT_TRUE(expand_psk(&one, 1, k));
+    TEST_ASSERT_EQUAL_UINT8(channel_hash("LongFast", k), channel_hash("", k));
+    TEST_ASSERT_EQUAL_UINT8(channel_hash("LongFast", k), channel_hash(nullptr, k));
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_xor_hash_of_LongFast_is_0x0A);
@@ -106,5 +116,6 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_default_channel_hash_is_0x08);
     RUN_TEST(test_distinct_channels_produce_distinct_hashes_typical);
     RUN_TEST(test_constructed_channels_collide_on_single_byte_hash);
+    RUN_TEST(test_empty_name_hashes_as_preset_name);
     return UNITY_END();
 }

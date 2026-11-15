@@ -16,12 +16,11 @@
 //     debounce.
 //   * Priority queue keyed on Priority enum (ACK=120 highest, BACKGROUND=10
 //     lowest). FIFO within priority class.
-//   * Application-level deferral via TxRequest::not_before_ms (used by
-//     mesh_chat for broadcast ACK jitter that survives MAC re-rolls).
+//   * Application-level deferral via TxRequest::not_before_ms.
+//   * Queued relays are cancelled when another node is heard relaying the
+//     same packet first (client role only).
 //
-// Reliable retransmission (NextHopRouter analogue) is intentionally NOT
-// implemented here. The host-driven retry_pkt_id path in mesh_chat handles
-// the use case.
+// Reliable retransmission (NextHopRouter analogue) is NOT implemented.
 
 #include <cstddef>
 #include <cstdint>
@@ -51,6 +50,12 @@ Role role();
 // Enqueue a frame for CSMA/CA-scheduled transmission. Returns false if the
 // priority queue is full.
 bool enqueue(const TxRequest& req);
+
+// Drop a still-queued rebroadcast of (src, pkt_id) because another node has
+// already relayed it. No-op for Router/Repeater roles, which always relay
+// (upstream FloodingRouter::perhapsCancelDupe). A frame already on the air
+// is not affected. Returns true if an entry was removed.
+bool cancel_rebroadcast(uint32_t src, uint32_t pkt_id);
 
 // Service one MAC tick. Called from lora_tx_task at ~1 kHz.
 void tick();

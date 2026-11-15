@@ -6,11 +6,11 @@
 // via `poll_rx()`.
 //
 // The radio runs the Meshtastic LongFast preset: SF11, BW 250 kHz, CR 4/5,
-// sync 0x2B, preamble 16, +22 dBm. Slot frequency is `xorHash("LongFast") %
-// numChannels` mapped to the region's slot grid:
-//   KR923 — 922.625 MHz (slot 10 of 12)
-//   EU868 — 869.525 MHz (slot 0 of 1)
-//   US915 — 904.625 MHz (slot 10 of 104)
+// sync 0x2B, preamble 16, +22 dBm. Slot frequency is `djb2("LongFast") %
+// numChannels` mapped to the region's slot grid (see slot_math.h):
+//   KR923: 922.875 MHz (slot 11 of 12)
+//   EU868: 869.525 MHz (slot 0 of 1)
+//   US915: 906.875 MHz (slot 19 of 104)
 
 #include <cstddef>
 #include <cstdint>

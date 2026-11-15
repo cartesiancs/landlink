@@ -33,6 +33,7 @@ enum class TlvTag : uint8_t {
     ACK_PKT_ID = 0x40,
     HOP_LIMIT = 0x41,
     RETRY_PKT_ID = 0x42,  // Landlink-only: on MESH_SEND, reuse this pkt_id instead of allocating a new one (chat retry)
+    ROUTING_ERROR = 0x43,  // Meshtastic Routing.Error reason carried by a KIND=NAK MESH_RECV (e.g. 6 NO_CHANNEL, 35 PKI_UNKNOWN_PUBKEY)
     NODE_NAME = 0x50,  // Human-friendly peer name <=32 B
     CAP_FLAGS = 0x51,  // Capability bitfield
     WMESH_ENABLED = 0x60,  // 1 = Wi-Fi mesh on

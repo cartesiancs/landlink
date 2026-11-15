@@ -48,6 +48,11 @@ using MeshtasticSink = void (*)(uint8_t channel_index,
 using MeshtasticOwnEchoCallback = void (*)(uint8_t channel_index,
                                            uint32_t pkt_id);
 
+// Invoked when a frame we have already seen arrives again (another node
+// relayed it). Lets the MAC cancel our own still-queued relay of the same
+// packet, mirroring upstream FloodingRouter::perhapsCancelDupe.
+using MeshtasticDuplicateCallback = void (*)(uint32_t src, uint32_t pkt_id);
+
 struct RouterConfig {
     uint32_t self_id           = 0;
     uint8_t  default_hop_limit = 3;
@@ -58,6 +63,7 @@ public:
     void init(const RouterConfig& cfg);
     void set_sink(MeshtasticSink sink) { sink_ = sink; }
     void set_own_echo_callback(MeshtasticOwnEchoCallback cb) { own_echo_cb_ = cb; }
+    void set_duplicate_callback(MeshtasticDuplicateCallback cb) { duplicate_cb_ = cb; }
 
     uint32_t self_id() const { return cfg_.self_id; }
 
@@ -103,6 +109,7 @@ private:
     DedupCache                dedup_;
     MeshtasticSink            sink_         = nullptr;
     MeshtasticOwnEchoCallback own_echo_cb_  = nullptr;
+    MeshtasticDuplicateCallback duplicate_cb_ = nullptr;
 };
 
 } // namespace landlink::mesh::meshtastic

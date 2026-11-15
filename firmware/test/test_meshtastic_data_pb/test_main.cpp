@@ -155,6 +155,42 @@ void test_position_truncated_returns_false() {
     TEST_ASSERT_FALSE(decode_position(wire, sizeof(wire), p));
 }
 
+void test_routing_empty_payload_is_ack() {
+    uint32_t err = 99;
+    TEST_ASSERT_TRUE(decode_routing_error(nullptr, 0, err));
+    TEST_ASSERT_EQUAL_UINT32(0u, err);
+}
+
+void test_routing_explicit_none_is_ack() {
+    // nanopb encodes the oneof even at its default: field 3 varint 0.
+    const uint8_t buf[] = { 0x18, 0x00 };
+    uint32_t err = 99;
+    TEST_ASSERT_TRUE(decode_routing_error(buf, sizeof(buf), err));
+    TEST_ASSERT_EQUAL_UINT32(0u, err);
+}
+
+void test_routing_nak_reason_decoded() {
+    // error_reason = PKI_UNKNOWN_PUBKEY (35).
+    const uint8_t buf[] = { 0x18, 0x23 };
+    uint32_t err = 0;
+    TEST_ASSERT_TRUE(decode_routing_error(buf, sizeof(buf), err));
+    TEST_ASSERT_EQUAL_UINT32(35u, err);
+}
+
+void test_routing_skips_route_discovery() {
+    // route_reply (field 2, empty RouteDiscovery) then error_reason NO_ROUTE.
+    const uint8_t buf[] = { 0x12, 0x00, 0x18, 0x01 };
+    uint32_t err = 0;
+    TEST_ASSERT_TRUE(decode_routing_error(buf, sizeof(buf), err));
+    TEST_ASSERT_EQUAL_UINT32(1u, err);
+}
+
+void test_routing_truncated_rejected() {
+    const uint8_t buf[] = { 0x18 };
+    uint32_t err = 0;
+    TEST_ASSERT_FALSE(decode_routing_error(buf, sizeof(buf), err));
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_encode_text_message);
@@ -166,5 +202,10 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_position_negative_coords_roundtrip);
     RUN_TEST(test_position_skips_unknown_fields);
     RUN_TEST(test_position_truncated_returns_false);
+    RUN_TEST(test_routing_empty_payload_is_ack);
+    RUN_TEST(test_routing_explicit_none_is_ack);
+    RUN_TEST(test_routing_nak_reason_decoded);
+    RUN_TEST(test_routing_skips_route_discovery);
+    RUN_TEST(test_routing_truncated_rejected);
     return UNITY_END();
 }

@@ -11,7 +11,7 @@ namespace landlink::mesh::crypto {
 namespace {
 
 constexpr size_t kSharedKeyLen = 32;
-constexpr size_t kNonceLen     = 8; // bytes actually fed to AES-CCM
+constexpr size_t kNonceLen     = kPkiNonceLen;
 
 // Builds the SHA-256(X25519(self_priv, peer_pub)) symmetric key. Matches
 // firmware/Meshtastic CryptoEngine::hash(shared_key, 32) on the ECDH output.
@@ -35,21 +35,9 @@ bool derive_pki_key(const uint8_t self_priv[32],
     return true;
 }
 
-// Composes the firmware's nonce[0..7] = packet_id LE(4) || extra_nonce LE(4).
-// We mirror the layout exactly so a packet encrypted on either side decodes
-// on the other. The high 32 bits of the "u64 packet_id" are always zero on
-// real Meshtastic traffic; the extra_nonce slot effectively overlays them.
-void build_nonce(uint64_t packet_id, uint32_t extra_nonce,
+void build_nonce(uint64_t packet_id, uint32_t extra_nonce, uint32_t from_node,
                  uint8_t out[kNonceLen]) {
-    const uint32_t pid_lo = static_cast<uint32_t>(packet_id & 0xFFFFFFFFu);
-    out[0] = static_cast<uint8_t>(pid_lo);
-    out[1] = static_cast<uint8_t>(pid_lo >> 8);
-    out[2] = static_cast<uint8_t>(pid_lo >> 16);
-    out[3] = static_cast<uint8_t>(pid_lo >> 24);
-    out[4] = static_cast<uint8_t>(extra_nonce);
-    out[5] = static_cast<uint8_t>(extra_nonce >> 8);
-    out[6] = static_cast<uint8_t>(extra_nonce >> 16);
-    out[7] = static_cast<uint8_t>(extra_nonce >> 24);
+    pki_build_nonce(packet_id, extra_nonce, from_node, out);
 }
 
 uint32_t read_u32_le(const uint8_t* p) {
@@ -80,15 +68,11 @@ bool fresh_extra_nonce(uint32_t& out) {
 bool pki_encrypt(const uint8_t self_priv[32],
                  const uint8_t peer_pub[32],
                  uint64_t      packet_id,
-                 uint32_t      /*from_node*/,
+                 uint32_t      from_node,
                  const uint8_t plaintext[],
                  size_t        plaintext_len,
                  uint8_t       out_encrypted[],
                  size_t&       out_len) {
-    // from_node is intentionally ignored for crypto purposes: it lives in
-    // nonce[8..11] of the 16-byte buffer firmware allocates, but only
-    // nonce[0..7] (packet_id || extra_nonce) is passed to CCM. We keep it
-    // in the signature so future audits / refactors stay aligned.
     uint8_t key[kSharedKeyLen];
     if (!derive_pki_key(self_priv, peer_pub, key)) return false;
 
@@ -98,7 +82,7 @@ bool pki_encrypt(const uint8_t self_priv[32],
         return false;
     }
     uint8_t nonce[kNonceLen];
-    build_nonce(packet_id, extra_nonce, nonce);
+    build_nonce(packet_id, extra_nonce, from_node, nonce);
 
     mbedtls_ccm_context ccm;
     mbedtls_ccm_init(&ccm);
@@ -126,7 +110,7 @@ bool pki_encrypt(const uint8_t self_priv[32],
 bool pki_decrypt(const uint8_t self_priv[32],
                  const uint8_t peer_pub[32],
                  uint64_t      packet_id,
-                 uint32_t      /*from_node*/,
+                 uint32_t      from_node,
                  const uint8_t wire[],
                  size_t        wire_len,
                  uint8_t       out_plaintext[],
@@ -139,7 +123,7 @@ bool pki_decrypt(const uint8_t self_priv[32],
 
     const uint32_t extra_nonce = read_u32_le(wire + body_len + kPkiTagLen);
     uint8_t nonce[kNonceLen];
-    build_nonce(packet_id, extra_nonce, nonce);
+    build_nonce(packet_id, extra_nonce, from_node, nonce);
 
     mbedtls_ccm_context ccm;
     mbedtls_ccm_init(&ccm);

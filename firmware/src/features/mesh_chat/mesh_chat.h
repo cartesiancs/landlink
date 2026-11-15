@@ -30,11 +30,13 @@ void on_meshtastic_chat(uint8_t channel_index,
                         bool pki_encrypted);
 
 // Invoked by the Meshtastic sink when a ROUTING_APP `Data` packet arrives
-// carrying a request_id. Forwards to BLE as MESH_RECV(KIND=ACK,
-// ACK_PKT_ID=request_id) so the host's existing ACK matcher resolves the
-// pending outgoing chat. Mirrors the on_ack(landlink) wire format.
+// carrying a request_id. error_reason 0 (NONE) forwards to BLE as
+// MESH_RECV(KIND=ACK, ACK_PKT_ID=request_id) so the host's ACK matcher
+// resolves the pending outgoing chat. A non-zero error_reason forwards as
+// MESH_RECV(KIND=NAK, ACK_PKT_ID=request_id, ROUTING_ERROR=reason).
 void on_meshtastic_routing(uint8_t channel_index,
-                           uint32_t src, uint32_t request_id);
+                           uint32_t src, uint32_t request_id,
+                           uint32_t error_reason);
 
 // Invoked by the Meshtastic router when it overhears one of our own
 // broadcasts being relayed back on-air. Upstream Meshtastic firmware never

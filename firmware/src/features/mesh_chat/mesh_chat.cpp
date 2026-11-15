@@ -1,7 +1,6 @@
 #include "mesh_chat.h"
 
 #include <Arduino.h>
-#include <esp_random.h>
 
 #include <cstring>
 
@@ -29,12 +28,7 @@ using landlink::transport::lora::TxRequest;
 
 constexpr uint8_t kKindChatText = static_cast<uint8_t>(MeshKind::CHAT_TEXT);
 constexpr uint8_t kKindAck      = static_cast<uint8_t>(MeshKind::ACK);
-
-// Max ACK jitter for broadcast-derived ACKs. Spreads N receivers' replies
-// across the window so the CAD-based MAC has somewhere quiet to land each
-// one. Matches the previous app-level behavior; with the new MAC layer this
-// is realized via TxRequest::not_before_ms rather than a separate timer.
-constexpr uint32_t kAckBroadcastJitterMs = 3000;
+constexpr uint8_t kKindNak      = static_cast<uint8_t>(MeshKind::NAK);
 
 bool submit_tx(const uint8_t* frame, size_t frame_len,
                Priority prio, uint32_t not_before_ms) {
@@ -116,10 +110,9 @@ bool send_chat_meshtastic(uint8_t channel_index,
 }
 
 // Build + schedule a Meshtastic Routing ACK back to the original sender on
-// the channel the chat was received on.
+// the channel the chat was received on. Only used for unicast chats.
 bool schedule_meshtastic_routing_ack(uint8_t channel_index, uint32_t dst,
-                                     uint32_t ref_pkt_id,
-                                     bool was_broadcast) {
+                                     uint32_t ref_pkt_id) {
     using mesh::meshtastic::kMaxFrame;
     using mesh::meshtastic::kMaxPayload;
     using mesh::meshtastic::kPortnumRoutingApp;
@@ -141,17 +134,12 @@ bool schedule_meshtastic_routing_ack(uint8_t channel_index, uint32_t dst,
                  static_cast<unsigned>(ref_pkt_id));
         return false;
     }
-    const uint32_t not_before = was_broadcast
-        ? millis() + (esp_random() % kAckBroadcastJitterMs)
-        : 0;
-    const bool ok = submit_tx(frame, frame_len, Priority::Ack, not_before);
-    LL_LOG_I(kTag, "send_mt_ack ch=%u dst=%08x ref=%u pkt_id=%u bc=%d jitter_to=%u tx=%d",
+    const bool ok = submit_tx(frame, frame_len, Priority::Ack, /*not_before_ms=*/0);
+    LL_LOG_I(kTag, "send_mt_ack ch=%u dst=%08x ref=%u pkt_id=%u tx=%d",
              static_cast<unsigned>(channel_index),
              static_cast<unsigned>(dst),
              static_cast<unsigned>(ref_pkt_id),
              static_cast<unsigned>(assigned),
-             was_broadcast ? 1 : 0,
-             static_cast<unsigned>(not_before),
              ok ? 1 : 0);
     return ok;
 }
@@ -189,37 +177,45 @@ void on_meshtastic_chat(uint8_t channel_index,
              static_cast<unsigned>(text_len));
     emit_recv_event(channel_index, src, dst, pkt_id, text, text_len, pki_encrypted);
 
-    // ACK any chat that requested one. For broadcasts we jitter (multiple
-    // receivers reply, so back-to-back transmits would collide on-air); the
-    // jitter is delivered via the MAC's not_before deadline so the ACK still
-    // wins priority arbitration against background traffic queued behind it.
-    // Self-loops are already filtered upstream by the router via the
-    // (src == self_id) check, so we don't need to guard against them here.
-    if (want_ack) {
-        const bool was_broadcast = (dst == kBroadcastAddr);
-        (void)schedule_meshtastic_routing_ack(channel_index, src, pkt_id,
-                                              was_broadcast);
+    // ACK only unicast chats that requested one, like upstream. Broadcast
+    // senders learn delivery from the implicit ACK (hearing a neighbour relay
+    // their frame), so N receivers replying would only burn airtime and
+    // collide. Self-loops are already filtered by the router via the
+    // (src == self_id) check.
+    if (want_ack && dst != kBroadcastAddr) {
+        (void)schedule_meshtastic_routing_ack(channel_index, src, pkt_id);
     }
 }
 
 void on_meshtastic_routing(uint8_t channel_index,
-                           uint32_t src, uint32_t request_id) {
-    LL_LOG_I(kTag, "on_routing[mt] ch=%u src=%08x ref=%u",
+                           uint32_t src, uint32_t request_id,
+                           uint32_t error_reason) {
+    LL_LOG_I(kTag, "on_routing[mt] ch=%u src=%08x ref=%u err=%u",
              static_cast<unsigned>(channel_index),
              static_cast<unsigned>(src),
-             static_cast<unsigned>(request_id));
-    // Mirror the wire shape that on_ack[landlink] produces so the host's
-    // parseMeshRecv treats this as an ACK and onAck(pktId) resolves the
-    // pending entry into "delivered". NODE_DST is the self id since a
-    // Routing ACK that reaches our sink was addressed to us.
+             static_cast<unsigned>(request_id),
+             static_cast<unsigned>(error_reason));
+    // error_reason NONE is an ACK: mirror the wire shape that on_ack[landlink]
+    // produces so the host's parseMeshRecv resolves the pending entry into
+    // "delivered". Any other reason is a NAK (e.g. the destination lacks our
+    // public key) and goes up as KIND=NAK with the reason, so the host can
+    // mark the message failed instead of delivered. NODE_DST is the self id
+    // since a Routing reply that reaches our sink was addressed to us.
     const uint32_t self_id = mesh::protocol::meshtastic_router().self_id();
-    uint8_t buf[24];
+    const bool is_nak = (error_reason != 0);
+    uint8_t buf[32];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u32(TlvTag::NODE_ID,       src);
     b.put_u32(TlvTag::NODE_DST,      self_id);
     b.put_u8 (TlvTag::CHANNEL_INDEX, channel_index);
-    b.put_u8 (TlvTag::KIND,          kKindAck);
+    b.put_u8 (TlvTag::KIND,          is_nak ? kKindNak : kKindAck);
     b.put_u32(TlvTag::ACK_PKT_ID,    request_id);
+    if (is_nak) {
+        const uint8_t reason = error_reason > 0xFF
+                                   ? static_cast<uint8_t>(0xFF)
+                                   : static_cast<uint8_t>(error_reason);
+        b.put_u8(TlvTag::ROUTING_ERROR, reason);
+    }
     landlink::transport::ble::notify_evt(Opcode::MESH_RECV, 0,
                                          b.data(), b.size());
 }

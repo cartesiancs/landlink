@@ -114,4 +114,11 @@ struct PositionMessage {
 // false on malformed input. Unknown fields are skipped.
 bool decode_position(const uint8_t* buf, size_t buf_len, PositionMessage& out);
 
+// Decode the `error_reason` (field 3, Routing.Error enum) from a Meshtastic
+// `Routing` protobuf carried in a ROUTING_APP Data.payload. An absent field
+// (or an empty payload) means NONE, i.e. a successful ACK, and yields 0.
+// Non-zero values are NAKs (e.g. 1 NO_ROUTE, 5 MAX_RETRANSMIT,
+// 6 NO_CHANNEL, 35 PKI_UNKNOWN_PUBKEY). Returns false on malformed input.
+bool decode_routing_error(const uint8_t* buf, size_t buf_len, uint32_t& out_error);
+
 } // namespace landlink::mesh::meshtastic

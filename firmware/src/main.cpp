@@ -123,12 +123,17 @@ void meshtastic_payload_sink(uint8_t channel_index,
             data.payload, data.payload_len,
             pki_encrypted);
     } else if (data.portnum == kPortnumRoutingApp && data.has_request_id) {
-        // Routing payload with a request_id is the Meshtastic ACK shape
-        // (error_reason=NONE is encoded implicitly via the default value when
-        // the Routing body is empty). NACKs with explicit error_reason are
-        // out-of-scope for now and treated as "no ACK arrived".
+        // Routing payload with a request_id answers one of our packets.
+        // error_reason NONE (absent or 0) is an ACK; anything else is a NAK
+        // and must not be reported as delivered.
+        uint32_t error_reason = 0;
+        if (!decode_routing_error(data.payload, data.payload_len, error_reason)) {
+            LL_LOG_W(kTag, "mt rx: malformed Routing payload, ref=%u",
+                     static_cast<unsigned>(data.request_id));
+            return;
+        }
         landlink::features::mesh_chat::on_meshtastic_routing(
-            channel_index, h.src, data.request_id);
+            channel_index, h.src, data.request_id, error_reason);
     } else if (data.portnum == kPortnumNodeInfoApp && data.payload != nullptr) {
         // Cache the sender's X25519 public_key so future DMs to them can be
         // PKI-encrypted (and so PKI DMs from them can be authenticated).
@@ -242,6 +247,11 @@ void setup() {
     // of our own packets back to us, treat it as proof of delivery.
     landlink::mesh::protocol::meshtastic_router().set_own_echo_callback(
         &landlink::features::mesh_chat::on_meshtastic_own_echo);
+    // Another node relayed a packet we are still waiting to relay: drop ours.
+    landlink::mesh::protocol::meshtastic_router().set_duplicate_callback(
+        [](uint32_t src, uint32_t pkt_id) {
+            (void)landlink::transport::lora::mac::cancel_rebroadcast(src, pkt_id);
+        });
 
     landlink::features::mesh_identity::init(node_id);
     // Generate or load the device's persistent X25519 keypair. Must come

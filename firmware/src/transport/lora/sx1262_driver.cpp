@@ -14,6 +14,7 @@
 #include "transport/lora/airtime.h"
 #include "transport/lora/fem.h"
 #include "transport/lora/mac.h"
+#include "transport/lora/slot_math.h"
 
 namespace landlink::transport::lora {
 
@@ -81,19 +82,24 @@ uint8_t         s_region_seq       = 0;
 RegionAppliedFn s_region_cb        = nullptr;
 
 float meshtastic_longfast_freq(Region r) {
-    // LongFast slot = xorHash("LongFast") % numChannels.
-    // xorHash("LongFast") = 0x0A. Slot freq = freqStart + bw/2000 + n*bw/1000.
+    // Upstream picks the slot as djb2(primary channel name) % numChannels,
+    // substituting the preset name ("LongFast") when the name is empty. We
+    // always hash the preset name so renaming the primary channel never
+    // moves the radio off the default LongFast slot.
+    //   US915: slot 19 of 104 -> 906.875 MHz
+    //   EU868: slot 0 of 1    -> 869.525 MHz
+    //   KR923: slot 11 of 12  -> 922.875 MHz
+    constexpr float kBwKhz = 250.0f;
+    const slot_math::RegionGrid* grid = &slot_math::kGridKR923;
     switch (r) {
-        case Region::EU868: return 869.525f;   // 0x0A % 1  = 0  -> 869.4   + 0.125
-        case Region::US915: return 904.625f;   // 0x0A % 104 = 10 -> 902.0  + 0.125 + 10*0.25
+        case Region::EU868: grid = &slot_math::kGridEU868; break;
+        case Region::US915: grid = &slot_math::kGridUS915; break;
         case Region::KR923:
-        default:
-            // DIAGNOSTIC: temporarily bumped from 922.625 MHz (slot 10) to
-            // 922.875 MHz (slot 11) to test against SDR measurement showing
-            // stock Meshtastic device transmitting near 922.8 MHz. Revert to
-            // 922.625f if this turns out to be an SDR calibration artifact.
-            return 922.875f;
+        default:            grid = &slot_math::kGridKR923; break;
     }
+    const uint32_t slot =
+        slot_math::slot_index(*grid, kBwKhz, /*channel_name=*/nullptr, "LongFast");
+    return slot_math::slot_freq_mhz(*grid, kBwKhz, slot);
 }
 
 void IRAM_ATTR on_dio1() {

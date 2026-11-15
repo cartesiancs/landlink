@@ -333,4 +333,23 @@ bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out) {
     return true;
 }
 
+bool decode_routing_error(const uint8_t* buf, size_t buf_len, uint32_t& out_error) {
+    out_error = 0;
+    size_t off = 0;
+    while (off < buf_len) {
+        uint64_t key;
+        if (!read_varint(buf, buf_len, off, key)) return false;
+        const uint32_t field = static_cast<uint32_t>(key >> 3);
+        const uint8_t  wire  = static_cast<uint8_t>(key & 0x7);
+        if (field == 3 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out_error = static_cast<uint32_t>(v);
+        } else {
+            if (!skip_field(buf, buf_len, off, wire)) return false;
+        }
+    }
+    return true;
+}
+
 } // namespace landlink::mesh::meshtastic

@@ -267,6 +267,28 @@ bool enqueue(const TxRequest& req) {
     return ok;
 }
 
+bool cancel_rebroadcast(uint32_t src, uint32_t pkt_id) {
+    if (is_relay_role(s_role)) return false;
+    if (!queue_take_mtx(pdMS_TO_TICKS(5))) return false;
+    bool removed = false;
+    for (size_t i = 0; i < s_queue_len; ++i) {
+        const TxRequest& req = s_queue[i].req;
+        if (!req.is_rebroadcast) continue;
+        mesh::meshtastic::Header h;
+        if (!mesh::meshtastic::unpack_header(req.bytes, req.len, h)) continue;
+        if (h.src != src || h.pkt_id != pkt_id) continue;
+        erase_at(i);
+        removed = true;
+        break;
+    }
+    queue_give_mtx();
+    if (removed) {
+        LL_LOG_I(kTag, "relay cancelled src=%08x pkt_id=%u (heard another relay)",
+                 static_cast<unsigned>(src), static_cast<unsigned>(pkt_id));
+    }
+    return removed;
+}
+
 void tick() {
     if (!s_preset_ready) return;
     if (!node_mode::can_transmit()) {
