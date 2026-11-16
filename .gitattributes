@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+*.bin binary
+*.jpg binary
+*.png binary
+*.mp4 binary
+
+# Generated from firmware/protocol.yaml by firmware/tools/gen_protocol.py
+firmware/src/shared/protocol/opcodes.h linguist-generated
+firmware/src/shared/protocol/tlv_tags.h linguist-generated

@@ -1,0 +1,56 @@
+name: Firmware
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Protocol check and native tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio pyyaml
+      - run: python3 firmware/tools/gen_protocol.py --check
+      - run: pio test -d firmware -e native-test
+
+  build:
+    name: Build ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - ttgo-t-beam-sx1262
+          - xiao-esp32s3-wio-sx1262
+          - heltec-v3-sx1262
+          - heltec-v4-sx1262
+          - heltec-wireless-tracker-sx1262
+          - t-beam-supreme-sx1262
+          - t3-s3-sx1262
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.env }}-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -d firmware -e ${{ matrix.env }}

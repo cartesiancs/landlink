@@ -1,0 +1,57 @@
+name: Bug report
+description: Something on the device or in the firmware does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Please fill in as much as you can.
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: Shown in the Landlink app under the device, or in the serial log at boot.
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board
+      options:
+        - ttgo-t-beam-sx1262 (LILYGO T-Beam V1.1)
+        - xiao-esp32s3-wio-sx1262 (Seeed XIAO ESP32S3 + Wio-SX1262)
+        - heltec-v3-sx1262 (Heltec WiFi LoRa 32 V3)
+        - heltec-v4-sx1262 (Heltec WiFi LoRa 32 V4)
+        - heltec-wireless-tracker-sx1262 (Heltec Wireless Tracker V1.1)
+        - t-beam-supreme-sx1262 (LILYGO T-Beam Supreme)
+        - t3-s3-sx1262 (LILYGO T3-S3)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client
+      description: How you connect to the device.
+      placeholder: "Landlink iOS app 1.2, Chrome on Android, Meshtastic app, ..."
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Flash v0.4.0
+        2. Pair over Bluetooth
+        3. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Serial log
+      description: Output of `npm run monitor` (or `pio device monitor`) around the problem.
+      render: text

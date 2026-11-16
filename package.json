@@ -1,0 +1,36 @@
+{
+  "name": "landlink",
+  "private": true,
+  "description": "Off-grid communication device. Meshtastic-compatible LoRa firmware for ESP32 and ESP32-S3 boards.",
+  "homepage": "https://landlink.sh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cartesiancs/landlink.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cartesiancs/landlink/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "cartesiancs",
+  "keywords": [
+    "landlink",
+    "lora",
+    "meshtastic",
+    "mesh",
+    "off-grid",
+    "esp32",
+    "sx1262",
+    "platformio",
+    "firmware"
+  ],
+  "scripts": {
+    "gen:protocol": "python3 firmware/tools/gen_protocol.py",
+    "check:protocol": "python3 firmware/tools/gen_protocol.py --check",
+    "build": "pio run -d firmware",
+    "build:all": "pio run -d firmware -e ttgo-t-beam-sx1262 -e xiao-esp32s3-wio-sx1262 -e heltec-v3-sx1262 -e heltec-v4-sx1262 -e heltec-wireless-tracker-sx1262 -e t-beam-supreme-sx1262 -e t3-s3-sx1262",
+    "flash": "pio run -d firmware -t upload",
+    "monitor": "pio device monitor -d firmware",
+    "test": "pio test -d firmware -e native-test",
+    "clean": "pio run -d firmware -t clean"
+  }
+}

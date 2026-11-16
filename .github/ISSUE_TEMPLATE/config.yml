@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: FAQ
+    url: https://landlink.sh/faq
+    about: Common questions about Landlink devices and the app.
+  - name: Hardware setup
+    url: https://landlink.sh/hardware-setup
+    about: How to assemble and connect a Landlink module.
+  - name: Security vulnerability
+    url: https://github.com/cartesiancs/landlink/security/advisories/new
+    about: Report security issues privately, not as a public issue.

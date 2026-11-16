@@ -43,11 +43,19 @@ pio run -e ttgo-t-beam-sx1262 -t upload       # flash
 pio device monitor -e ttgo-t-beam-sx1262      # serial logs
 ```
 
-To ship a build to the web flasher at [landlink.sh/landlink-firmware/flash](https://landlink.sh/landlink-firmware/flash), run `npm run publish:firmware` on `main`. It builds every target, updates `public/firmware/`, commits that folder, pushes, and waits for Cloudflare Pages to serve it. Use `-- --no-deploy` to stage locally without pushing, or `-- --help` for all options. The version comes from `LL_FW_VERSION` in `firmware/platformio.ini`.
+The same commands are wrapped as npm scripts at the repo root: `npm test`, `npm run build -- -e <env>`, `npm run flash -- -e <env>`, `npm run monitor`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full list.
 
-Older versions stay in `releases.json` and remain flashable from the release history on [landlink.sh/landlink-firmware](https://landlink.sh/landlink-firmware). Add a short `changes` array (a few words per line) to each new entry; the publisher keeps it when it rebuilds the same version.
+Prebuilt images for every board are on [GitHub Releases](https://github.com/cartesiancs/landlink/releases) (tag `fw-v<version>`, with `sha256sums.txt`). The easiest way to flash one is the web flasher at [landlink.sh/landlink-firmware/flash](https://landlink.sh/landlink-firmware/flash). Older versions stay flashable from the release history on [landlink.sh/landlink-firmware](https://landlink.sh/landlink-firmware).
 
-See [firmware/README.md](firmware/README.md) for the full bring-up order, OTA signing flow, and milestone status.
+See [firmware/README.md](firmware/README.md) for supported boards, the full bring-up order, OTA signing flow, and milestone status.
+
+## Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and report security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache License 2.0](LICENSE)
 
 ## Contributors
 
