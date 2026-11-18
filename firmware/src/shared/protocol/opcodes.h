@@ -8,7 +8,7 @@
 
 namespace landlink::proto {
 
-inline constexpr uint8_t kProtoVersion = 3;
+inline constexpr uint8_t kProtoVersion = 9;
 
 
 enum class Opcode : uint8_t {
@@ -26,11 +26,23 @@ enum class Opcode : uint8_t {
     RADIO_GET_ROLE = 0x16,
     RADIO_SET_ROLE = 0x17,
     RADIO_ROLE_RESULT = 0x18,
+    RADIO_GET_PRESET = 0x19,
+    RADIO_SET_PRESET = 0x1a,
+    RADIO_PRESET_RESULT = 0x1b,
+    OWNER_GET = 0x1c,
+    OWNER_SET = 0x1d,
+    OWNER_RESULT = 0x1e,
     LORA_PEER_FOUND = 0x21,
     WMESH_SET = 0x24,
     WMESH_GET_STATUS = 0x25,
     WMESH_STATUS = 0x26,
     WMESH_PEERS = 0x27,
+    MAP_SHARE_GET = 0x28,
+    MAP_SHARE_SET = 0x29,
+    MAP_SHARE_RESULT = 0x2a,
+    POSITION_GET = 0x2b,
+    POSITION_SET = 0x2c,
+    POSITION_RESULT = 0x2d,
     MESH_JOIN = 0x30,
     MESH_LEAVE = 0x31,
     MESH_SEND = 0x32,
@@ -60,6 +72,9 @@ enum class Opcode : uint8_t {
     PAIR_CONFIRM = 0x4a,
     PAIR_RESULT = 0x4b,
     FACTORY_RESET = 0x50,
+    FACTORY_RESET_RESULT = 0x51,
+    REBOOT = 0x52,
+    REBOOT_RESULT = 0x53,
     OTA_BEGIN = 0x60,
     OTA_CHUNK = 0x61,
     OTA_COMMIT = 0x62,
@@ -108,6 +123,25 @@ enum class Region : uint8_t {
     KR923 = 0x00,
     EU868 = 0x01,
     US915 = 0x02,
+    JP920 = 0x03,
+    ANZ915 = 0x04,
+    TW920 = 0x05,
+    IN865 = 0x06,
+    TH920 = 0x07,
+    SG923 = 0x08,
+    BR902 = 0x09,
+    RU868 = 0x0a,
+    NZ865 = 0x0b,
+    PH915 = 0x0c,
+};
+
+
+enum class ModemPreset : uint8_t {
+    LONG_FAST = 0x00,
+    MEDIUM_SLOW = 0x03,
+    MEDIUM_FAST = 0x04,
+    SHORT_FAST = 0x06,
+    LONG_MODERATE = 0x07,
 };
 
 

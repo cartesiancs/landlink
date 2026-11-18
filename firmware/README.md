@@ -131,6 +131,40 @@ Air frame layout: `src/mesh/wifi/frame.h`. Code: `src/transport/espnow/`,
 `src/mesh/wifi/`, `src/features/wifi_mesh/`, `src/features/media_xfer/`,
 `src/app/services/wmesh_service.cpp`.
 
+## Host event queue
+
+Chats and delivery results that arrive while no phone is listening are held
+on the device and replayed on reconnect, like upstream Meshtastic's phone
+queue.
+
+- **What is queued.** `MESH_RECV` chat text and `MESH_RECV` ACK/NAK, over
+  LoRa and the Wi-Fi mesh. Peer sightings (`LORA_PEER_FOUND`) are not; media
+  already waits in flash and is offered again by `MEDIA_LIST_PENDING`.
+- **When it is sent.** Every queued event goes through the queue, connected
+  or not. The `evt_flush` task sends it in arrival order as soon as a host
+  listens: a BLE central subscribed to EVT (after a 250 ms settle), a USB
+  serial host that has sent at least one CMD, or an online relay. Opening a
+  serial session is not enough: the app's port probe sends `INFO_REQ` before
+  it has an EVT handler (`src/transport/serial/host_listen.h`).
+- **Capacity.** 32 entries in RAM (about 8 KB), lost on reboot. When full,
+  the oldest already-sent entry goes first, then the oldest unsent ACK/NAK,
+  then the oldest chat. Unsent ACK/NAK entries expire after 10 minutes;
+  chats never expire.
+- **At-least-once.** A sent entry is kept until confirmed and sent again if
+  the link drops first, so a host may see a frame twice; the app dedupes by
+  sender and packet id. BLE entries are confirmed after 6 s. Serial entries
+  are confirmed by the host's next frame (KEEPALIVE every 20 s) or after
+  65 s, since a closed port is only noticed by the 60 s session timeout. An
+  `INFO_REQ` on a listening serial session (the app reopened the port) also
+  resends everything unconfirmed.
+- **Timestamps.** Every queued `MESH_RECV` carries `RX_AGE_MS` (ms since the
+  device received it, clamped to 7 days) so the app shows the real receive
+  time.
+
+Code: `src/transport/ble/evt_queue.h` (pure logic, `test/test_evt_queue`),
+`src/transport/serial/host_listen.h` (`test/test_serial_host_listen`),
+`src/transport/ble/gatt_server.cpp` (`notify_evt_queued`, flusher task).
+
 ## Bring-up order
 
 1. Serial logger

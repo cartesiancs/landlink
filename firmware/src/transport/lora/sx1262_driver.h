@@ -5,9 +5,12 @@
 // delegates to the CSMA/CA MAC layer in mac.cpp); inbound frames are pulled
 // via `poll_rx()`.
 //
-// The radio runs the Meshtastic LongFast preset: SF11, BW 250 kHz, CR 4/5,
-// sync 0x2B, preamble 16, +22 dBm. Slot frequency is `djb2("LongFast") %
-// numChannels` mapped to the region's slot grid (see slot_math.h):
+// The radio runs one of the Meshtastic modem presets in
+// shared/config/modem_preset.h (LongFast by default: SF11, BW 250 kHz,
+// CR 4/5), always with sync 0x2B and preamble 16. TX power is +22 dBm capped
+// by the region's legal limit. Slot frequency is
+// `djb2(presetName) % numChannels` mapped to the region's slot grid (see
+// region_table.h and slot_math.h), e.g. for LongFast:
 //   KR923: 922.875 MHz (slot 11 of 12)
 //   EU868: 869.525 MHz (slot 0 of 1)
 //   US915: 906.875 MHz (slot 19 of 104)
@@ -19,6 +22,7 @@
 
 namespace landlink::transport::lora {
 
+using landlink::proto::ModemPreset;
 using landlink::proto::Region;
 
 struct RxReport {
@@ -37,17 +41,19 @@ struct LoraPreset {
     int8_t   tx_power_dbm;
 };
 
-LoraPreset preset_meshtastic_longfast(Region r);
+// Radio settings for a Meshtastic modem preset on a region. A preset whose
+// bandwidth does not fit the region's band falls back to LongFast, as
+// upstream applyModemConfig() does.
+LoraPreset build_lora_preset(Region r, ModemPreset p);
 
-// First-time init. Brings the radio up using the Meshtastic LongFast preset
-// for the given region.
-bool init(Region r);
+// First-time init. Brings the radio up on the given region and preset.
+bool init(Region r, ModemPreset p);
 
 // Live re-tune. Drains pending TX, drops in-flight RX, then re-arms the radio
 // with the supplied preset.
 bool reconfigure(const LoraPreset& p);
 
-// Re-apply the Meshtastic LongFast preset for the given region. Must run on
+// Re-tune to the given region, keeping the active modem preset. Must run on
 // the LoRa TX task (it touches the radio over SPI); other contexts go through
 // request_region().
 bool set_region(Region r);
@@ -62,6 +68,16 @@ using RegionAppliedFn = void (*)(Region r, uint8_t seq, bool ok);
 // task applies it on its next tick so the re-tune never races an in-flight
 // transmit or receive. A newer request replaces an unapplied older one.
 void request_region(Region r, uint8_t seq, RegionAppliedFn on_applied);
+
+// Called on the LoRa TX task once a requested preset change has been applied
+// (ok = true) or has failed to re-arm the radio (ok = false). Same contract
+// as RegionAppliedFn.
+using PresetAppliedFn = void (*)(ModemPreset p, uint8_t seq, bool ok);
+
+// Thread-safe, non-blocking modem preset change, applied on the LoRa TX task
+// like request_region(). A region and a preset change pending on the same
+// tick are applied with a single re-tune.
+void request_modem_preset(ModemPreset p, uint8_t seq, PresetAppliedFn on_applied);
 
 // Enqueue a frame for transmission with default scheduling metadata
 // (Priority::Default, originated). Returns false if the MAC priority queue is

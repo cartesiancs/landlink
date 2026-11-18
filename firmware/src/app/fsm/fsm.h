@@ -25,7 +25,9 @@ uint8_t flags();
 
 // Event injection from tasks / features.
 void notify_button_long();
-void notify_button_very_long();
+// A factory reset has started (features/factory_reset). The device restarts
+// shortly after, so the state is never left.
+void notify_factory_reset();
 void notify_ble_connected(bool v);
 void notify_wifi_up(bool v);
 void notify_pair_confirmed();

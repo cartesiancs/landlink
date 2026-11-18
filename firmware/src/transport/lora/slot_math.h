@@ -21,11 +21,6 @@ struct RegionGrid {
     float spacing_mhz;
 };
 
-// Region grids copied from upstream RadioInterface.cpp regions[] table.
-inline constexpr RegionGrid kGridUS915 {902.0f, 928.0f, 0.0f};
-inline constexpr RegionGrid kGridEU868 {869.4f, 869.65f, 0.0f};
-inline constexpr RegionGrid kGridKR923 {920.0f, 923.0f, 0.0f};
-
 // Bernstein djb2 string hash, identical to upstream RadioInterface::hash().
 inline uint32_t djb2(const char* str) {
     uint32_t h = 5381;

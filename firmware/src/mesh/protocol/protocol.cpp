@@ -4,6 +4,9 @@ namespace landlink::mesh::protocol {
 
 namespace {
 meshtastic::MeshtasticRouter s_mt_router{};
+// Only the rx task calls on_rx, and the sink runs inside it, so a plain
+// pointer scoped to the call is enough.
+const RxMetrics* s_rx_metrics = nullptr;
 } // namespace
 
 void init(const InitContext& ctx) {
@@ -18,10 +21,15 @@ void init(const InitContext& ctx) {
 }
 
 void on_rx(const uint8_t* frame, size_t frame_len,
-           uint8_t* forward_out, size_t forward_cap, size_t& forward_len) {
+           uint8_t* forward_out, size_t forward_cap, size_t& forward_len,
+           const RxMetrics* metrics) {
     forward_len = 0;
+    s_rx_metrics = metrics;
     s_mt_router.on_rx(frame, frame_len, forward_out, forward_cap, forward_len);
+    s_rx_metrics = nullptr;
 }
+
+const RxMetrics* current_rx_metrics() { return s_rx_metrics; }
 
 meshtastic::MeshtasticRouter& meshtastic_router() { return s_mt_router; }
 

@@ -3,11 +3,20 @@
 #include <cstring>
 
 #include "app/fsm/fsm.h"
+#include "features/factory_reset/factory_reset.h"
+#include "features/factory_reset/factory_reset_plan.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/ota/ota.h"
+#include "features/reboot/reboot.h"
+#include "features/reboot/reboot_plan.h"
+#include "app/services/tasks.h"
 #include "shared/config/build_info.h"
+#include "shared/config/map_share.h"
+#include "shared/config/modem_preset.h"
 #include "shared/config/node_mode.h"
+#include "shared/config/owner_name.h"
+#include "shared/config/position_source.h"
 #if LL_REMOTE_RELAY
 #include "features/remote_relay/remote_identity.h"
 #include "features/remote_relay/remote_relay.h"
@@ -28,7 +37,9 @@
 #include "transport/ble/gatt_server.h"
 #include "transport/lora/mac.h"
 #include "transport/lora/priority.h"
+#include "transport/lora/region_table.h"
 #include "transport/lora/sx1262_driver.h"
+#include "transport/serial/serial_link.h"
 
 namespace landlink::app::services {
 
@@ -72,10 +83,6 @@ void forward_to_wmesh(Opcode op, uint8_t seq, const uint8_t* payload, size_t len
 #endif
 }
 
-bool authed() {
-    return (app::fsm::flags() & app::fsm::bits::kProvisioned) != 0;
-}
-
 void send_error(uint8_t seq, uint8_t err_code) {
     const uint8_t payload[3] = { 0xF0, 0x01, err_code };
     transport::ble::notify_evt(landlink::proto::Opcode::ERROR, seq,
@@ -96,6 +103,70 @@ void on_region_applied(landlink::proto::Region region, uint8_t seq, bool ok) {
                                b.data(), b.size());
 }
 
+// One channel slot as CHANNEL_RESULT TLVs. Answers CHANNEL_SET, and goes out
+// unsolicited (seq 0) when a preset change renames the primary channel.
+void send_channel_slot(uint8_t seq, const mesh::channel::Slot& slot) {
+    uint8_t buf[64];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put_u8(TlvTag::CHANNEL_INDEX, slot.index);
+    b.put(TlvTag::CHANNEL_NAME,
+          reinterpret_cast<const uint8_t*>(slot.name),
+          static_cast<uint8_t>(std::strlen(slot.name)));
+    b.put_u8(TlvTag::CHANNEL_ROLE, slot.role);
+    b.put(TlvTag::CHANNEL_PSK, slot.psk_raw,
+          static_cast<uint8_t>(slot.psk_raw_len));
+    transport::ble::notify_evt(Opcode::CHANNEL_RESULT, seq,
+                               b.data(), b.size());
+}
+
+void send_preset_result(uint8_t seq, landlink::proto::ModemPreset preset) {
+    uint8_t buf[3];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put_u8(TlvTag::MODEM_PRESET, static_cast<uint8_t>(preset));
+    transport::ble::notify_evt(Opcode::RADIO_PRESET_RESULT, seq,
+                               b.data(), b.size());
+}
+
+// Runs on the LoRa TX task after a RADIO_SET_PRESET re-tune.
+void on_preset_applied(landlink::proto::ModemPreset preset, uint8_t seq, bool ok) {
+    if (!ok) {
+        send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::INTERNAL));
+        return;
+    }
+    modem_preset::set(preset);
+    // Stock nodes hash an unnamed primary with the preset name, so a primary
+    // still named after the old preset follows the new one. Tell the host so
+    // its channel list (and share links) match the device.
+    if (mesh::channel::follow_preset()) {
+        const auto* slot0 = mesh::channel::get(0);
+        if (slot0 != nullptr) send_channel_slot(0, *slot0);
+    }
+    send_preset_result(seq, preset);
+    LL_LOG_I(kTag, "modem preset=%s", modem_preset::get().name);
+    // Introduce ourselves to the mesh on the new preset right away rather
+    // than at the next 15 min beacon.
+    if (node_mode::can_transmit()) {
+        (void)features::mesh_identity::send_nodeinfo();
+    }
+}
+
+// Both owner names, as broadcast in NodeInfo. Answers OWNER_GET / OWNER_SET.
+void send_owner_result(uint8_t seq) {
+    char long_name[owner_name::kMaxLongBytes + 1];
+    char short_name[owner_name::kMaxShortBytes + 1];
+    features::mesh_identity::get_owner(long_name, sizeof(long_name),
+                                       short_name, sizeof(short_name));
+    uint8_t buf[2 + owner_name::kMaxLongBytes + 2 + owner_name::kMaxShortBytes];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put(TlvTag::NODE_NAME,
+          reinterpret_cast<const uint8_t*>(long_name),
+          static_cast<uint8_t>(std::strlen(long_name)));
+    b.put(TlvTag::NODE_SHORT_NAME,
+          reinterpret_cast<const uint8_t*>(short_name),
+          static_cast<uint8_t>(std::strlen(short_name)));
+    transport::ble::notify_evt(Opcode::OWNER_RESULT, seq, b.data(), b.size());
+}
+
 void send_mode_result(uint8_t seq, node_mode::NodeMode mode) {
     uint8_t buf[3];
     landlink::TlvBuilder b(buf, sizeof(buf));
@@ -104,11 +175,41 @@ void send_mode_result(uint8_t seq, node_mode::NodeMode mode) {
                                b.data(), b.size());
 }
 
+void send_position_result(uint8_t seq) {
+    const position_source::Settings s = features::mesh_identity::get_position_source();
+    uint8_t buf[3 + 6 + 6];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put_u8(TlvTag::POSITION_MODE, static_cast<uint8_t>(s.mode));
+    if (s.has_fixed) {
+        b.put_i32(TlvTag::LAT_E7, s.lat_e7);
+        b.put_i32(TlvTag::LON_E7, s.lon_e7);
+    }
+    transport::ble::notify_evt(Opcode::POSITION_RESULT, seq, b.data(), b.size());
+}
+
+void send_map_share_result(uint8_t seq) {
+    const map_share::Settings s = map_share::get();
+    uint8_t buf[6];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put_u8(TlvTag::MAP_SHARE, s.enabled ? 1 : 0);
+    b.put_u8(TlvTag::MAP_PRECISION, s.precision);
+    transport::ble::notify_evt(Opcode::MAP_SHARE_RESULT, seq,
+                               b.data(), b.size());
+}
+
 } // namespace
 
 bool handle_cmd(Opcode op, uint8_t seq,
                 const uint8_t* payload, size_t payload_len) {
     landlink::TlvReader r(payload, payload_len);
+
+    // A factory reset is erasing NVS, or a reboot is about to restart the
+    // device: refuse everything so no command writes settings back or starts
+    // work that would be cut.
+    if (features::factory_reset::pending() || features::reboot::pending()) {
+        send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+        return true;
+    }
 
     switch (op) {
     case Opcode::WIFI_SCAN:
@@ -202,6 +303,12 @@ bool handle_cmd(Opcode op, uint8_t seq,
     case Opcode::RADIO_GET_REGION: {
         uint8_t region = 0;
         hal::storage::get_u8("ll.radio", "region", region, 0);
+        // Report the band the radio actually runs: an unknown stored value
+        // (written by a newer firmware) falls back to the default at boot.
+        if (transport::lora::region_table::find(region) == nullptr) {
+            region = static_cast<uint8_t>(
+                transport::lora::region_table::default_region().region);
+        }
         uint8_t buf[3];
         landlink::TlvBuilder b(buf, sizeof(buf));
         b.put_u8(TlvTag::REGION, region);
@@ -213,7 +320,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
     case Opcode::RADIO_SET_REGION: {
         landlink::Tlv t;
         if (!r.find(TlvTag::REGION, t) || t.len != 1 ||
-            t.data[0] > static_cast<uint8_t>(landlink::proto::Region::US915)) {
+            transport::lora::region_table::find(t.data[0]) == nullptr) {
             send_error(seq, 0x01 /* BAD_ARG */);
             return true;
         }
@@ -224,6 +331,68 @@ bool handle_cmd(Opcode op, uint8_t seq,
         transport::lora::request_region(
             static_cast<landlink::proto::Region>(t.data[0]), seq,
             on_region_applied);
+        return true;
+    }
+
+    case Opcode::RADIO_GET_PRESET: {
+        uint8_t raw = 0;
+        hal::storage::get_u8("ll.radio", "preset", raw, 0);
+        // Report the preset the radio actually runs: an unknown stored value
+        // (written by a newer firmware) falls back to LongFast at boot.
+        const auto* def = modem_preset::find(raw);
+        send_preset_result(seq, def != nullptr
+                                    ? def->preset
+                                    : modem_preset::default_preset().preset);
+        return true;
+    }
+
+    case Opcode::RADIO_SET_PRESET: {
+        landlink::Tlv t;
+        const modem_preset::PresetDef* def = nullptr;
+        if (r.find(TlvTag::MODEM_PRESET, t) && t.len == 1) {
+            def = modem_preset::find(t.data[0]);
+        }
+        uint8_t region = 0;
+        hal::storage::get_u8("ll.radio", "region", region, 0);
+        const auto& region_def = transport::lora::region_table::resolve(
+            static_cast<landlink::proto::Region>(region));
+        // A preset wider than the region's band would silently fall back to
+        // LongFast on the radio, so refuse it instead.
+        if (def == nullptr ||
+            !transport::lora::region_table::fits(region_def, def->bw_khz)) {
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        hal::storage::set_u8("ll.radio", "preset", t.data[0]);
+        // Re-tune live. The LoRa TX task applies it and answers with
+        // RADIO_PRESET_RESULT once the radio is listening on the new preset.
+        transport::lora::request_modem_preset(def->preset, seq,
+                                              on_preset_applied);
+        return true;
+    }
+
+    case Opcode::OWNER_GET:
+        send_owner_result(seq);
+        return true;
+
+    case Opcode::OWNER_SET: {
+        // Both TLVs are required so a host cannot clear one name by leaving
+        // it out; an explicitly empty value restores that name's default.
+        landlink::Tlv long_tlv, short_tlv;
+        if (!r.find(TlvTag::NODE_NAME, long_tlv) ||
+            !r.find(TlvTag::NODE_SHORT_NAME, short_tlv) ||
+            !features::mesh_identity::set_owner(long_tlv.data, long_tlv.len,
+                                                short_tlv.data, short_tlv.len)) {
+            LL_LOG_W(kTag, "OWNER_SET rejected");
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        send_owner_result(seq);
+        // Let peers pick up the new names now rather than at the next 15 min
+        // NodeInfo beacon.
+        if (node_mode::can_transmit()) {
+            (void)features::mesh_identity::send_nodeinfo();
+        }
         return true;
     }
 
@@ -250,6 +419,112 @@ bool handle_cmd(Opcode op, uint8_t seq,
         // the next 15 min beacon, so peers see this node again right away.
         if (was_silent && node_mode::can_transmit()) {
             (void)features::mesh_identity::send_nodeinfo();
+        }
+        return true;
+    }
+
+    case Opcode::POSITION_GET:
+        send_position_result(seq);
+        return true;
+
+    case Opcode::POSITION_SET: {
+        const position_source::Settings prev =
+            features::mesh_identity::get_position_source();
+        position_source::Settings next = prev;
+        const auto bad_arg = [seq]() {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+        };
+
+        landlink::Tlv t;
+        if (!r.find(TlvTag::POSITION_MODE, t) || t.len != 1 ||
+            !position_source::is_valid_mode(t.data[0])) {
+            bad_arg();
+            return true;
+        }
+        next.mode = static_cast<position_source::Mode>(t.data[0]);
+
+        // LAT_E7 + LON_E7 come as a pair and replace the stored fixed
+        // position (also allowed in GPS mode, to keep it for later).
+        landlink::Tlv lat;
+        landlink::Tlv lon;
+        const bool has_lat = r.find(TlvTag::LAT_E7, lat);
+        const bool has_lon = r.find(TlvTag::LON_E7, lon);
+        if (has_lat != has_lon) {
+            bad_arg();
+            return true;
+        }
+        if (has_lat) {
+            if (lat.len != 4 || lon.len != 4) {
+                bad_arg();
+                return true;
+            }
+            next.has_fixed = true;
+            next.lat_e7    = position_source::get_i32_le(lat.data);
+            next.lon_e7    = position_source::get_i32_le(lon.data);
+        }
+        // Fixed without any position, or coordinates out of range.
+        if (!position_source::is_consistent(next)) {
+            bad_arg();
+            return true;
+        }
+        if (!features::mesh_identity::set_position_source(next)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::STORAGE_FAIL));
+            return true;
+        }
+        send_position_result(seq);
+        // The broadcast location changed: tell peers (and, with map sharing,
+        // gateways) now rather than at the next 15 min beacon.
+        const bool mode_changed = next.mode != prev.mode;
+        const bool fixed_moved  = next.mode == position_source::Mode::Fixed &&
+                                  (next.lat_e7 != prev.lat_e7 ||
+                                   next.lon_e7 != prev.lon_e7 ||
+                                   !prev.has_fixed);
+        if ((mode_changed || fixed_moved) && node_mode::can_transmit()) {
+            request_identity_beacon();
+        }
+        return true;
+    }
+
+    case Opcode::MAP_SHARE_GET:
+        send_map_share_result(seq);
+        return true;
+
+    case Opcode::MAP_SHARE_SET: {
+        const map_share::Settings prev = map_share::get();
+        map_share::Settings next = prev;
+
+        landlink::Tlv t;
+        if (!r.find(TlvTag::MAP_SHARE, t) || t.len != 1 || t.data[0] > 1) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+            return true;
+        }
+        next.enabled = t.data[0] == 1;
+        // Precision is optional: absent keeps the stored value.
+        if (r.find(TlvTag::MAP_PRECISION, t)) {
+            if (t.len != 1 || !map_share::is_valid_precision(t.data[0])) {
+                send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+                return true;
+            }
+            next.precision = t.data[0];
+        }
+
+        if (!hal::storage::set_u8("ll.radio", "map_share", next.enabled ? 1 : 0) ||
+            !hal::storage::set_u8("ll.radio", "map_prec", next.precision)) {
+            LL_LOG_W(kTag, "map share: NVS write failed");
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::STORAGE_FAIL));
+            return true;
+        }
+        // The beacon reads this live, so the next NodeInfo / Position uses it.
+        map_share::set(next);
+        LL_LOG_I(kTag, "map share=%u precision=%u",
+                 next.enabled ? 1u : 0u, static_cast<unsigned>(next.precision));
+        send_map_share_result(seq);
+        // Just turned on (or moved the shared precision): beacon now so a
+        // nearby gateway picks the node up without waiting up to 15 min.
+        const bool turned_on       = next.enabled && !prev.enabled;
+        const bool moved_precision = next.enabled && next.precision != prev.precision;
+        if ((turned_on || moved_precision) && node_mode::can_transmit()) {
+            request_identity_beacon();
         }
         return true;
     }
@@ -399,19 +674,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
         // Echo back the new slot so the host can refresh without a follow-up
         // CHANNEL_LIST.
         const auto* slot = mesh::channel::get(index);
-        if (slot != nullptr) {
-            uint8_t buf[64];
-            landlink::TlvBuilder b(buf, sizeof(buf));
-            b.put_u8(TlvTag::CHANNEL_INDEX, slot->index);
-            b.put(TlvTag::CHANNEL_NAME,
-                  reinterpret_cast<const uint8_t*>(slot->name),
-                  static_cast<uint8_t>(std::strlen(slot->name)));
-            b.put_u8(TlvTag::CHANNEL_ROLE, slot->role);
-            b.put(TlvTag::CHANNEL_PSK, slot->psk_raw,
-                  static_cast<uint8_t>(slot->psk_raw_len));
-            transport::ble::notify_evt(Opcode::CHANNEL_RESULT, seq,
-                                       b.data(), b.size());
-        }
+        if (slot != nullptr) send_channel_slot(seq, *slot);
         return true;
     }
 
@@ -468,8 +731,10 @@ bool handle_cmd(Opcode op, uint8_t seq,
             send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_STATE));
             return true;
         }
-        landlink::Tlv kind, text, dst_tlv, ch_tlv, transport_tlv;
+        landlink::Tlv kind, text, dst_tlv, ch_tlv, transport_tlv, reply_tlv, emoji_tlv;
         // TRANSPORT=1 routes the chat over the Wi-Fi mesh instead of LoRa.
+        // The ESP-NOW frame has no slot for CHAT_REPLY_TO / CHAT_EMOJI, so
+        // replies and reactions are LoRa only; hosts never combine them.
         if (r.find(TlvTag::TRANSPORT, transport_tlv) && transport_tlv.len == 1 &&
             transport_tlv.data[0] == 1) {
             forward_to_wmesh(op, seq, payload, payload_len);
@@ -513,14 +778,34 @@ bool handle_cmd(Opcode op, uint8_t seq,
             send_error(seq, 0x04 /* NOT_FOUND */);
             return true;
         }
-        LL_LOG_I(kTag, "MESH_SEND ch=%u dst=%08x len=%u",
+        // Meshtastic Data.reply_id / Data.emoji (proto 6+). Absent on hosts
+        // that predate them, which keeps a plain chat byte-identical.
+        features::mesh_chat::ChatMeta meta;
+        if (r.find(TlvTag::CHAT_REPLY_TO, reply_tlv) && reply_tlv.len == 4) {
+            meta.reply_id = static_cast<uint32_t>(reply_tlv.data[0]) |
+                            (static_cast<uint32_t>(reply_tlv.data[1]) << 8) |
+                            (static_cast<uint32_t>(reply_tlv.data[2]) << 16) |
+                            (static_cast<uint32_t>(reply_tlv.data[3]) << 24);
+        }
+        if (r.find(TlvTag::CHAT_EMOJI, emoji_tlv) && emoji_tlv.len == 1) {
+            meta.emoji = emoji_tlv.data[0] != 0;
+        }
+        if (meta.emoji && meta.reply_id == 0) {
+            // A reaction without a target means nothing to any client.
+            LL_LOG_W(kTag, "MESH_SEND CHAT_EMOJI without CHAT_REPLY_TO");
+            send_error(seq, 0x01 /* BAD_ARG */);
+            return true;
+        }
+        LL_LOG_I(kTag, "MESH_SEND ch=%u dst=%08x len=%u reply=%u emoji=%d",
                  static_cast<unsigned>(channel_index),
-                 static_cast<unsigned>(dst), text.len);
+                 static_cast<unsigned>(dst), text.len,
+                 static_cast<unsigned>(meta.reply_id),
+                 meta.emoji ? 1 : 0);
         uint32_t assigned_pkt_id = 0;
         const bool ok = features::mesh_chat::send_chat(
             channel_index, dst,
             reinterpret_cast<const char*>(text.data), text.len,
-            &assigned_pkt_id);
+            &assigned_pkt_id, meta);
         if (!ok) {
             LL_LOG_W(kTag, "MESH_SEND send_chat failed");
             send_error(seq, 0x05 /* BUSY */);
@@ -541,16 +826,64 @@ bool handle_cmd(Opcode op, uint8_t seq,
         return true;
     }
 
-    case Opcode::FACTORY_RESET:
-        if (!authed()) return false;
-        hal::storage::erase_namespace("ll.id");
-        hal::storage::erase_namespace("ll.net");
-        hal::storage::erase_namespace("ll.wifi");
-        hal::storage::erase_namespace("ll.wmesh");
-        hal::storage::erase_namespace("ll.ble");
-        hal::storage::erase_namespace("ll.peers");
-        app::fsm::notify_button_very_long();
+    // Not gated on authed(), like CHANNEL_SET: the BLE link has no
+    // authenticated session, so the gate is physical reach (BLE or USB, never
+    // the relay) plus the device's own NODE_ID as a confirm token against a
+    // stray or misrouted frame. The reply and the restart come from the reset
+    // task (features/factory_reset).
+    case Opcode::FACTORY_RESET: {
+        namespace fr = features::factory_reset;
+        fr::Request req;
+        landlink::Tlv tid;
+        if (r.find(TlvTag::NODE_ID, tid)) {
+            req.node_id_present = fr::read_node_id(tid.data, tid.len, req.node_id);
+        }
+        req.own_node_id     = hal::storage::node_id();
+        req.local_transport = transport::ble::cmd_from_ble() ||
+                              transport::serial_link::cmd_from_serial();
+        req.ota_active      = features::ota::active();
+        req.reset_pending   = fr::pending() || features::reboot::pending();
+        const auto verdict  = fr::check_request(req);
+        if (verdict != landlink::proto::ErrorCode::OK) {
+            LL_LOG_W(kTag, "FACTORY_RESET refused err=0x%02x",
+                     static_cast<unsigned>(verdict));
+            send_error(seq, static_cast<uint8_t>(verdict));
+            return true;
+        }
+        if (!fr::schedule(seq, true)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+        }
         return true;
+    }
+
+    // Same gate as FACTORY_RESET (physical reach plus the NODE_ID confirm
+    // token), though nothing is erased: an unauthenticated reboot from afar
+    // would still knock a relay node off the mesh. The reply and the restart
+    // come from the app_fsm task (features/reboot).
+    case Opcode::REBOOT: {
+        namespace rb = features::reboot;
+        rb::Request req;
+        landlink::Tlv tid;
+        if (r.find(TlvTag::NODE_ID, tid)) {
+            req.node_id_present = rb::read_node_id(tid.data, tid.len, req.node_id);
+        }
+        req.own_node_id     = hal::storage::node_id();
+        req.local_transport = transport::ble::cmd_from_ble() ||
+                              transport::serial_link::cmd_from_serial();
+        req.ota_active      = features::ota::active();
+        req.busy            = rb::pending() || features::factory_reset::pending();
+        const auto verdict  = rb::check_request(req);
+        if (verdict != landlink::proto::ErrorCode::OK) {
+            LL_LOG_W(kTag, "REBOOT refused err=0x%02x",
+                     static_cast<unsigned>(verdict));
+            send_error(seq, static_cast<uint8_t>(verdict));
+            return true;
+        }
+        if (!rb::schedule(seq)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+        }
+        return true;
+    }
 
     // OTA is not gated on authed(): the Ed25519 signature over the image is
     // the gate (only images built and signed by the Landlink release tooling

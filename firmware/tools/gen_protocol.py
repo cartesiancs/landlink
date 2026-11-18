@@ -88,6 +88,11 @@ def emit_opcodes_h(spec: dict) -> str:
         lines.append(f"    {name} = {val:#04x},")
     lines.append("};\n")
 
+    lines.append("\nenum class ModemPreset : uint8_t {")
+    for name, val in spec["modem_presets"].items():
+        lines.append(f"    {name} = {val:#04x},")
+    lines.append("};\n")
+
     for enum_name, key in (("MediaMime", "media_mimes"), ("MediaPhase", "media_phases"), ("OtaState", "ota_states")):
         lines.append(f"\nenum class {enum_name} : uint8_t {{")
         for name, val in spec[key].items():
@@ -175,6 +180,9 @@ def emit_landlink_ts(spec: dict) -> str:
     lines.append("// send, receive, and rebroadcast. TX_ONLY sends but drops everything it")
     lines.append("// hears. RX_ONLY listens and never transmits.")
     lines.extend(enum_block("NodeMode", spec["node_modes"]))
+    lines.append("")
+    lines.append("// Meshtastic modem presets; values match upstream LoRaConfig.ModemPreset.")
+    lines.extend(enum_block("ModemPreset", spec["modem_presets"]))
     lines.append("")
     lines.extend(enum_block("MediaMime", spec["media_mimes"]))
     lines.append("")

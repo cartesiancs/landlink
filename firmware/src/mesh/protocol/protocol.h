@@ -21,9 +21,23 @@ struct InitContext {
 // transport::lora::init(), so no radio re-tune happens here.
 void init(const InitContext& ctx);
 
-// RX entry point — called by lora_rx_task with each polled frame.
+// Radio measurements of the frame being handled.
+struct RxMetrics {
+    int16_t rssi_dbm   = 0;
+    int8_t  snr_db_x10 = 0;
+};
+
+// RX entry point, called by lora_rx_task with each polled frame. `metrics`
+// (nullable) describes that frame and stays readable through
+// current_rx_metrics() while the router dispatches it.
 void on_rx(const uint8_t* frame, size_t frame_len,
-           uint8_t* forward_out, size_t forward_cap, size_t& forward_len);
+           uint8_t* forward_out, size_t forward_cap, size_t& forward_len,
+           const RxMetrics* metrics = nullptr);
+
+// The metrics of the frame on_rx is handling right now, for sinks that run
+// inside it (they are called synchronously on the rx task). nullptr outside
+// an on_rx call or when the caller had none.
+const RxMetrics* current_rx_metrics();
 
 // Accessor for the Meshtastic router (so features can call originate()).
 meshtastic::MeshtasticRouter& meshtastic_router();

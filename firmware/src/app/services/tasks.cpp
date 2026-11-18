@@ -6,10 +6,12 @@
 
 #include "app/fsm/fsm.h"
 #include "app/services/wmesh_service.h"
+#include "features/factory_reset/factory_reset.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/ota/ota.h"
 #include "features/pki_keystore/pki_keystore.h"
+#include "features/reboot/reboot.h"
 #include "shared/config/build_info.h"
 #include "shared/config/node_mode.h"
 #if LL_REMOTE_RELAY
@@ -26,6 +28,7 @@
 #include "shared/util/log.h"
 #include "transport/lora/mac.h"
 #include "transport/lora/sx1262_driver.h"
+#include "transport/ble/gatt_server.h"
 
 #include <cstring>
 
@@ -34,9 +37,16 @@ namespace landlink::app::services {
 namespace {
 constexpr const char* kTag = "tasks";
 
+// Set once by spawn_tasks(); read by request_identity_beacon() on the command
+// threads. Null until the task exists, in which case the request is a no-op.
+TaskHandle_t s_mesh_identity_task = nullptr;
+
 [[noreturn]] void app_fsm_task(void*) {
     for (;;) {
         app::fsm::tick();
+        // A requested factory reset or reboot runs here and never returns.
+        features::factory_reset::run_pending();
+        features::reboot::run_pending();
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
@@ -56,7 +66,8 @@ constexpr const char* kTag = "tasks";
             app::fsm::notify_button_long();
             break;
         case hal::button::Event::VeryLongPress:
-            app::fsm::notify_button_very_long();
+            // Same reset as the FACTORY_RESET command; nobody to reply to.
+            (void)features::factory_reset::schedule(0, /*reply=*/false);
             break;
         case hal::button::Event::ShortPress:
         case hal::button::Event::None:
@@ -85,19 +96,35 @@ constexpr const char* kTag = "tasks";
     // is also the interval real Meshtastic clients expect for NodeDB
     // refresh and last_heard updates.
     vTaskDelay(pdMS_TO_TICKS(5000));
-    constexpr uint32_t kIntervalMs = 15UL * 60UL * 1000UL;
+    constexpr uint32_t kIntervalMs    = 15UL * 60UL * 1000UL;
+    constexpr uint32_t kNodeInfoGapMs = 30UL * 1000UL;
     for (;;) {
         // Receive-only nodes stay silent. Leaving that mode sends NodeInfo
         // right away (RADIO_SET_MODE handler), so no catch-up is needed here.
         // Skip the beacon while a firmware update holds the device.
         if (node_mode::can_transmit() && !features::ota::active()) {
-            (void)features::mesh_identity::send_nodeinfo();
-            // Space NodeInfo and Position by ~1s so the LoRa TX queue can drain
-            // (CAD between frames) rather than concatenating them back-to-back.
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            // Position first, NodeInfo kNodeInfoGapMs later. Two packets from
+            // the same node a second apart lose the second one on the way to
+            // the public MQTT server (verified on mqtt.meshtastic.org: of
+            // NodeInfo + Position 1 s apart, only the first ever arrived), so
+            // the old NodeInfo-then-Position burst never put a Landlink on a
+            // public map. Stock Meshtastic sends the two on separate timers
+            // and never bursts them. Position leads because it is what map
+            // sharing needs; NodeInfo after the gap still names the node.
             (void)features::mesh_identity::send_position();
+            vTaskDelay(pdMS_TO_TICKS(kNodeInfoGapMs));
+            if (node_mode::can_transmit() && !features::ota::active()) {
+                (void)features::mesh_identity::send_nodeinfo();
+                // Same gap after NodeInfo: a beacon requested meanwhile
+                // (request_identity_beacon) would otherwise put its Position
+                // right behind this NodeInfo and lose it the same way.
+                vTaskDelay(pdMS_TO_TICKS(kNodeInfoGapMs));
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(kIntervalMs));
+        // Sleep until the next interval, or until request_identity_beacon()
+        // wakes us early (e.g. map sharing just turned on). Either way the
+        // gates above run again before anything is sent.
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kIntervalMs));
     }
 }
 
@@ -152,7 +179,11 @@ constexpr const char* kTag = "tasks";
             }
             uint8_t fwd[mesh::meshtastic::kMaxFrame];
             size_t  fwd_len = 0;
-            mesh::protocol::on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len);
+            mesh::protocol::RxMetrics metrics;
+            metrics.rssi_dbm   = rep.rssi_dbm;
+            metrics.snr_db_x10 = rep.snr_db_x10;
+            mesh::protocol::on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len,
+                                  &metrics);
             if (fwd_len > 0 && node_mode::can_relay()) {
                 // Forward path: tell the MAC this is a rebroadcast so the
                 // SNR-weighted backoff applies. Lower-SNR receivers (poor
@@ -180,7 +211,8 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(led_tick_task,   "led_tick",    2048, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(button_task,     "button",      2048, nullptr, 4, nullptr, 0);
     xTaskCreatePinnedToCore(telemetry_task,  "telemetry",   4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(mesh_identity_task, "mt_id",     4096, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(mesh_identity_task, "mt_id",     4096, nullptr, 2,
+                            &s_mesh_identity_task, 0);
     xTaskCreatePinnedToCore(gps_task,        "gps",         4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(wifi_task,       "wifi",        4096, nullptr, 2, nullptr, 0);
 #if LL_WIFI_MESH
@@ -192,6 +224,11 @@ void spawn_tasks() {
     xTaskCreatePinnedToCore(lora_tx_task,    "lora_tx",     6144, nullptr, 6, nullptr, 1);
     xTaskCreatePinnedToCore(lora_rx_task,    "lora_rx",     6144, nullptr, 7, nullptr, 1);
     features::ota::spawn_task();
+    transport::ble::start_evt_flusher();
+}
+
+void request_identity_beacon() {
+    if (s_mesh_identity_task != nullptr) xTaskNotifyGive(s_mesh_identity_task);
 }
 
 } // namespace landlink::app::services

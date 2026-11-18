@@ -35,6 +35,8 @@
 #include "mesh/meshtastic/frame.h"
 #include "mesh/protocol/protocol.h"
 #include "shared/config/build_info.h"
+#include "shared/config/map_share.h"
+#include "shared/config/modem_preset.h"
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/tlv_tags.h"
 #include "shared/util/log.h"
@@ -42,6 +44,7 @@
 #include "transport/ble/gatt_server.h"
 #include "transport/lora/mac.h"
 #include "transport/lora/priority.h"
+#include "transport/lora/region_table.h"
 #include "transport/lora/sx1262_driver.h"
 #include "transport/serial/serial_link.h"
 
@@ -67,7 +70,28 @@ uint32_t load_or_create_salt(uint8_t out[8]) {
 landlink::proto::Region load_region() {
     uint8_t r = 0;
     landlink::hal::storage::get_u8("ll.radio", "region", r, 0);
-    return static_cast<landlink::proto::Region>(r);
+    // A value a newer firmware stored (then downgraded) falls back to the
+    // default band instead of an undefined one.
+    const auto* def = landlink::transport::lora::region_table::find(r);
+    return def != nullptr
+               ? def->region
+               : landlink::transport::lora::region_table::default_region().region;
+}
+
+// INFO advertises the build flag (platformio.ini LL_PROTO_VERSION) while the
+// protocol headers carry protocol.yaml's proto_version. Hosts gate features
+// on INFO, so the two must move together.
+static_assert(landlink::build::kProtoVersion == landlink::proto::kProtoVersion,
+              "LL_PROTO_VERSION in platformio.ini must match protocol.yaml proto_version");
+
+landlink::proto::ModemPreset load_preset() {
+    uint8_t raw = 0;
+    landlink::hal::storage::get_u8("ll.radio", "preset", raw, 0);
+    // An unknown stored value (a newer firmware's, then downgraded) falls back
+    // to LongFast.
+    const auto* def = landlink::modem_preset::find(raw);
+    return def != nullptr ? def->preset
+                          : landlink::modem_preset::default_preset().preset;
 }
 
 landlink::node_mode::NodeMode load_mode() {
@@ -75,6 +99,22 @@ landlink::node_mode::NodeMode load_mode() {
     landlink::hal::storage::get_u8("ll.radio", "mode", m, 0);
     if (!landlink::node_mode::is_valid(m)) m = 0;  // unknown values fall back to Relay
     return static_cast<landlink::node_mode::NodeMode>(m);
+}
+
+// Map sharing defaults to off. A corrupt or out-of-range stored value falls
+// back to off / the default precision rather than opting in by accident.
+landlink::map_share::Settings load_map_share() {
+    uint8_t enabled   = 0;
+    uint8_t precision = landlink::map_share::kDefaultPrecision;
+    landlink::hal::storage::get_u8("ll.radio", "map_share", enabled, 0);
+    landlink::hal::storage::get_u8("ll.radio", "map_prec", precision,
+                                   landlink::map_share::kDefaultPrecision);
+    landlink::map_share::Settings s;
+    s.enabled   = enabled == 1;
+    s.precision = landlink::map_share::is_valid_precision(precision)
+                      ? precision
+                      : landlink::map_share::kDefaultPrecision;
+    return s;
 }
 
 landlink::transport::lora::Role load_role() {
@@ -85,18 +125,32 @@ landlink::transport::lora::Role load_role() {
 }
 
 // Surface a heard mesh peer to the connected host so it can populate its node
-// list + map. Sourced from Meshtastic NodeInfo (identity only) and Position
-// (adds GPS). Reuses the LORA_PEER_FOUND host event + TLV shape the app's peer
-// parser already understands, so no client-side wire change is needed.
-void emit_peer_found(uint32_t src,
-                     const landlink::mesh::meshtastic::PositionMessage* pos) {
-    if (src == 0 ||
-        src == landlink::mesh::protocol::meshtastic_router().self_id()) {
+// list, node details and map. Sourced from Meshtastic NodeInfo (identity),
+// Position (GPS) and Telemetry (device metrics); every report also carries
+// the link quality of the frame it arrived in. The host merges each report
+// into its node entry field by field.
+void emit_peer_found(const landlink::mesh::meshtastic::Header& h,
+                     landlink::features::peer_report::PeerReport report) {
+    if (h.src == 0 ||
+        h.src == landlink::mesh::protocol::meshtastic_router().self_id()) {
         return;
     }
-    uint8_t buf[32];
+    report.src = h.src;
+    if (const auto* rx = landlink::mesh::protocol::current_rx_metrics()) {
+        report.has_rx     = true;
+        report.rssi_dbm   = rx->rssi_dbm;
+        report.snr_db_x10 = rx->snr_db_x10;
+    }
+    // hop_start 0 means the sender predates hop_start (unknown distance).
+    if (h.hop_start != 0 && h.hop_start >= h.hop_limit) {
+        report.has_hops  = true;
+        report.hops_away = static_cast<uint8_t>(h.hop_start - h.hop_limit);
+    }
+    report.via_mqtt = h.via_mqtt;
+    uint8_t buf[landlink::features::peer_report::kMaxPeerFoundLen + 16];
     const size_t n = landlink::features::peer_report::build_peer_found_tlvs(
-        src, pos, buf, sizeof(buf));
+        report, buf, sizeof(buf));
+    if (n == 0) return;
     landlink::transport::ble::notify_evt(landlink::proto::Opcode::LORA_PEER_FOUND,
                                          0, buf, n);
 }
@@ -117,11 +171,14 @@ void meshtastic_payload_sink(uint8_t channel_index,
              pki_encrypted ? 1 : 0,
              static_cast<unsigned>(data.payload_len));
     if (data.portnum == kPortnumTextMessageApp && data.payload != nullptr) {
+        landlink::features::mesh_chat::ChatMeta meta;
+        meta.reply_id = data.has_reply_id ? data.reply_id : 0;
+        meta.emoji    = data.has_emoji && data.emoji != 0;
         landlink::features::mesh_chat::on_meshtastic_chat(
             channel_index,
             h.src, h.dst, h.pkt_id, h.want_ack,
             data.payload, data.payload_len,
-            pki_encrypted);
+            pki_encrypted, meta);
     } else if (data.portnum == kPortnumRoutingApp && data.has_request_id) {
         // Routing payload with a request_id answers one of our packets.
         // error_reason NONE (absent or 0) is an ACK; anything else is a NAK
@@ -138,8 +195,8 @@ void meshtastic_payload_sink(uint8_t channel_index,
         // Cache the sender's X25519 public_key so future DMs to them can be
         // PKI-encrypted (and so PKI DMs from them can be authenticated).
         UserMessage user;
-        if (decode_user(data.payload, data.payload_len, user)
-            && user.has_public_key && user.public_key != nullptr) {
+        const bool user_ok = decode_user(data.payload, data.payload_len, user);
+        if (user_ok && user.has_public_key && user.public_key != nullptr) {
             landlink::features::pki_keystore::record(h.src, user.public_key);
             LL_LOG_I(kTag, "mt rx: cached pki pub for src=%08x",
                      static_cast<unsigned>(h.src));
@@ -155,13 +212,28 @@ void meshtastic_payload_sink(uint8_t channel_index,
             (void)landlink::features::mesh_identity::send_nodeinfo_to(h.src);
         }
         // Surface the peer's identity to the host so silent nodes (heard via
-        // NodeInfo but not chatting) still appear in the node list.
-        emit_peer_found(h.src, nullptr);
+        // NodeInfo but not chatting) still appear in the node list, with
+        // their names and hardware.
+        landlink::features::peer_report::PeerReport report;
+        if (user_ok) report.user = &user;
+        emit_peer_found(h, report);
     } else if (data.portnum == kPortnumPositionApp && data.payload != nullptr) {
         // Surface the peer's GPS so the host can plot it on the map.
         PositionMessage pos;
         if (decode_position(data.payload, data.payload_len, pos)) {
-            emit_peer_found(h.src, &pos);
+            landlink::features::peer_report::PeerReport report;
+            report.position = &pos;
+            emit_peer_found(h, report);
+        }
+    } else if (data.portnum == kPortnumTelemetryApp && data.payload != nullptr) {
+        // Device metrics (battery, channel use, uptime) for the node details.
+        // Environment and other telemetry variants are not surfaced.
+        DeviceMetricsMessage metrics;
+        if (decode_telemetry_device_metrics(data.payload, data.payload_len,
+                                            metrics)) {
+            landlink::features::peer_report::PeerReport report;
+            report.metrics = &metrics;
+            emit_peer_found(h, report);
         }
     }
 }
@@ -193,7 +265,11 @@ void setup() {
 
     landlink::hal::gps::init();
 
-    if (!landlink::transport::lora::init(load_region())) {
+    // The modem preset feeds both the radio and the channel hashes (an
+    // unnamed primary hashes as the preset name), so publish it first.
+    const landlink::proto::ModemPreset preset = load_preset();
+    landlink::modem_preset::set(preset);
+    if (!landlink::transport::lora::init(load_region(), preset)) {
         LL_LOG_W(kTag, "LoRa init failed — continuing without radio");
     }
 
@@ -224,10 +300,13 @@ void setup() {
     // per-channel keys/hashes from it. Migration: if `ll.net/key` (legacy
     // 32-B Landlink network key) is present and slot 0 is empty, it is
     // copied into slot 0 with name "Primary"; otherwise slot 0 is seeded
-    // with the canonical Meshtastic default ("LongFast", PSK index 1).
+    // with the canonical Meshtastic default (preset name, PSK index 1).
     if (!landlink::mesh::channel::init_from_nvs()) {
         LL_LOG_E(kTag, "channel registry init failed");
     }
+    // A preset change whose primary-channel rename never landed (or a slot
+    // stored before presets existed) is reconciled here.
+    (void)landlink::mesh::channel::follow_preset();
 
     // Apply the persisted radio role to the MAC (affects rebroadcast backoff:
     // Router/Repeater relay ahead of Client nodes). Live updates arrive later
@@ -238,6 +317,9 @@ void setup() {
     // apply it before any task can touch the air. Live updates arrive via the
     // RADIO_SET_MODE command.
     landlink::node_mode::set(load_mode());
+    // Before the beacon task starts, so the first NodeInfo / Position already
+    // honors the stored map sharing choice. Live updates via MAP_SHARE_SET.
+    landlink::map_share::set(load_map_share());
 
     landlink::mesh::protocol::InitContext pcx{};
     pcx.self_id = node_id;

@@ -5,6 +5,15 @@
 
 namespace landlink::features::mesh_chat {
 
+// Meshtastic Data.reply_id / Data.emoji carried alongside a chat. reply_id is
+// the pkt_id of the message being answered (0 = not a reply); emoji marks the
+// chat as a reaction whose text is the emoji. Stock Meshtastic clients render
+// these as threaded replies and reactions.
+struct ChatMeta {
+    uint32_t reply_id = 0;
+    bool     emoji    = false;
+};
+
 // Originate a CHAT_TEXT mesh frame on the given channel: build the Data
 // protobuf, encrypt via the Meshtastic router, queue on the LoRa TX path.
 // `dst` may be `landlink::mesh::meshtastic::kBroadcastAddr`. Returns false if
@@ -16,7 +25,8 @@ namespace landlink::features::mesh_chat {
 bool send_chat(uint8_t channel_index,
                uint32_t dst,
                const char* utf8, size_t utf8_len,
-               uint32_t* out_pkt_id = nullptr);
+               uint32_t* out_pkt_id = nullptr,
+               const ChatMeta& meta = {});
 
 // Called by the Meshtastic sink when a
 // TEXT_MESSAGE_APP `Data` packet arrives. The text is the decoded protobuf
@@ -27,7 +37,8 @@ void on_meshtastic_chat(uint8_t channel_index,
                         uint32_t src, uint32_t dst, uint32_t pkt_id,
                         bool want_ack,
                         const uint8_t* text, size_t text_len,
-                        bool pki_encrypted);
+                        bool pki_encrypted,
+                        const ChatMeta& meta = {});
 
 // Invoked by the Meshtastic sink when a ROUTING_APP `Data` packet arrives
 // carrying a request_id. error_reason 0 (NONE) forwards to BLE as

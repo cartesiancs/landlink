@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "hal/storage/storage.h"
+#include "shared/config/modem_preset.h"
 #include "shared/util/hkdf.h"
 #include "shared/util/log.h"
 
@@ -53,7 +54,8 @@ bool recompute_derived(Slot& s) {
     if (!meshtastic::expand_psk(s.psk_raw, s.psk_raw_len, s.key)) {
         return false;
     }
-    s.mt_hash = meshtastic::channel_hash(s.name, s.key);
+    s.mt_hash = meshtastic::channel_hash(s.name, s.key,
+                                         modem_preset::get().name);
     return derive_ll_session_key(s.psk_raw, s.psk_raw_len, s.ll_session_key);
 }
 
@@ -154,11 +156,13 @@ bool seed_slot_zero_from_legacy_or_default() {
         std::memcpy(slot0.psk_raw, key32, 32);
         std::strcpy(slot0.name, "Primary");
     } else {
-        // Canonical Meshtastic default: name "LongFast", PSK = index 1
-        // (single byte 0x01 expands to the well-known AQ== key).
+        // Canonical Meshtastic default: named after the active preset
+        // ("LongFast" by default), PSK = index 1 (single byte 0x01 expands to
+        // the well-known AQ== key).
         slot0.psk_raw_len = 1;
         slot0.psk_raw[0]  = 0x01;
-        std::strcpy(slot0.name, "LongFast");
+        std::strncpy(slot0.name, modem_preset::get().name, kMaxNameBytes);
+        slot0.name[kMaxNameBytes] = '\0';
     }
     if (!recompute_derived(slot0)) return false;
     slot0.occupied = true;
@@ -253,6 +257,33 @@ bool add_or_update(uint8_t index,
              s.name,
              static_cast<unsigned>(role));
     return true;
+}
+
+bool follow_preset() {
+    const char* preset_name = modem_preset::get().name;
+
+    bool rehashed = false;
+    for (Slot& s : s_slots) {
+        if (!s.occupied || s.name[0] != '\0') continue;
+        const uint8_t before = s.mt_hash;
+        if (recompute_derived(s) && s.mt_hash != before) rehashed = true;
+    }
+
+    const Slot& s0 = s_slots[0];
+    if (s0.occupied && modem_preset::is_preset_name(s0.name) &&
+        std::strcmp(s0.name, preset_name) != 0) {
+        // add_or_update() clears the slot before writing and leaves it empty
+        // on failure, so keep a copy to put back: the primary must survive.
+        const Slot previous = s0;
+        if (add_or_update(0, preset_name, previous.psk_raw,
+                          previous.psk_raw_len, RolePrimary)) {
+            return true;  // add_or_update() fired the subscribers.
+        }
+        s_slots[0] = previous;
+        LL_LOG_W(kTag, "rename slot 0 to %s failed", preset_name);
+    }
+    if (rehashed) fire_subs();
+    return false;
 }
 
 bool remove(uint8_t index) {

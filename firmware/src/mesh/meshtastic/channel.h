@@ -39,8 +39,11 @@ bool expand_psk(const uint8_t* raw, size_t raw_len, ChannelKey& out);
 // Byte-wise XOR fold. Returns 0 for an empty buffer.
 uint8_t xor_hash(const uint8_t* buf, size_t len);
 
-// 1-byte channel hash that lives in the OTA header.
-uint8_t channel_hash(const char* name, const ChannelKey& key);
+// 1-byte channel hash that lives in the OTA header. An empty or null name
+// hashes as `fallback_name`: upstream substitutes the active modem preset's
+// name ("LongFast", "MediumFast", ...) for an unnamed channel.
+uint8_t channel_hash(const char* name, const ChannelKey& key,
+                     const char* fallback_name = "LongFast");
 
 // Convenience: the default Meshtastic LongFast channel ("LongFast" + AQ== PSK).
 void default_channel(ChannelKey& out_key, uint8_t& out_hash);

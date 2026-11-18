@@ -91,7 +91,10 @@ bool put_fixed32(uint8_t* out, size_t out_cap, size_t& off, uint32_t v) {
 
 size_t encode_data(uint32_t portnum,
                    const uint8_t* payload, size_t payload_len,
-                   uint8_t* out, size_t out_cap) {
+                   uint8_t* out, size_t out_cap,
+                   uint32_t reply_id,
+                   uint32_t emoji,
+                   uint32_t bitfield) {
     size_t off = 0;
     // Field 1 portnum (varint).
     if (!put_key(out, out_cap, off, 1, kWireVarint)) return 0;
@@ -104,6 +107,24 @@ size_t encode_data(uint32_t portnum,
         if (off + payload_len > out_cap)                        return 0;
         std::memcpy(out + off, payload, payload_len);
         off += payload_len;
+    }
+
+    // Field 7 reply_id (fixed32), optional.
+    if (reply_id != 0) {
+        if (!put_key(out, out_cap, off, 7, kWireFixed32)) return 0;
+        if (!put_fixed32(out, out_cap, off, reply_id))    return 0;
+    }
+
+    // Field 8 emoji (fixed32), optional.
+    if (emoji != 0) {
+        if (!put_key(out, out_cap, off, 8, kWireFixed32)) return 0;
+        if (!put_fixed32(out, out_cap, off, emoji))       return 0;
+    }
+
+    // Field 9 bitfield (varint), optional.
+    if (bitfield != 0) {
+        if (!put_key(out, out_cap, off, 9, kWireVarint)) return 0;
+        if (!put_varint(out, out_cap, off, bitfield))    return 0;
     }
     return off;
 }
@@ -218,6 +239,11 @@ bool decode_user(const uint8_t* buf, size_t buf_len, UserMessage& out) {
             uint64_t v;
             if (!read_varint(buf, buf_len, off, v)) return false;
             out.hw_model = static_cast<uint32_t>(v);
+        } else if (field == 7 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out.role     = static_cast<uint32_t>(v);
+            out.has_role = true;
         } else if (field == 8 && wire == kWireLenDelim) {
             uint64_t len;
             if (!read_varint(buf, buf_len, off, len)) return false;
@@ -240,7 +266,8 @@ size_t encode_position(int32_t latitude_i, int32_t longitude_i,
                        int32_t altitude, bool has_altitude,
                        uint32_t epoch_seconds,
                        uint32_t location_source,
-                       uint8_t* out, size_t out_cap) {
+                       uint8_t* out, size_t out_cap,
+                       uint32_t precision_bits) {
     size_t off = 0;
     if (!put_key (out, out_cap, off, 1, kWireFixed32)) return 0;
     if (!put_fixed32(out, out_cap, off, static_cast<uint32_t>(latitude_i))) return 0;
@@ -257,6 +284,10 @@ size_t encode_position(int32_t latitude_i, int32_t longitude_i,
     if (location_source != 0) {
         if (!put_key (out, out_cap, off, 5, kWireVarint))      return 0;
         if (!put_varint(out, out_cap, off, location_source))   return 0;
+    }
+    if (precision_bits != 0) {
+        if (!put_key (out, out_cap, off, 23, kWireVarint))     return 0;
+        if (!put_varint(out, out_cap, off, precision_bits))    return 0;
     }
     return off;
 }
@@ -289,6 +320,82 @@ bool decode_position(const uint8_t* buf, size_t buf_len, PositionMessage& out) {
         }
     }
     return true;
+}
+
+namespace {
+
+float float_from_bits(uint32_t bits) {
+    float f;
+    std::memcpy(&f, &bits, sizeof(f));
+    return f;
+}
+
+bool decode_device_metrics(const uint8_t* buf, size_t buf_len,
+                           DeviceMetricsMessage& out) {
+    size_t off = 0;
+    while (off < buf_len) {
+        uint64_t key;
+        if (!read_varint(buf, buf_len, off, key)) return false;
+        const uint32_t field = static_cast<uint32_t>(key >> 3);
+        const uint8_t  wire  = static_cast<uint8_t>(key & 0x7);
+        if (field == 1 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out.battery_level     = static_cast<uint32_t>(v);
+            out.has_battery_level = true;
+        } else if (field == 2 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.voltage     = float_from_bits(v);
+            out.has_voltage = true;
+        } else if (field == 3 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.channel_utilization     = float_from_bits(v);
+            out.has_channel_utilization = true;
+        } else if (field == 4 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.air_util_tx     = float_from_bits(v);
+            out.has_air_util_tx = true;
+        } else if (field == 5 && wire == kWireVarint) {
+            uint64_t v;
+            if (!read_varint(buf, buf_len, off, v)) return false;
+            out.uptime_seconds     = static_cast<uint32_t>(v);
+            out.has_uptime_seconds = true;
+        } else {
+            if (!skip_field(buf, buf_len, off, wire)) return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+bool decode_telemetry_device_metrics(const uint8_t* buf, size_t buf_len,
+                                     DeviceMetricsMessage& out) {
+    out = DeviceMetricsMessage{};
+    bool found = false;
+    size_t off = 0;
+    while (off < buf_len) {
+        uint64_t key;
+        if (!read_varint(buf, buf_len, off, key)) return false;
+        const uint32_t field = static_cast<uint32_t>(key >> 3);
+        const uint8_t  wire  = static_cast<uint8_t>(key & 0x7);
+        if (field == 2 && wire == kWireLenDelim) {
+            uint64_t len;
+            if (!read_varint(buf, buf_len, off, len)) return false;
+            if (off + len > buf_len) return false;
+            if (!decode_device_metrics(buf + off, static_cast<size_t>(len), out)) {
+                return false;
+            }
+            found = true;
+            off += len;
+        } else {
+            if (!skip_field(buf, buf_len, off, wire)) return false;
+        }
+    }
+    return found;
 }
 
 bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out) {
@@ -326,6 +433,16 @@ bool decode_data(const uint8_t* buf, size_t buf_len, DataMessage& out) {
             if (!read_fixed32(buf, buf_len, off, v)) return false;
             out.request_id     = v;
             out.has_request_id = true;
+        } else if (field == 7 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.reply_id     = v;
+            out.has_reply_id = true;
+        } else if (field == 8 && wire == kWireFixed32) {
+            uint32_t v;
+            if (!read_fixed32(buf, buf_len, off, v)) return false;
+            out.emoji     = v;
+            out.has_emoji = true;
         } else {
             if (!skip_field(buf, buf_len, off, wire)) return false;
         }

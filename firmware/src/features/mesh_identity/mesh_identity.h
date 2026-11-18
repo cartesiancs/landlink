@@ -17,12 +17,37 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "shared/config/position_source.h"
+
 namespace landlink::features::mesh_identity {
 
 // Initialize with the device's node_id. The id is captured once at boot
-// and used to derive Meshtastic-style id ("!aabbccdd"), long_name, and
-// short_name on every broadcast.
+// and used to derive the Meshtastic-style id ("!aabbccdd") and the default
+// long_name / short_name; owner names saved with set_owner() are loaded from
+// NVS here and take precedence.
 void init(uint32_t self_node_id);
+
+// Owner names broadcast in NodeInfo (Meshtastic User.long_name /
+// short_name). Each is validated (UTF-8, byte caps in owner_name.h) and an
+// empty one restores its default derived from node_id. Persists to NVS and
+// takes effect on the next NodeInfo; callers that want peers to see it right
+// away follow up with send_nodeinfo(). Returns false on invalid input or an
+// NVS failure, leaving the current names untouched.
+bool set_owner(const uint8_t* long_name, size_t long_len,
+               const uint8_t* short_name, size_t short_len);
+
+// Copies the names currently broadcast (never empty) into the buffers,
+// NUL-terminated and truncated to fit.
+void get_owner(char* long_out, size_t long_cap,
+               char* short_out, size_t short_cap);
+
+// Where Position broadcasts take their location from: the GPS fix, or a
+// user-set fixed position (shared/config/position_source.h). Loaded from NVS
+// in init(). set_position_source() rejects an inconsistent value (Fixed
+// without a position, coordinates out of range) and NVS failures, leaving the
+// current source untouched; it takes effect on the next Position.
+bool set_position_source(const position_source::Settings& s);
+position_source::Settings get_position_source();
 
 // Build + queue a Meshtastic NodeInfo broadcast. Returns false if encoding
 // fails or the LoRa TX queue rejects the frame. Safe to call in any mode;
@@ -41,6 +66,10 @@ bool send_nodeinfo_to(uint32_t dest);
 // Position with both lat/lon == 0 is suppressed unless we still have a
 // time fix — broadcasting (0, 0) without time is just noise. Returns
 // false on encode/queue failure or outside MESHTASTIC mode.
+//
+// While map sharing is on (shared/config/map_share.h), NodeInfo and a
+// Position with a fix carry the OK-to-MQTT bit, and that Position is
+// truncated to the chosen precision. Nothing else this node sends does.
 bool send_position();
 
 } // namespace landlink::features::mesh_identity

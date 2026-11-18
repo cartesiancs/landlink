@@ -11,11 +11,13 @@
 #include <cstdint>
 
 #include "shared/protocol/opcodes.h"
+#include "transport/ble/evt_queue.h"
 
 namespace landlink::transport::ble {
 
 using landlink::proto::Opcode;
 using landlink::proto::FsmState;
+using evtq::EvtClass;
 
 // Called when a CMD frame is received. Handler can respond by calling
 // `notify_evt`. Returns true if the opcode was consumed, false to let the
@@ -41,9 +43,38 @@ bool init(uint32_t node_id);
 bool start_advertising();
 void stop_advertising();
 
-// Notify path for features to push async events.
+// Notify path for features to push async events. Fire and forget: the frame
+// is lost when no host is listening.
 bool notify_evt(Opcode op, uint8_t seq,
                 const uint8_t* payload, size_t payload_len);
+
+// Hold-and-forward variant for host-facing receive events (chat and ACK/NAK
+// MESH_RECV). The frame always goes through the RAM queue in evt_queue.h; the
+// evt_flush task sends it (seq 0, RX_AGE_MS appended) in arrival order as
+// soon as a host listens: BLE connected with EVT subscribed, or a tap whose
+// ready() is true. Safe from any task, never from an ISR. Returns false only
+// when the payload is rejected (empty or over 240 B).
+bool notify_evt_queued(Opcode op, EvtClass cls,
+                       const uint8_t* payload, size_t payload_len);
+
+// Start the evt_flush task. Call once from the task spawn, after init().
+void start_evt_flusher();
+
+// A non-BLE host started listening for events (its TapReady turned true):
+// flush now.
+void kick_evt_queue();
+
+// A host link ended or restarted: every sent but unconfirmed entry is sent
+// again on the next flush.
+void evt_link_lost();
+
+// A tap host was heard from, so every queued event it took at or before
+// `sent_before_ms` (millis()) reached it. Without this, tap deliveries are
+// only confirmed after evtq::kTapConfirmHoldMs.
+void confirm_evt_tap_delivery(uint32_t sent_before_ms);
+
+// Entries still held (unsent or awaiting confirmation).
+size_t pending_evt_count();
 
 // Update the STATE characteristic (FSM state + flag byte).
 void set_state(FsmState state, uint8_t flags);
@@ -63,11 +94,17 @@ size_t get_state(uint8_t* buf, size_t cap);
 // cheap: the relay enqueues and returns, the serial link writes one frame
 // under a mutex. Register at boot, before tasks start. Returns false when
 // all kMaxTaps slots are taken.
+//
+// `ready` reports whether the tap's host is listening right now. It decides
+// whether queued events (notify_evt_queued) may be released to that tap
+// while BLE is down. nullptr means the tap never counts as a listener;
+// queued events still reach it whenever they are sent.
 inline constexpr size_t kMaxTaps = 2;
 using EvtTap = void (*)(Opcode op, uint8_t seq,
                         const uint8_t* payload, size_t payload_len);
+using TapReady = bool (*)();
 using StateTap = void (*)(FsmState state, uint8_t flags);
-bool add_evt_tap(EvtTap tap);
+bool add_evt_tap(EvtTap tap, TapReady ready = nullptr);
 bool add_state_tap(StateTap tap);
 
 // Inject stringified device info that the INFO read handler returns.
@@ -98,6 +135,11 @@ bool notify_bulk(const uint8_t* data, size_t len);
 uint16_t peer_mtu();
 
 bool is_connected();
+
+// Closes the current central's link (graceful terminate), so the phone sees
+// the drop at once instead of after its supervision timeout. No-op when
+// nothing is connected. Used right before a deliberate restart.
+void disconnect();
 
 // True when at least one central has subscribed to the EVT characteristic
 // (CCCD write seen). Use this to gate periodic notifications so they aren't

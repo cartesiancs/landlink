@@ -119,9 +119,18 @@ size_t frame_open(uint8_t channel, const uint8_t* ct, size_t ct_len, uint8_t* ou
     return out_len;
 }
 
+bool relay_online() { return s_state == St::Online; }
+
 void set_state_and_notify(St s) {
     if (s_state == s) return;
+    const bool was_online = s_state == St::Online;
     s_state = s;
+    // Queued chats / ACKs follow the relay session like a BLE link.
+    if (s == St::Online) {
+        transport::ble::kick_evt_queue();
+    } else if (was_online) {
+        transport::ble::evt_link_lost();
+    }
     uint8_t buf[8];
     landlink::TlvBuilder b(buf, sizeof(buf));
     b.put_u8(TlvTag::REMOTE_STATE, static_cast<uint8_t>(s));
@@ -357,7 +366,7 @@ void start_tcp() {
 
 void relay_init() {
     s_queue = xQueueCreate(12, sizeof(OutItem));
-    if (!transport::ble::add_evt_tap(&on_evt) ||
+    if (!transport::ble::add_evt_tap(&on_evt, &relay_online) ||
         !transport::ble::add_state_tap(&on_state)) {
         LL_LOG_W(kTag, "no free BLE tap slot; relay mirroring disabled");
     }

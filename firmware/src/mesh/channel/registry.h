@@ -25,7 +25,14 @@
 // `ll.net/key` (32-B wrapped network key) exists, it is copied into slot 0
 // with name "Primary" and role=primary so already-paired Landlink devices
 // preserve their network key across the upgrade. Otherwise slot 0 is seeded
-// with ("LongFast", PSK index 1) — the canonical Meshtastic default.
+// with (active preset name, PSK index 1), the canonical Meshtastic default
+// ("LongFast" on the default preset).
+//
+// Modem presets: upstream hashes an unnamed primary channel with the active
+// preset's name, so stock nodes on MediumFast use "MediumFast". Unnamed slots
+// hash with the active preset name (shared/config/modem_preset.h), and a
+// primary channel still named after a preset follows the preset (see
+// follow_preset()).
 
 #include <cstddef>
 #include <cstdint>
@@ -83,6 +90,15 @@ bool remove(uint8_t index);
 // other consumers can compare cheaply instead of re-snapshotting on every
 // frame.
 uint32_t epoch();
+
+// Bring the registry in line with the active modem preset
+// (modem_preset::get()). Rehashes unnamed slots and, when slot 0 still
+// carries a preset's default name ("LongFast", ...) that differs from the
+// active one, renames it to the active preset's name (PSK and role kept) and
+// persists it. A name the user chose is left alone. Returns true when slot 0
+// was renamed, so the caller can tell the host. Subscribers fire on any
+// change.
+bool follow_preset();
 
 using ChangeCallback = void (*)();
 

@@ -28,6 +28,11 @@ bool init(transport::ble::CmdHandler handler);
 // True while a host session is open. Cheap; safe from any task.
 bool is_active();
 
+// True when called from inside a CMD handler that the serial RX task is
+// running, i.e. the command arrived over USB serial. Same idea as
+// transport::ble::cmd_from_ble().
+bool cmd_from_serial();
+
 // Write one LOG frame (no trailing newline expected; one is stripped if
 // present). No-op when no session is active. Lines longer than the frame
 // payload limit are truncated.

@@ -85,7 +85,7 @@ void notify_button_long() {
     }
 }
 
-void notify_button_very_long() {
+void notify_factory_reset() {
     enter(State::FACTORY_RESET);
 }
 

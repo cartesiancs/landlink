@@ -10,11 +10,12 @@
 
 #include "mesh/meshtastic/frame.h"
 #include "shared/config/board.h"
+#include "shared/config/modem_preset.h"
 #include "shared/util/log.h"
 #include "transport/lora/airtime.h"
 #include "transport/lora/fem.h"
 #include "transport/lora/mac.h"
-#include "transport/lora/slot_math.h"
+#include "transport/lora/region_table.h"
 
 namespace landlink::transport::lora {
 
@@ -73,34 +74,21 @@ uint32_t s_max_packet_time_ms = 1500;  // recomputed on preset apply
 // against a radio that is mid-begin().
 volatile bool s_reconfiguring = false;
 
-// Pending region change handed over from the BLE command task. Guarded by a
-// spinlock so the 3-field record is always read consistently.
-portMUX_TYPE    s_region_mux       = portMUX_INITIALIZER_UNLOCKED;
+// What the radio runs now. Only touched on the LoRa TX task (and init()).
+Region      s_active_region = Region::KR923;
+ModemPreset s_active_preset = ModemPreset::LONG_FAST;
+
+// Pending region / preset changes handed over from the BLE command task.
+// Guarded by one spinlock so each record is always read consistently.
+portMUX_TYPE    s_pending_mux      = portMUX_INITIALIZER_UNLOCKED;
 bool            s_region_pending   = false;
 Region          s_region_requested = Region::KR923;
 uint8_t         s_region_seq       = 0;
 RegionAppliedFn s_region_cb        = nullptr;
-
-float meshtastic_longfast_freq(Region r) {
-    // Upstream picks the slot as djb2(primary channel name) % numChannels,
-    // substituting the preset name ("LongFast") when the name is empty. We
-    // always hash the preset name so renaming the primary channel never
-    // moves the radio off the default LongFast slot.
-    //   US915: slot 19 of 104 -> 906.875 MHz
-    //   EU868: slot 0 of 1    -> 869.525 MHz
-    //   KR923: slot 11 of 12  -> 922.875 MHz
-    constexpr float kBwKhz = 250.0f;
-    const slot_math::RegionGrid* grid = &slot_math::kGridKR923;
-    switch (r) {
-        case Region::EU868: grid = &slot_math::kGridEU868; break;
-        case Region::US915: grid = &slot_math::kGridUS915; break;
-        case Region::KR923:
-        default:            grid = &slot_math::kGridKR923; break;
-    }
-    const uint32_t slot =
-        slot_math::slot_index(*grid, kBwKhz, /*channel_name=*/nullptr, "LongFast");
-    return slot_math::slot_freq_mhz(*grid, kBwKhz, slot);
-}
+bool            s_preset_pending   = false;
+ModemPreset     s_preset_requested = ModemPreset::LONG_FAST;
+uint8_t         s_preset_seq       = 0;
+PresetAppliedFn s_preset_cb        = nullptr;
 
 void IRAM_ATTR on_dio1() {
     s_rx_irq_flag = true;
@@ -249,19 +237,24 @@ void drain_rx() {
 
 } // namespace
 
-LoraPreset preset_meshtastic_longfast(Region r) {
+LoraPreset build_lora_preset(Region r, ModemPreset p) {
+    const region_table::RegionDef& def = region_table::resolve(r);
+    const modem_preset::PresetDef* mp = &modem_preset::resolve(p);
+    if (!region_table::fits(def, mp->bw_khz)) mp = &modem_preset::default_preset();
     return LoraPreset{
-        /*freq_mhz*/     meshtastic_longfast_freq(r),
-        /*bw_khz*/       250.0f,
-        /*sf*/           11,
-        /*cr*/           5,
+        /*freq_mhz*/     region_table::preset_freq_mhz(def, mp->bw_khz, mp->name),
+        /*bw_khz*/       mp->bw_khz,
+        /*sf*/           mp->sf,
+        /*cr*/           mp->cr,
         /*sync_word*/    0x2B,
         /*preamble*/     16,
-        /*tx_power_dbm*/ 22,
+        /*tx_power_dbm*/ region_table::tx_power_dbm(def),
     };
 }
 
-bool init(Region r) {
+bool init(Region r, ModemPreset p) {
+    s_active_region = r;
+    s_active_preset = p;
     airtime::init();
     mac::init();
     // Power the RF front end (if any) before the radio's first RX.
@@ -278,7 +271,7 @@ bool init(Region r) {
                                                pins::kLoraRst, pins::kLoraBusy,
                                                SPI));
     }
-    return apply_preset(preset_meshtastic_longfast(r));
+    return apply_preset(build_lora_preset(r, p));
 }
 
 bool reconfigure(const LoraPreset& p) {
@@ -298,7 +291,9 @@ bool reconfigure(const LoraPreset& p) {
 }
 
 bool set_region(Region r) {
-    return reconfigure(preset_meshtastic_longfast(r));
+    if (!reconfigure(build_lora_preset(r, s_active_preset))) return false;
+    s_active_region = r;
+    return true;
 }
 
 bool queue_tx(const uint8_t* frame, size_t frame_len) {
@@ -327,36 +322,62 @@ bool poll_rx(uint8_t* out, size_t out_cap, RxReport& report) {
 }
 
 void request_region(Region r, uint8_t seq, RegionAppliedFn on_applied) {
-    portENTER_CRITICAL(&s_region_mux);
+    portENTER_CRITICAL(&s_pending_mux);
     s_region_requested = r;
     s_region_seq       = seq;
     s_region_cb        = on_applied;
     s_region_pending   = true;
-    portEXIT_CRITICAL(&s_region_mux);
+    portEXIT_CRITICAL(&s_pending_mux);
+}
+
+void request_modem_preset(ModemPreset p, uint8_t seq, PresetAppliedFn on_applied) {
+    portENTER_CRITICAL(&s_pending_mux);
+    s_preset_requested = p;
+    s_preset_seq       = seq;
+    s_preset_cb        = on_applied;
+    s_preset_pending   = true;
+    portEXIT_CRITICAL(&s_pending_mux);
 }
 
 void tx_tick() {
-    // Apply a pending region change between MAC ticks. transmit_sync() runs
-    // on this task and blocks until the packet is out, so no TX is in flight
-    // here.
-    bool            pending = false;
-    Region          r       = Region::KR923;
-    uint8_t         seq     = 0;
-    RegionAppliedFn cb      = nullptr;
-    portENTER_CRITICAL(&s_region_mux);
+    // Apply pending region / preset changes between MAC ticks.
+    // transmit_sync() runs on this task and blocks until the packet is out,
+    // so no TX is in flight here. Both changes share one re-tune.
+    bool            region_pending = false;
+    Region          r              = s_active_region;
+    uint8_t         region_seq     = 0;
+    RegionAppliedFn region_cb      = nullptr;
+    bool            preset_pending = false;
+    ModemPreset     p              = s_active_preset;
+    uint8_t         preset_seq     = 0;
+    PresetAppliedFn preset_cb      = nullptr;
+    portENTER_CRITICAL(&s_pending_mux);
     if (s_region_pending) {
-        pending          = true;
+        region_pending   = true;
         r                = s_region_requested;
-        seq              = s_region_seq;
-        cb               = s_region_cb;
+        region_seq       = s_region_seq;
+        region_cb        = s_region_cb;
         s_region_pending = false;
     }
-    portEXIT_CRITICAL(&s_region_mux);
-    if (pending) {
-        const bool ok = set_region(r);
-        LL_LOG_I(kTag, "region %u applied ok=%d",
-                 static_cast<unsigned>(r), ok ? 1 : 0);
-        if (cb != nullptr) cb(r, seq, ok);
+    if (s_preset_pending) {
+        preset_pending   = true;
+        p                = s_preset_requested;
+        preset_seq       = s_preset_seq;
+        preset_cb        = s_preset_cb;
+        s_preset_pending = false;
+    }
+    portEXIT_CRITICAL(&s_pending_mux);
+    if (region_pending || preset_pending) {
+        const bool ok = reconfigure(build_lora_preset(r, p));
+        if (ok) {
+            s_active_region = r;
+            s_active_preset = p;
+        }
+        LL_LOG_I(kTag, "radio region=%u preset=%u applied ok=%d",
+                 static_cast<unsigned>(r), static_cast<unsigned>(p),
+                 ok ? 1 : 0);
+        if (region_pending && region_cb != nullptr) region_cb(r, region_seq, ok);
+        if (preset_pending && preset_cb != nullptr) preset_cb(p, preset_seq, ok);
     }
     mac::tick();
 }

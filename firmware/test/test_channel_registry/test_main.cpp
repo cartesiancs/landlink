@@ -127,6 +127,7 @@ namespace ch = landlink::mesh::channel;
 
 void setUp() {
     landlink::hal::storage::init();  // clear all slots
+    landlink::modem_preset::set(landlink::proto::ModemPreset::LONG_FAST);
 }
 void tearDown() {}
 
@@ -199,6 +200,63 @@ void test_add_rejects_bad_psk_length() {
     TEST_ASSERT_FALSE(ch::add_or_update(2, "z", psk, 7, ch::RoleSecondary));
 }
 
+void test_init_seeds_slot_zero_with_active_preset_name() {
+    landlink::modem_preset::set(landlink::proto::ModemPreset::MEDIUM_FAST);
+    TEST_ASSERT_TRUE(ch::init_from_nvs());
+    const ch::Slot* s = ch::get(0);
+    TEST_ASSERT_NOT_NULL(s);
+    TEST_ASSERT_EQUAL_STRING("MediumFast", s->name);
+    TEST_ASSERT_EQUAL_UINT8(0x1F, s->mt_hash);
+}
+
+void test_follow_preset_renames_default_primary() {
+    TEST_ASSERT_TRUE(ch::init_from_nvs());
+    const uint32_t before = ch::epoch();
+    landlink::modem_preset::set(landlink::proto::ModemPreset::MEDIUM_FAST);
+    TEST_ASSERT_TRUE(ch::follow_preset());
+    const ch::Slot* s = ch::get(0);
+    TEST_ASSERT_NOT_NULL(s);
+    TEST_ASSERT_EQUAL_STRING("MediumFast", s->name);
+    TEST_ASSERT_EQUAL_UINT8(ch::RolePrimary, s->role);
+    TEST_ASSERT_EQUAL_UINT8(1, s->psk_raw_len);
+    TEST_ASSERT_EQUAL_UINT8(0x01, s->psk_raw[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x1F, s->mt_hash);
+    TEST_ASSERT_EQUAL_UINT32(before + 1, ch::epoch());
+    // Persisted: a reload keeps the new name.
+    TEST_ASSERT_TRUE(ch::init_from_nvs());
+    TEST_ASSERT_EQUAL_STRING("MediumFast", ch::get(0)->name);
+    // Already in line: nothing to do.
+    TEST_ASSERT_FALSE(ch::follow_preset());
+    // And back.
+    landlink::modem_preset::set(landlink::proto::ModemPreset::LONG_FAST);
+    TEST_ASSERT_TRUE(ch::follow_preset());
+    TEST_ASSERT_EQUAL_STRING("LongFast", ch::get(0)->name);
+    TEST_ASSERT_EQUAL_UINT8(0x08, ch::get(0)->mt_hash);
+}
+
+void test_follow_preset_keeps_user_named_primary() {
+    TEST_ASSERT_TRUE(ch::init_from_nvs());
+    uint8_t psk[16];
+    for (int i = 0; i < 16; ++i) psk[i] = static_cast<uint8_t>(i + 1);
+    TEST_ASSERT_TRUE(ch::add_or_update(0, "MyMesh", psk, 16, ch::RolePrimary));
+    landlink::modem_preset::set(landlink::proto::ModemPreset::SHORT_FAST);
+    TEST_ASSERT_FALSE(ch::follow_preset());
+    TEST_ASSERT_EQUAL_STRING("MyMesh", ch::get(0)->name);
+}
+
+void test_follow_preset_rehashes_unnamed_slots() {
+    TEST_ASSERT_TRUE(ch::init_from_nvs());
+    const uint8_t one = 0x01;
+    TEST_ASSERT_TRUE(ch::add_or_update(2, "", &one, 1, ch::RoleSecondary));
+    TEST_ASSERT_EQUAL_UINT8(0x08, ch::get(2)->mt_hash);  // hashes as LongFast
+    const uint32_t before = ch::epoch();
+    landlink::modem_preset::set(landlink::proto::ModemPreset::MEDIUM_FAST);
+    TEST_ASSERT_TRUE(ch::follow_preset());  // slot 0 renamed too
+    TEST_ASSERT_EQUAL_UINT8(0x1F, ch::get(2)->mt_hash);
+    TEST_ASSERT_EQUAL_STRING("", ch::get(2)->name);
+    TEST_ASSERT_TRUE(ch::epoch() > before);
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_init_seeds_slot_zero_with_longfast_when_no_legacy);
@@ -207,5 +265,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_remove_index_zero_refused);
     RUN_TEST(test_add_rejects_role_mismatch_on_slot_zero);
     RUN_TEST(test_add_rejects_bad_psk_length);
+    RUN_TEST(test_init_seeds_slot_zero_with_active_preset_name);
+    RUN_TEST(test_follow_preset_renames_default_primary);
+    RUN_TEST(test_follow_preset_keeps_user_named_primary);
+    RUN_TEST(test_follow_preset_rehashes_unnamed_slots);
     return UNITY_END();
 }

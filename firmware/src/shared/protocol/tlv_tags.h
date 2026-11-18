@@ -14,11 +14,13 @@ enum class TlvTag : uint8_t {
     NODE_DST = 0x05,  // Destination u32 in MESH_RECV; 0xFFFFFFFF means broadcast.
     MESH_ID = 0x03,  // Mesh group id
     TIMESTAMP_MS = 0x04,  // Unix time ms (best-effort)
+    RX_AGE_MS = 0x06,  // ms between the device receiving a MESH_RECV and emitting it; large when it was held for a disconnected host
     CHAT_TEXT = 0x10,  // UTF-8 chat text, <=200 B
-    CHAT_REPLY_TO = 0x11,  // pkt_id being replied to
+    CHAT_REPLY_TO = 0x11,  // Meshtastic Data.reply_id: pkt_id this chat replies or reacts to. LoRa only.
     CHAT_PKI_ENCRYPTED = 0x12,  // 1 if the originating LoRa frame was Meshtastic PKI-encrypted (DM)
     TRANSPORT = 0x13,  // Link a chat rides on: 0=LoRa (default when absent), 1=Wi-Fi mesh
     MEDIA_CHUNK = 0x14,  // Max BULK data bytes per write
+    CHAT_EMOJI = 0x15,  // 1 if the chat is a Meshtastic emoji reaction (Data.emoji); CHAT_TEXT holds the emoji and CHAT_REPLY_TO the target pkt_id. LoRa only.
     LAT_E7 = 0x20,  // Latitude * 1e7
     LON_E7 = 0x21,  // Longitude * 1e7
     ALT_M = 0x22,  // Altitude meters
@@ -36,6 +38,14 @@ enum class TlvTag : uint8_t {
     ROUTING_ERROR = 0x43,  // Meshtastic Routing.Error reason carried by a KIND=NAK MESH_RECV (e.g. 6 NO_CHANNEL, 35 PKI_UNKNOWN_PUBKEY)
     NODE_NAME = 0x50,  // Human-friendly peer name <=32 B
     CAP_FLAGS = 0x51,  // Capability bitfield
+    NODE_SHORT_NAME = 0x52,  // Meshtastic User.short_name <=8 B
+    HW_MODEL = 0x53,  // Meshtastic HardwareModel enum
+    NODE_ROLE = 0x54,  // Meshtastic Config.DeviceConfig.Role enum
+    HOPS_AWAY = 0x55,  // hop_start - hop_limit of the heard frame
+    VIA_MQTT = 0x56,  // 1 if the heard frame came through an MQTT gateway
+    CHANNEL_UTIL_E1 = 0x57,  // Peer-reported channel utilization percent * 10
+    AIR_UTIL_TX_E1 = 0x58,  // Peer-reported TX airtime percent * 10
+    UPTIME_S = 0x59,  // Peer-reported uptime seconds
     WMESH_ENABLED = 0x60,  // 1 = Wi-Fi mesh on
     WMESH_CHANNEL = 0x61,  // 2.4 GHz channel (1, 6 or 11)
     WMESH_PEER_COUNT = 0x62,  // Neighbors currently heard
@@ -75,6 +85,10 @@ enum class TlvTag : uint8_t {
     REGION = 0xa0,
     NODE_MODE = 0xa1,  // Node mode: 0=relay, 1=tx only, 2=rx only
     ROLE = 0xa2,  // Node CSMA/CA role: 0=client, 1=router, 2=repeater
+    MODEM_PRESET = 0xa3,  // Meshtastic modem preset (upstream ModemPreset value)
+    MAP_SHARE = 0xa4,  // 1 = OK-to-MQTT bit on own Position/NodeInfo plus coarse position
+    MAP_PRECISION = 0xa5,  // Position precision bits while map sharing is on (11..15)
+    POSITION_MODE = 0xa6,  // Position source: 0=GPS, 1=Fixed
     MESH_KEY = 0xb0,
     MESH_SALT = 0xb1,
     CHANNEL_INDEX = 0xc0,  // Channel index 0..7

@@ -5,6 +5,7 @@
 #include <esp_system.h>
 #include <mbedtls/gcm.h>
 
+#include <atomic>
 #include <cstring>
 
 #include "shared/util/crc.h"
@@ -20,6 +21,15 @@ constexpr size_t      kWrapTagLen   = 16;
 
 uint8_t s_wrap_key[16] = { 0 };
 bool    s_ready        = false;
+// Set once a factory reset starts. Every write fails from then on so no task
+// can put back a key the reset just erased before the device restarts.
+std::atomic<bool> s_frozen{ false };
+
+bool writes_frozen(const char* ns, const char* key) {
+    if (!s_frozen.load()) return false;
+    LL_LOG_W(kTag, "write refused (frozen) %s/%s", ns, key);
+    return true;
+}
 
 bool derive_wrap_key() {
     uint8_t mac[6];
@@ -73,6 +83,7 @@ bool get_u8(const char* ns, const char* key, uint8_t& out, uint8_t def) {
     return true;
 }
 bool set_u8(const char* ns, const char* key, uint8_t v) {
+    if (writes_frozen(ns, key)) return false;
     Preferences p;
     if (!p.begin(ns, false)) return false;
     const bool ok = p.putUChar(key, v) == 1;
@@ -87,6 +98,7 @@ bool get_u32(const char* ns, const char* key, uint32_t& out, uint32_t def) {
     return true;
 }
 bool set_u32(const char* ns, const char* key, uint32_t v) {
+    if (writes_frozen(ns, key)) return false;
     Preferences p;
     if (!p.begin(ns, false)) return false;
     const bool ok = p.putUInt(key, v) == 4;
@@ -103,12 +115,17 @@ bool get_blob(const char* ns, const char* key, uint8_t* buf, size_t& len) {
     return len == actual;
 }
 bool set_blob(const char* ns, const char* key, const uint8_t* buf, size_t len) {
+    if (writes_frozen(ns, key)) return false;
     Preferences p;
     if (!p.begin(ns, false)) return false;
     const size_t n = p.putBytes(key, buf, len);
     p.end();
     return n == len;
 }
+void freeze_writes() {
+    s_frozen.store(true);
+}
+
 bool erase_namespace(const char* ns) {
     Preferences p;
     if (!p.begin(ns, false)) return false;

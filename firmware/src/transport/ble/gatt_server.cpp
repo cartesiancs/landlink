@@ -1,7 +1,9 @@
 #include "gatt_server.h"
 
+#include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
 
 #include <cstring>
@@ -44,6 +46,7 @@ LinkLostHandler s_link_lost_handler = nullptr;
 // which call the same handler from their own tasks.
 volatile TaskHandle_t s_cmd_task = nullptr;
 EvtTap          s_evt_taps[kMaxTaps]   = {};
+TapReady        s_evt_tap_ready[kMaxTaps] = {};
 StateTap        s_state_taps[kMaxTaps] = {};
 size_t          s_evt_tap_count   = 0;
 size_t          s_state_tap_count = 0;
@@ -58,6 +61,137 @@ uint32_t s_info_id  = 0;
 uint8_t  s_info_pv  = 0;
 
 uint8_t s_state_buf[2] = { 0, 0 };
+
+// Host event queue (see evt_queue.h). s_evtq is touched only under
+// s_evtq_mutex, which is held for memcpy-sized work and never across a send.
+evtq::EvtQueue    s_evtq;
+SemaphoreHandle_t s_evtq_mutex = nullptr;
+TaskHandle_t      s_flush_task = nullptr;
+// millis() before which the flusher waits after an EVT subscribe.
+volatile uint32_t s_settle_until_ms = 0;
+// Owned by the evt_flush task: the entry being sent and its EVT frame.
+evtq::Entry s_flush_entry;
+uint8_t     s_flush_frame[4 + evtq::kMaxPayload];
+
+class EvtqLock {
+public:
+    EvtqLock() : held_(s_evtq_mutex != nullptr &&
+                       xSemaphoreTake(s_evtq_mutex, portMAX_DELAY) == pdTRUE) {}
+    ~EvtqLock() { if (held_) xSemaphoreGive(s_evtq_mutex); }
+    EvtqLock(const EvtqLock&) = delete;
+    EvtqLock& operator=(const EvtqLock&) = delete;
+    bool held() const { return held_; }
+private:
+    bool held_;
+};
+
+void wake_flusher() {
+    const TaskHandle_t t = s_flush_task;
+    if (t != nullptr) xTaskNotifyGive(t);
+}
+
+size_t rewind_evtq() {
+    EvtqLock lock;
+    return lock.held() ? s_evtq.rewind() : 0;
+}
+
+bool ble_evt_ready() {
+    return s_connected && s_conn_handle != 0xFFFF && s_evt_chr != nullptr &&
+           s_evt_chr->getSubscribedCount() > 0;
+}
+
+bool any_tap_ready() {
+    for (size_t i = 0; i < s_evt_tap_count; ++i) {
+        if (s_evt_tap_ready[i] != nullptr && s_evt_tap_ready[i]()) return true;
+    }
+    return false;
+}
+
+bool host_ready() { return ble_evt_ready() || any_tap_ready(); }
+
+// WHY: NimBLECharacteristic::notify() drops the frame silently when the mbuf
+// pool is full. Go to the host API so we can see the failure and retry;
+// ble_gattc_notify_custom consumes the mbuf on success and error. Blocks up
+// to ~200 ms, so never call it from the NimBLE host task.
+bool notify_custom_retry(NimBLECharacteristic* chr,
+                         const uint8_t* data, size_t len) {
+    const uint16_t conn = s_conn_handle;
+    if (chr == nullptr || !s_connected || conn == 0xFFFF ||
+        chr->getSubscribedCount() == 0) {
+        return false;
+    }
+    for (int attempt = 0; attempt < 40; ++attempt) {
+        os_mbuf* om = ble_hs_mbuf_from_flat(data, static_cast<uint16_t>(len));
+        if (om != nullptr) {
+            const int rc = ble_gattc_notify_custom(conn, chr->getHandle(), om);
+            if (rc == 0) return true;
+            if (rc != BLE_HS_ENOMEM) return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    return false;
+}
+
+// Send s_flush_entry to every listening host. Delivered means: BLE took it
+// when BLE is listening (via = Ble), otherwise at least one ready tap took it
+// (via = Tap).
+bool deliver_flush_entry(uint32_t now, evtq::Via& via) {
+    const size_t n = evtq::build_wire_payload(
+        s_flush_entry, now, s_flush_frame + 4, sizeof(s_flush_frame) - 4);
+    if (n == 0) return false;
+    s_flush_frame[0] = s_flush_entry.op;
+    s_flush_frame[1] = 0;  // unsolicited event
+    s_flush_frame[2] = static_cast<uint8_t>(n & 0xff);
+    s_flush_frame[3] = static_cast<uint8_t>((n >> 8) & 0xff);
+
+    const bool ble_ready = ble_evt_ready();
+    const bool ble_ok = ble_ready &&
+        notify_custom_retry(s_evt_chr, s_flush_frame, 4 + n);
+    bool tap_ok = false;
+    for (size_t i = 0; i < s_evt_tap_count; ++i) {
+        const bool ready = s_evt_tap_ready[i] != nullptr && s_evt_tap_ready[i]();
+        s_evt_taps[i](static_cast<Opcode>(s_flush_entry.op), 0,
+                      s_flush_frame + 4, n);
+        tap_ok = tap_ok || ready;
+    }
+    via = ble_ready ? evtq::Via::Ble : evtq::Via::Tap;
+    return ble_ready ? ble_ok : tap_ok;
+}
+
+[[noreturn]] void evt_flush_task(void*) {
+    for (;;) {
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(evtq::kFlushPollMs));
+        {
+            EvtqLock lock;
+            if (lock.held()) (void)s_evtq.reap(millis());
+        }
+        if (!host_ready()) continue;
+
+        // Give a freshly subscribed host a moment before the replay burst.
+        const int32_t wait = static_cast<int32_t>(s_settle_until_ms - millis());
+        if (wait > 0 && wait <= static_cast<int32_t>(evtq::kFlushSettleMs)) {
+            vTaskDelay(pdMS_TO_TICKS(static_cast<uint32_t>(wait)));
+        }
+
+        size_t sent = 0;
+        while (host_ready()) {
+            evtq::Peeked tok;
+            {
+                EvtqLock lock;
+                if (!lock.held() || !s_evtq.peek_unsent(s_flush_entry, tok)) break;
+            }
+            evtq::Via via = evtq::Via::Ble;
+            if (!deliver_flush_entry(millis(), via)) break;  // retried on the next wake
+            EvtqLock lock;
+            // False when the link dropped mid-send (rewind bumped the epoch):
+            // the entry stays unsent and goes out again after reconnecting.
+            if (lock.held() && s_evtq.mark_sent(tok, millis(), via)) ++sent;
+        }
+        if (sent > 1) {
+            LL_LOG_I(kTag, "evtq flushed %u", static_cast<unsigned>(sent));
+        }
+    }
+}
 
 // Pack the INFO blob:
 //   [proto_version][node_id LE(4)][fw_len][fw][hw_len][hw][target_len][target]
@@ -108,7 +242,9 @@ class ServerCb : public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer*) override {
         s_connected = false;
         s_conn_handle = 0xFFFF;
-        LL_LOG_I(kTag, "disconnected");
+        const size_t rewound = rewind_evtq();
+        LL_LOG_I(kTag, "disconnected (evtq rewound %u)",
+                 static_cast<unsigned>(rewound));
         if (s_link_lost_handler) s_link_lost_handler();
         NimBLEDevice::startAdvertising();
     }
@@ -133,6 +269,19 @@ class CmdCb : public NimBLECharacteristicCallbacks {
             };
             send_frame(s_evt_chr, Opcode::ERROR, seq,
                        err_payload, sizeof(err_payload));
+        }
+    }
+};
+
+class EvtCb : public NimBLECharacteristicCallbacks {
+    // Runs on the NimBLE host task: only flag and wake, the flusher sends.
+    void onSubscribe(NimBLECharacteristic*, ble_gap_conn_desc*,
+                     uint16_t sub_value) override {
+        if ((sub_value & 0x0001) != 0) {
+            s_settle_until_ms = millis() + evtq::kFlushSettleMs;
+            wake_flusher();
+        } else if (sub_value == 0) {
+            (void)rewind_evtq();
         }
     }
 };
@@ -163,6 +312,7 @@ class InfoCb : public NimBLECharacteristicCallbacks {
 
 ServerCb s_server_cb;
 CmdCb    s_cmd_cb;
+EvtCb    s_evt_cb;
 OtaCb    s_ota_cb;
 BulkCb   s_bulk_cb;
 InfoCb   s_info_cb;
@@ -171,6 +321,7 @@ InfoCb   s_info_cb;
 
 bool init(uint32_t node_id) {
     s_info_id = node_id;
+    if (s_evtq_mutex == nullptr) s_evtq_mutex = xSemaphoreCreateMutex();
 
     char name[32];
     std::snprintf(name, sizeof(name), "Landlink-%04X",
@@ -189,6 +340,7 @@ bool init(uint32_t node_id) {
     s_cmd_chr->setCallbacks(&s_cmd_cb);
 
     s_evt_chr  = s_service->createCharacteristic(kEvtUuid,  NIMBLE_PROPERTY::NOTIFY);
+    s_evt_chr->setCallbacks(&s_evt_cb);
     s_st_chr   = s_service->createCharacteristic(kStUuid,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
     s_st_chr->setValue(s_state_buf, sizeof(s_state_buf));
@@ -232,6 +384,57 @@ bool notify_evt(Opcode op, uint8_t seq,
     return ok;
 }
 
+bool notify_evt_queued(Opcode op, EvtClass cls,
+                       const uint8_t* payload, size_t payload_len) {
+    evtq::PushResult r = evtq::PushResult::Rejected;
+    uint32_t dropped = 0;
+    {
+        EvtqLock lock;
+        if (!lock.held()) return false;
+        r = s_evtq.push(static_cast<uint8_t>(op), cls, payload, payload_len,
+                        millis());
+        dropped = s_evtq.dropped();
+    }
+    if (r == evtq::PushResult::Rejected) {
+        LL_LOG_W(kTag, "evtq reject op=0x%02x len=%u",
+                 static_cast<unsigned>(op), static_cast<unsigned>(payload_len));
+        return false;
+    }
+    if (r == evtq::PushResult::QueuedEvicted) {
+        LL_LOG_W(kTag, "evtq full, evicted oldest (dropped=%u)",
+                 static_cast<unsigned>(dropped));
+    }
+    wake_flusher();
+    return true;
+}
+
+void start_evt_flusher() {
+    if (s_flush_task != nullptr || s_evtq_mutex == nullptr) return;
+    TaskHandle_t t = nullptr;
+    // Below lora_rx (7) and wifi (2 on core 0, same priority: round robin).
+    xTaskCreatePinnedToCore(evt_flush_task, "evt_flush", 4096, nullptr, 2, &t, 0);
+    s_flush_task = t;
+    wake_flusher();  // events queued during boot
+}
+
+void kick_evt_queue() { wake_flusher(); }
+
+void evt_link_lost() {
+    const size_t n = rewind_evtq();
+    if (n > 0) LL_LOG_I(kTag, "evtq rewound %u", static_cast<unsigned>(n));
+    wake_flusher();
+}
+
+void confirm_evt_tap_delivery(uint32_t sent_before_ms) {
+    EvtqLock lock;
+    if (lock.held()) (void)s_evtq.confirm_tap_before(sent_before_ms);
+}
+
+size_t pending_evt_count() {
+    EvtqLock lock;
+    return lock.held() ? s_evtq.size() : 0;
+}
+
 void set_state(FsmState state, uint8_t flags) {
     s_state_buf[0] = static_cast<uint8_t>(state);
     s_state_buf[1] = flags;
@@ -255,9 +458,10 @@ size_t get_state(uint8_t* buf, size_t cap) {
     return sizeof(s_state_buf);
 }
 
-bool add_evt_tap(EvtTap tap) {
+bool add_evt_tap(EvtTap tap, TapReady ready) {
     if (tap == nullptr || s_evt_tap_count >= kMaxTaps) return false;
     s_evt_taps[s_evt_tap_count] = tap;
+    s_evt_tap_ready[s_evt_tap_count] = ready;
     ++s_evt_tap_count;  // publish after the slot is filled
     return true;
 }
@@ -283,24 +487,8 @@ void set_cmd_handler(CmdHandler h)      { s_cmd_handler = h; }
 void set_bulk_handler(BulkHandler h)    { s_bulk_handler = h; }
 
 bool notify_bulk(const uint8_t* data, size_t len) {
-    if (s_bulk_chr == nullptr || data == nullptr || len == 0) return false;
-    const uint16_t conn = s_conn_handle;
-    if (!s_connected || conn == 0xFFFF || s_bulk_chr->getSubscribedCount() == 0) {
-        return false;
-    }
-    // WHY: NimBLECharacteristic::notify() drops the frame silently when the
-    // mbuf pool is full. Go to the host API so we can see the failure and
-    // retry; ble_gattc_notify_custom consumes the mbuf on success and error.
-    for (int attempt = 0; attempt < 40; ++attempt) {
-        os_mbuf* om = ble_hs_mbuf_from_flat(data, static_cast<uint16_t>(len));
-        if (om != nullptr) {
-            const int rc = ble_gattc_notify_custom(conn, s_bulk_chr->getHandle(), om);
-            if (rc == 0) return true;
-            if (rc != BLE_HS_ENOMEM) return false;
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-    return false;
+    if (data == nullptr || len == 0) return false;
+    return notify_custom_retry(s_bulk_chr, data, len);
 }
 
 uint16_t peer_mtu() {
@@ -318,6 +506,12 @@ bool cmd_from_ble() {
 }
 
 bool is_connected() { return s_connected; }
+
+void disconnect() {
+    const uint16_t conn = s_conn_handle;
+    if (s_server == nullptr || !s_connected || conn == 0xFFFF) return;
+    s_server->disconnect(conn);
+}
 
 bool evt_subscribed() {
     return s_evt_chr != nullptr && s_evt_chr->getSubscribedCount() > 0;

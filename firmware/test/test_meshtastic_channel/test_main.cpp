@@ -106,9 +106,24 @@ void test_empty_name_hashes_as_preset_name() {
     TEST_ASSERT_EQUAL_UINT8(channel_hash("LongFast", k), channel_hash(nullptr, k));
 }
 
+void test_empty_name_hashes_as_given_fallback() {
+    // On another preset, an unnamed channel hashes as that preset's name:
+    // xorHash("MediumFast") ^ xorHash(defaultpsk) = 0x1F.
+    ChannelKey k;
+    const uint8_t one = 0x01;
+    TEST_ASSERT_TRUE(expand_psk(&one, 1, k));
+    TEST_ASSERT_EQUAL_UINT8(channel_hash("MediumFast", k),
+                            channel_hash("", k, "MediumFast"));
+    TEST_ASSERT_EQUAL_UINT8(0x1F, channel_hash(nullptr, k, "MediumFast"));
+    // A named channel ignores the fallback.
+    TEST_ASSERT_EQUAL_UINT8(channel_hash("LongFast", k),
+                            channel_hash("LongFast", k, "MediumFast"));
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_xor_hash_of_LongFast_is_0x0A);
+    RUN_TEST(test_empty_name_hashes_as_given_fallback);
     RUN_TEST(test_psk_index_1_expands_to_defaultpsk);
     RUN_TEST(test_psk_index_2_shifts_last_byte);
     RUN_TEST(test_psk_32_byte_is_aes256);

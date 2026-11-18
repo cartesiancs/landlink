@@ -156,7 +156,8 @@ void emit_text_recv(const wifi::Header& h, const wifi::air::Opened& o) {
     if (o.pki) b.put_u8(TlvTag::CHAT_PKI_ENCRYPTED, 1);
     b.put_u8(TlvTag::TRANSPORT, kTransportWifi);
     b.put(TlvTag::CHAT_TEXT, o.body, static_cast<uint8_t>(text_len));
-    transport::ble::notify_evt(Opcode::MESH_RECV, 0, b.data(), b.size());
+    transport::ble::notify_evt_queued(Opcode::MESH_RECV, transport::ble::EvtClass::Chat,
+                                      b.data(), b.size());
 }
 
 void emit_ack(uint32_t from, uint32_t pkt_id, uint8_t ch_index) {
@@ -168,7 +169,8 @@ void emit_ack(uint32_t from, uint32_t pkt_id, uint8_t ch_index) {
     b.put_u8(TlvTag::KIND, static_cast<uint8_t>(MeshKind::ACK));
     b.put_u32(TlvTag::ACK_PKT_ID, pkt_id);
     b.put_u8(TlvTag::TRANSPORT, kTransportWifi);
-    transport::ble::notify_evt(Opcode::MESH_RECV, 0, b.data(), b.size());
+    transport::ble::notify_evt_queued(Opcode::MESH_RECV, transport::ble::EvtClass::Delivery,
+                                      b.data(), b.size());
 }
 
 void send_text_ack(const wifi::Header& rx, const wifi::air::Opened& o) {

@@ -13,6 +13,7 @@
 #include "shared/protocol/opcodes.h"
 #include "shared/protocol/serial_frame.h"
 #include "shared/util/log.h"
+#include "transport/serial/host_listen.h"
 
 namespace landlink::transport::serial_link {
 
@@ -42,8 +43,15 @@ constexpr TickType_t kLogWait   = pdMS_TO_TICKS(50);
 
 transport::ble::CmdHandler s_handler = nullptr;
 SemaphoreHandle_t          s_tx_mutex = nullptr;
+TaskHandle_t               s_rx_task  = nullptr;
 std::atomic<bool>          s_active{false};
 std::atomic<uint32_t>      s_last_rx_ms{0};
+// Whether the session's host reads EVT frames; gates queued events.
+listen::HostListen         s_listen;
+
+// A host frame confirms queued events written at least this long before it,
+// so the host had time to read them off the port.
+constexpr uint32_t kTapConfirmMarginMs = 1000;
 
 // Shared TX frame buffer, guarded by s_tx_mutex. Static so tap callers
 // (often small-stack tasks) do not need a 1 KB stack buffer.
@@ -144,8 +152,28 @@ void touch_session() {
     s_last_rx_ms.store(millis());
     s_active.store(true);
     if (!was_active) {
+        s_listen.session_started();
         send_state_now();
         LL_LOG_I(kTag, "host session started");
+    }
+}
+
+// Release, rewind or confirm queued events (ble::notify_evt_queued) based on
+// what the host just sent. See host_listen.h.
+void note_host_frame(uint8_t chan) {
+    switch (s_listen.on_frame(chan)) {
+    case listen::Action::Kick:
+        transport::ble::kick_evt_queue();
+        break;
+    case listen::Action::Rewind:
+        LL_LOG_I(kTag, "host restarted on an open session");
+        transport::ble::evt_link_lost();
+        break;
+    case listen::Action::Confirm:
+        transport::ble::confirm_evt_tap_delivery(millis() - kTapConfirmMarginMs);
+        break;
+    case listen::Action::None:
+        break;
     }
 }
 
@@ -169,6 +197,7 @@ void handle_cmd_frame(const uint8_t* p, size_t len) {
 
 void on_rx_frame(uint8_t chan, const uint8_t* payload, size_t len, void*) {
     touch_session();
+    note_host_frame(chan);
     switch (chan) {
     case sf::chan::kCmd:
         handle_cmd_frame(payload, len);
@@ -198,13 +227,20 @@ void on_rx_frame(uint8_t chan, const uint8_t* payload, size_t len, void*) {
         }
         if (s_active.load() && !is_active()) {
             s_active.store(false);
+            s_listen.session_ended();
             s_parser.reset();
+            // Queued events the host never confirmed are sent again.
+            transport::ble::evt_link_lost();
             LL_LOG_I(kTag, "host session ended (%s)",
                      host_present() ? "keepalive timeout" : "usb host gone");
         }
         vTaskDelay(pdMS_TO_TICKS(kRxIdleMs));
     }
 }
+
+// TapReady for the queued-event flusher: an open session whose host reads
+// EVT frames.
+bool host_listening() { return s_listen.listening() && is_active(); }
 
 } // namespace
 
@@ -216,12 +252,12 @@ bool init(transport::ble::CmdHandler handler) {
         LL_LOG_E(kTag, "tx mutex alloc failed");
         return false;
     }
-    if (!transport::ble::add_evt_tap(&on_evt) ||
+    if (!transport::ble::add_evt_tap(&on_evt, &host_listening) ||
         !transport::ble::add_state_tap(&on_state)) {
         LL_LOG_W(kTag, "no free BLE tap slot; EVT/STATE will not reach serial");
     }
     if (xTaskCreatePinnedToCore(rx_task, "serial_rx", kRxStack, nullptr,
-                                kRxPriority, nullptr, kRxCore) != pdPASS) {
+                                kRxPriority, &s_rx_task, kRxCore) != pdPASS) {
         LL_LOG_E(kTag, "rx task create failed");
         return false;
     }
@@ -235,6 +271,11 @@ bool is_active() {
         return false;
     }
     return host_present();
+}
+
+bool cmd_from_serial() {
+    const TaskHandle_t t = s_rx_task;
+    return t != nullptr && xTaskGetCurrentTaskHandle() == t;
 }
 
 void write_log(const char* line, size_t len) {
