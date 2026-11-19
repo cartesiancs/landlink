@@ -15,35 +15,11 @@ TinyGPSPlus s_gps;
 HardwareSerial s_uart(1);
 Fix s_fix;
 
-// Periodic diagnostics. Distinguishes "no NMEA on the wire" from "NMEA but no
-// fix" from "fix in progress" without needing extra tooling.
-constexpr uint32_t kDiagPeriodMs = 5000;
-uint32_t s_bytes_total   = 0;
-uint32_t s_bytes_window  = 0;
-uint32_t s_last_diag_ms  = 0;
-uint32_t s_last_chars    = 0;
-uint32_t s_last_passed   = 0;
-uint32_t s_last_failed   = 0;
-
-// Per-sentence-type counters. When sats=0 persists, the breakdown reveals
-// whether the module is even emitting GSV (satellites-in-view). GSV missing
-// implies the module needs CFG-MSG; GSV present but reporting 0 satellites
-// implies the antenna/RF chain is not receiving signal.
-uint32_t s_count_gga = 0;
-uint32_t s_count_gsv = 0;
-uint32_t s_count_gsa = 0;
-uint32_t s_count_rmc = 0;
-char     s_nmea_hdr[5] = {0, 0, 0, 0, 0};
-uint8_t  s_nmea_hdr_idx = 5;  // 5 = "not currently capturing a sentence header"
-
-// Raw capture of the most recent GSV and GGA sentences for the diag window.
-// Reveals what the module is actually reporting: number-of-sats-in-view
-// (GSV field 3) and fix quality (GGA field 6). Distinguishes "antenna sees
-// nothing" from "antenna sees sats but no fix yet" without external tools.
-char    s_cur_buf[96] = {0};
-uint8_t s_cur_idx = 0;
-char    s_last_gsv[96] = {0};
-char    s_last_gga[96] = {0};
+#if LL_BOARD_HAS_GPS
+// Logged once: the first fix and how long it took after init().
+uint32_t s_init_ms    = 0;
+bool     s_fix_logged = false;
+#endif
 
 // UBX-CFG-ANT: enable antenna voltage supervisor with u-blox factory default
 // pin assignments. Without this, active GPS antennas on the u.FL connector
@@ -111,7 +87,7 @@ bool init() {
     LL_LOG_I(kTag, "sent UBX-CFG-ANT + UBX-CFG-MSG(GSV)");
 #endif
 
-    s_last_diag_ms = millis();
+    s_init_ms = millis();
     return true;
 #endif
 }
@@ -144,51 +120,6 @@ void pump() {
     while (s_uart.available()) {
         const int b = s_uart.read();
         if (b < 0) break;
-        s_bytes_total++;
-        s_bytes_window++;
-
-        // Classify sentence type by snooping the talker+type prefix that
-        // immediately follows '$'. Five characters cover "GPGGA", "GNGSV",
-        // "GLGSA", etc. Position [2..4] holds the 3-letter type, which is
-        // talker-agnostic (GP/GN/GL/GA/GB all decode the same way here).
-        // Simultaneously buffer the full sentence so we can dump the most
-        // recent GSV and GGA each diag window.
-        if (b == '$') {
-            s_nmea_hdr_idx = 0;
-            s_cur_idx = 0;
-            s_cur_buf[s_cur_idx++] = '$';
-        } else {
-            if (s_nmea_hdr_idx < 5) {
-                s_nmea_hdr[s_nmea_hdr_idx++] = static_cast<char>(b);
-                if (s_nmea_hdr_idx == 5) {
-                    const char a  = s_nmea_hdr[2];
-                    const char b2 = s_nmea_hdr[3];
-                    const char c  = s_nmea_hdr[4];
-                    if      (a=='G' && b2=='G' && c=='A') s_count_gga++;
-                    else if (a=='G' && b2=='S' && c=='V') s_count_gsv++;
-                    else if (a=='G' && b2=='S' && c=='A') s_count_gsa++;
-                    else if (a=='R' && b2=='M' && c=='C') s_count_rmc++;
-                }
-            }
-            if (s_cur_idx > 0 && s_cur_idx < sizeof(s_cur_buf) - 1) {
-                if (b != '\r' && b != '\n') {
-                    s_cur_buf[s_cur_idx++] = static_cast<char>(b);
-                } else {
-                    s_cur_buf[s_cur_idx] = '\0';
-                    if (s_cur_idx >= 6) {
-                        const char t0 = s_cur_buf[3];
-                        const char t1 = s_cur_buf[4];
-                        const char t2 = s_cur_buf[5];
-                        if (t0=='G' && t1=='S' && t2=='V') {
-                            memcpy(s_last_gsv, s_cur_buf, s_cur_idx + 1);
-                        } else if (t0=='G' && t1=='G' && t2=='A') {
-                            memcpy(s_last_gga, s_cur_buf, s_cur_idx + 1);
-                        }
-                    }
-                    s_cur_idx = 0;
-                }
-            }
-        }
 
         if (s_gps.encode(static_cast<char>(b))) {
             if (s_gps.location.isUpdated() && s_gps.location.isValid()) {
@@ -223,40 +154,14 @@ void pump() {
         }
     }
 
-    const uint32_t now = millis();
-    if (now - s_last_diag_ms >= kDiagPeriodMs) {
-        const uint32_t passed_now = s_gps.passedChecksum();
-        const uint32_t failed_now = s_gps.failedChecksum();
-        const uint32_t chars_now  = s_gps.charsProcessed();
-        LL_LOG_I(kTag,
-                 "diag bytes=%u (+%u) chars=%u (+%u) ok=%u (+%u) bad=%u (+%u) sats=%u fix=%d",
-                 static_cast<unsigned>(s_bytes_total),
-                 static_cast<unsigned>(s_bytes_window),
-                 static_cast<unsigned>(chars_now),
-                 static_cast<unsigned>(chars_now - s_last_chars),
-                 static_cast<unsigned>(passed_now),
-                 static_cast<unsigned>(passed_now - s_last_passed),
-                 static_cast<unsigned>(failed_now),
-                 static_cast<unsigned>(failed_now - s_last_failed),
-                 static_cast<unsigned>(s_gps.satellites.value()),
-                 s_fix.valid ? 1 : 0);
-        LL_LOG_I(kTag,
-                 "nmea gga=%u gsv=%u gsa=%u rmc=%u",
-                 static_cast<unsigned>(s_count_gga),
-                 static_cast<unsigned>(s_count_gsv),
-                 static_cast<unsigned>(s_count_gsa),
-                 static_cast<unsigned>(s_count_rmc));
-        if (s_last_gsv[0] != '\0') {
-            LL_LOG_I(kTag, "raw %s", s_last_gsv);
-        }
-        if (s_last_gga[0] != '\0') {
-            LL_LOG_I(kTag, "raw %s", s_last_gga);
-        }
-        s_bytes_window  = 0;
-        s_last_chars    = chars_now;
-        s_last_passed   = passed_now;
-        s_last_failed   = failed_now;
-        s_last_diag_ms  = now;
+    // One line when the first fix arrives, nothing periodic: the device log
+    // streams to the phone, and a status line every few seconds buried
+    // everything else in it.
+    if (s_fix.valid && !s_fix_logged) {
+        s_fix_logged = true;
+        LL_LOG_I(kTag, "first fix after %u s, sats=%u",
+                 static_cast<unsigned>((millis() - s_init_ms) / 1000U),
+                 static_cast<unsigned>(s_gps.satellites.value()));
     }
 #endif
 }

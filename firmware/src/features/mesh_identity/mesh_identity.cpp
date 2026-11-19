@@ -146,22 +146,9 @@ uint32_t emit_nodeinfo(uint32_t dest, const char* tag_suffix) {
     using mesh::meshtastic::kMaxPayload;
     using mesh::meshtastic::kPortnumNodeInfoApp;
 
-    // Encode the User payload. Always carry the device public_key when
-    // available — peers cache it from NodeInfo for future PKI DMs. When PKI
-    // identity is uninitialized (very early boot or NVS fault) we omit the
-    // field and degrade to PSK-only operation.
-    uint8_t pki_pub[features::pki_identity::kKeyLen];
-    const bool have_pki = features::pki_identity::public_key(pki_pub);
-    char long_name[sizeof(s_long_name)];
-    char short_name[sizeof(s_short_name)];
-    get_owner(long_name, sizeof(long_name), short_name, sizeof(short_name));
     // Worst case: id 11 + long 41 + short 6 + mac 8 + hw 3 + key 34 = 103 B.
     uint8_t user_buf[128];
-    const size_t user_len = mesh::meshtastic::encode_user(
-        s_id, long_name, short_name, s_macaddr,
-        kMeshtasticHwModel,
-        have_pki ? pki_pub : nullptr,
-        user_buf, sizeof(user_buf));
+    const size_t user_len = encode_self_user(user_buf, sizeof(user_buf));
     if (user_len == 0) {
         LL_LOG_W(kTag, "nodeinfo: encode_user failed (%s)", tag_suffix);
         return 0;
@@ -215,6 +202,23 @@ uint32_t emit_nodeinfo(uint32_t dest, const char* tag_suffix) {
     return ok ? assigned : 0;
 }
 } // namespace
+
+size_t encode_self_user(uint8_t* out, size_t out_cap) {
+    if (s_self_id == 0) return 0;
+    // Always carry the device public_key when available: peers cache it from
+    // NodeInfo for future PKI DMs. When PKI identity is uninitialized (very
+    // early boot or NVS fault) the field is omitted and DMs degrade to PSK.
+    uint8_t pki_pub[features::pki_identity::kKeyLen];
+    const bool have_pki = features::pki_identity::public_key(pki_pub);
+    char long_name[sizeof(s_long_name)];
+    char short_name[sizeof(s_short_name)];
+    get_owner(long_name, sizeof(long_name), short_name, sizeof(short_name));
+    return mesh::meshtastic::encode_user(
+        s_id, long_name, short_name, s_macaddr,
+        kMeshtasticHwModel,
+        have_pki ? pki_pub : nullptr,
+        out, out_cap);
+}
 
 bool set_owner(const uint8_t* long_name, size_t long_len,
                const uint8_t* short_name, size_t short_len) {

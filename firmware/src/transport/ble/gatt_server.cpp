@@ -5,10 +5,15 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <esp_heap_caps.h>
 
+#include <atomic>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 
 #include "shared/util/log.h"
+#include "transport/ble/log_gate.h"
 
 namespace landlink::transport::ble {
 
@@ -61,6 +66,48 @@ uint32_t s_info_id  = 0;
 uint8_t  s_info_pv  = 0;
 
 uint8_t s_state_buf[2] = { 0, 0 };
+
+// Device log stream (LOG characteristic, proto 11+). See log_gate.h.
+// s_log_conn is the handle of the central with LOG notifications on.
+// s_log_buf holds one formatted line; it is allocated on the first subscribe
+// (PSRAM when the board has it) and never freed, so a device nobody streams
+// from pays nothing. s_log_busy guards s_log_buf and s_log_rate: a second
+// task (or a log call made while sending, e.g. from the BLE stack) drops its
+// line instead of waiting.
+std::atomic<uint16_t> s_log_conn{log_gate::kNoConn};
+std::atomic<char*>    s_log_buf{nullptr};
+std::atomic_flag      s_log_busy = ATOMIC_FLAG_INIT;
+log_gate::RateWindow  s_log_rate;
+uint32_t              s_log_dropped = 0;  // under s_log_busy
+// millis() of the latest OTA chunk or BULK frame.
+volatile uint32_t s_heavy_ms   = 0;
+volatile bool     s_heavy_seen = false;
+
+void mark_heavy_traffic() {
+    s_heavy_ms = millis();
+    s_heavy_seen = true;
+}
+
+// Runs only on the NimBLE host task (LOG subscribe), so two allocations
+// cannot race.
+bool ensure_log_buf() {
+    if (s_log_buf.load(std::memory_order_acquire) != nullptr) return true;
+    constexpr size_t kBytes = log_gate::kLogLineMax + 1;
+    void* p = heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (p == nullptr) p = heap_caps_malloc(kBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (p == nullptr) return false;
+    s_log_buf.store(static_cast<char*>(p), std::memory_order_release);
+    return true;
+}
+
+// Sends `len` bytes of `buf` as one LOG notification. Single attempt: a log
+// line is never worth waiting for. ble_gattc_notify_custom consumes the mbuf
+// on success and on error.
+void send_log_notify(uint16_t conn, const char* buf, size_t len) {
+    os_mbuf* om = ble_hs_mbuf_from_flat(buf, static_cast<uint16_t>(len));
+    if (om == nullptr) return;
+    (void)ble_gattc_notify_custom(conn, s_log_chr->getHandle(), om);
+}
 
 // Host event queue (see evt_queue.h). s_evtq is touched only under
 // s_evtq_mutex, which is held for memcpy-sized work and never across a send.
@@ -248,6 +295,13 @@ class ServerCb : public NimBLEServerCallbacks {
         if (s_link_lost_handler) s_link_lost_handler();
         NimBLEDevice::startAdvertising();
     }
+    // NimBLE calls this right after the overload above. With two centrals
+    // allowed, only the one that had the log stream on clears it.
+    void onDisconnect(NimBLEServer*, ble_gap_conn_desc* desc) override {
+        if (desc == nullptr) return;
+        uint16_t expected = desc->conn_handle;
+        (void)s_log_conn.compare_exchange_strong(expected, log_gate::kNoConn);
+    }
 };
 
 class CmdCb : public NimBLECharacteristicCallbacks {
@@ -288,6 +342,7 @@ class EvtCb : public NimBLECharacteristicCallbacks {
 
 class OtaCb : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* chr) override {
+        mark_heavy_traffic();
         if (!s_ota_handler) return;
         const std::string v = chr->getValue();
         s_ota_handler(reinterpret_cast<const uint8_t*>(v.data()), v.size());
@@ -296,6 +351,7 @@ class OtaCb : public NimBLECharacteristicCallbacks {
 
 class BulkCb : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* chr) override {
+        mark_heavy_traffic();
         if (!s_bulk_handler) return;
         const std::string v = chr->getValue();
         s_bulk_handler(reinterpret_cast<const uint8_t*>(v.data()), v.size());
@@ -310,12 +366,36 @@ class InfoCb : public NimBLECharacteristicCallbacks {
     }
 };
 
+class LogCb : public NimBLECharacteristicCallbacks {
+    // Runs on the NimBLE host task.
+    void onSubscribe(NimBLECharacteristic*, ble_gap_conn_desc* desc,
+                     uint16_t sub_value) override {
+        if (desc == nullptr) return;
+        if ((sub_value & 0x0001) != 0) {
+            if (!ensure_log_buf()) {
+                LL_LOG_W(kTag, "log stream: no memory");
+                return;
+            }
+            s_log_conn.store(desc->conn_handle);
+            // First line on the stream: tells the app what it is reading.
+            LL_LOG_I(kTag, "log stream on (fw %s, proto %u, mtu %u, heap %u)",
+                     s_info_fw, static_cast<unsigned>(s_info_pv),
+                     static_cast<unsigned>(s_server ? s_server->getPeerMTU(desc->conn_handle) : 0),
+                     static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+        } else if (sub_value == 0) {
+            uint16_t expected = desc->conn_handle;
+            (void)s_log_conn.compare_exchange_strong(expected, log_gate::kNoConn);
+        }
+    }
+};
+
 ServerCb s_server_cb;
 CmdCb    s_cmd_cb;
 EvtCb    s_evt_cb;
 OtaCb    s_ota_cb;
 BulkCb   s_bulk_cb;
 InfoCb   s_info_cb;
+LogCb    s_log_cb;
 
 } // namespace
 
@@ -353,6 +433,7 @@ bool init(uint32_t node_id) {
     s_ota_chr->setCallbacks(&s_ota_cb);
 
     s_log_chr  = s_service->createCharacteristic(kLogUuid,  NIMBLE_PROPERTY::NOTIFY);
+    s_log_chr->setCallbacks(&s_log_cb);
 
     s_bulk_chr = s_service->createCharacteristic(kBulkUuid,
         NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY);
@@ -488,6 +569,7 @@ void set_bulk_handler(BulkHandler h)    { s_bulk_handler = h; }
 
 bool notify_bulk(const uint8_t* data, size_t len) {
     if (data == nullptr || len == 0) return false;
+    mark_heavy_traffic();
     return notify_custom_retry(s_bulk_chr, data, len);
 }
 
@@ -515,6 +597,69 @@ void disconnect() {
 
 bool evt_subscribed() {
     return s_evt_chr != nullptr && s_evt_chr->getSubscribedCount() > 0;
+}
+
+bool log_subscribed() {
+    return s_log_conn.load(std::memory_order_relaxed) != log_gate::kNoConn &&
+           s_log_buf.load(std::memory_order_relaxed) != nullptr;
+}
+
+void write_logf(char level, const char* tag, const char* fmt, ...) {
+    if (fmt == nullptr || xPortInIsrContext()) return;
+    const uint16_t conn = s_log_conn.load(std::memory_order_relaxed);
+    char* const buf = s_log_buf.load(std::memory_order_acquire);
+    if (conn == log_gate::kNoConn || buf == nullptr ||
+        s_log_chr == nullptr || s_server == nullptr) {
+        return;
+    }
+    const uint16_t mtu = s_server->getPeerMTU(conn);
+    const uint32_t now = millis();
+    const log_gate::Inputs in{
+        conn,
+        mtu,
+        s_state_buf[0] == static_cast<uint8_t>(FsmState::OTA),
+        s_heavy_seen,
+        s_heavy_ms,
+        now,
+        os_msys_num_free(),
+    };
+    // Also the recursion guard: a log call made while this one sends (the
+    // BLE stack, a lower priority task preempted mid-line) returns here.
+    if (s_log_busy.test_and_set(std::memory_order_acquire)) return;
+    if (!log_gate::may_send(in) ||
+        !log_gate::take(s_log_rate, now, log_gate::kMaxLinesPerSec)) {
+        ++s_log_dropped;
+        s_log_busy.clear(std::memory_order_release);
+        return;
+    }
+    const size_t cap = log_gate::payload_cap(mtu);
+
+    // Lines lost since the last one that went out: say so once, ahead of
+    // this line. The notice does not count against the rate limit.
+    if (s_log_dropped > 0) {
+        const int n = std::snprintf(buf, cap + 1, "[W][log] dropped %u lines",
+                                    static_cast<unsigned>(s_log_dropped));
+        if (n > 0) {
+            send_log_notify(conn, buf, static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : cap);
+        }
+        s_log_dropped = 0;
+    }
+
+    int head = std::snprintf(buf, cap + 1, "[%c][%s] ", level, tag ? tag : "?");
+    if (head < 0) head = 0;
+    size_t len = static_cast<size_t>(head) < cap ? static_cast<size_t>(head) : cap;
+    if (len < cap) {
+        va_list ap;
+        va_start(ap, fmt);
+        const int body = std::vsnprintf(buf + len, cap + 1 - len, fmt, ap);
+        va_end(ap);
+        if (body > 0) len += static_cast<size_t>(body);
+        if (len > cap) len = cap;
+    }
+    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) --len;
+    len = log_gate::utf8_clamp(buf, len);
+    if (len > 0) send_log_notify(conn, buf, len);
+    s_log_busy.clear(std::memory_order_release);
 }
 
 } // namespace landlink::transport::ble

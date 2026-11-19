@@ -3,11 +3,15 @@
 #include <cstring>
 
 #include "app/fsm/fsm.h"
+#include "app/services/admin_service.h"
 #include "features/factory_reset/factory_reset.h"
 #include "features/factory_reset/factory_reset_plan.h"
 #include "features/mesh_chat/mesh_chat.h"
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/ota/ota.h"
+#include "features/pki_identity/pki_identity.h"
+#include "features/remote_admin/admin_key_set.h"
+#include "features/remote_admin/admin_keys.h"
 #include "features/reboot/reboot.h"
 #include "features/reboot/reboot_plan.h"
 #include "app/services/tasks.h"
@@ -197,7 +201,85 @@ void send_map_share_result(uint8_t seq) {
                                b.data(), b.size());
 }
 
+// ADMIN_CFG_RESULT: this node's own public key (the admin key it hands to
+// the nodes it should manage), its admin keys, managed flag and any pending
+// remote radio revert.
+void send_admin_cfg_result(uint8_t seq) {
+    namespace ra = features::remote_admin;
+    const ra::AdminKeySet set = ra::admin_keys::get();
+    uint8_t keys[ra::kMaxAdminKeys * ra::kAdminKeyLen];
+    const size_t keys_len = ra::pack_keys(set, keys, sizeof(keys));
+    uint8_t buf[(2 + 32) + (2 + sizeof(keys)) + 3 + 4];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    uint8_t pub[features::pki_identity::kKeyLen];
+    if (features::pki_identity::public_key(pub)) {
+        b.put(TlvTag::PUBKEY_X25519, pub, sizeof(pub));
+    }
+    b.put(TlvTag::ADMIN_KEYS, keys, static_cast<uint8_t>(keys_len));
+    b.put_u8(TlvTag::ADMIN_MANAGED, set.managed ? 1 : 0);
+    b.put_u16(TlvTag::ADMIN_REVERT_SECS, admin::revert_remaining_s());
+    transport::ble::notify_evt(Opcode::ADMIN_CFG_RESULT, seq, b.data(), b.size());
+}
+
+// Commands that change this device's settings or state. While the node is
+// managed (remote admin only) a local host gets ERROR(MANAGED) for these;
+// reads, chat and the controller-side ADMIN_SEND stay available. The button
+// factory reset is the way out of managed mode.
+bool is_local_setter(Opcode op) {
+    switch (op) {
+    case Opcode::WIFI_CONNECT:
+    case Opcode::RADIO_SET_REGION:
+    case Opcode::RADIO_SET_MODE:
+    case Opcode::RADIO_SET_ROLE:
+    case Opcode::RADIO_SET_PRESET:
+    case Opcode::OWNER_SET:
+    case Opcode::MAP_SHARE_SET:
+    case Opcode::POSITION_SET:
+    case Opcode::WMESH_SET:
+    case Opcode::MESH_JOIN:
+    case Opcode::MESH_LEAVE:
+    case Opcode::CHANNEL_SET:
+    case Opcode::CHANNEL_DELETE:
+    case Opcode::FACTORY_RESET:
+    case Opcode::REBOOT:
+    case Opcode::REMOTE_SET_CONFIG:
+    case Opcode::ADMIN_CFG_SET:
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
+
+void apply_region(landlink::proto::Region region) {
+    hal::storage::set_u8("ll.radio", "region", static_cast<uint8_t>(region));
+    transport::lora::request_region(region, 0, on_region_applied);
+}
+
+void apply_modem_preset(landlink::proto::ModemPreset preset) {
+    hal::storage::set_u8("ll.radio", "preset", static_cast<uint8_t>(preset));
+    transport::lora::request_modem_preset(preset, 0, on_preset_applied);
+}
+
+void emit_setting(Opcode get_op) {
+    // A GET handler only answers with its *_RESULT on the given seq.
+    (void)handle_cmd(get_op, 0, nullptr, 0);
+}
+
+void emit_channel(uint8_t index) {
+    const auto* slot = mesh::channel::get(index);
+    if (slot != nullptr) {
+        send_channel_slot(0, *slot);
+        return;
+    }
+    uint8_t buf[3];
+    landlink::TlvBuilder b(buf, sizeof(buf));
+    b.put_u8(TlvTag::CHANNEL_INDEX, index);
+    transport::ble::notify_evt(Opcode::CHANNEL_RESULT, 0, b.data(), b.size());
+}
+
+void emit_admin_cfg() { send_admin_cfg_result(0); }
 
 bool handle_cmd(Opcode op, uint8_t seq,
                 const uint8_t* payload, size_t payload_len) {
@@ -208,6 +290,13 @@ bool handle_cmd(Opcode op, uint8_t seq,
     // work that would be cut.
     if (features::factory_reset::pending() || features::reboot::pending()) {
         send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+        return true;
+    }
+
+    // Managed mode (proto 10): settings only change over remote admin.
+    if (features::remote_admin::admin_keys::managed() && is_local_setter(op)) {
+        LL_LOG_W(kTag, "op=0x%02x refused: managed", static_cast<unsigned>(op));
+        send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::MANAGED));
         return true;
     }
 
@@ -325,6 +414,8 @@ bool handle_cmd(Opcode op, uint8_t seq,
             return true;
         }
         hal::storage::set_u8("ll.radio", "region", t.data[0]);
+        // Someone on site took over the radio: drop a pending remote revert.
+        admin::on_local_radio_change();
         // Re-tune live instead of waiting for the next boot. The LoRa TX task
         // applies it and answers with RADIO_REGION_RESULT once the radio is
         // listening on the new band.
@@ -364,6 +455,7 @@ bool handle_cmd(Opcode op, uint8_t seq,
             return true;
         }
         hal::storage::set_u8("ll.radio", "preset", t.data[0]);
+        admin::on_local_radio_change();
         // Re-tune live. The LoRa TX task applies it and answers with
         // RADIO_PRESET_RESULT once the radio is listening on the new preset.
         transport::lora::request_modem_preset(def->preset, seq,
@@ -933,6 +1025,92 @@ bool handle_cmd(Opcode op, uint8_t seq,
             send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
         }
         return true;
+
+    // Remote admin, controller side: tunnel a host-built AdminMessage to a
+    // node over PKI. The answer comes back as ADMIN_RECV (seq 0).
+    case Opcode::ADMIN_SEND: {
+        landlink::Tlv dst_tlv, pb_tlv, pub_tlv;
+        if (!r.find(TlvTag::NODE_DST, dst_tlv) || dst_tlv.len != 4 ||
+            !r.find(TlvTag::ADMIN_PAYLOAD, pb_tlv) || pb_tlv.len == 0) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+            return true;
+        }
+        const uint8_t* pub = nullptr;
+        if (r.find(TlvTag::PUBKEY_X25519, pub_tlv)) {
+            if (pub_tlv.len != 32) {
+                send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+                return true;
+            }
+            pub = pub_tlv.data;
+        }
+        uint32_t dst = 0;
+        (void)landlink::util::read_node_id(dst_tlv.data, dst_tlv.len, dst);
+        uint32_t pkt_id = 0;
+        const admin::SendResult res =
+            admin::send_request(dst, pb_tlv.data, pb_tlv.len, pub, pkt_id);
+        switch (res) {
+        case admin::SendResult::Ok: {
+            uint8_t buf[6];
+            landlink::TlvBuilder b(buf, sizeof(buf));
+            b.put_u32(TlvTag::ACK_PKT_ID, pkt_id);
+            transport::ble::notify_evt(Opcode::ADMIN_SEND_RESULT, seq,
+                                       b.data(), b.size());
+            break;
+        }
+        case admin::SendResult::BadArg:
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+            break;
+        case admin::SendResult::NoKey:
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::PEER_UNREACHABLE));
+            break;
+        case admin::SendResult::NotAllowed:
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_STATE));
+            break;
+        case admin::SendResult::Failed:
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BUSY));
+            break;
+        }
+        return true;
+    }
+
+    case Opcode::ADMIN_CFG_GET:
+        send_admin_cfg_result(seq);
+        return true;
+
+    // Not gated on authed(), like CHANNEL_SET: physical reach (BLE / USB) is
+    // the gate. Managed mode refuses it above.
+    case Opcode::ADMIN_CFG_SET: {
+        namespace ra = features::remote_admin;
+        ra::AdminKeySet next = ra::admin_keys::get();
+        bool any = false;
+        landlink::Tlv t;
+        if (r.find(TlvTag::ADMIN_KEYS, t)) {
+            if (!ra::parse_keys(t.data, t.len, next)) {
+                send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+                return true;
+            }
+            any = true;
+        }
+        if (r.find(TlvTag::ADMIN_MANAGED, t)) {
+            if (t.len != 1 || t.data[0] > 1) {
+                send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+                return true;
+            }
+            next.managed = t.data[0] == 1;
+            any = true;
+        }
+        // Nothing to set, or managed mode without a way back in.
+        if (!any || !ra::is_consistent(next)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::BAD_ARG));
+            return true;
+        }
+        if (!ra::admin_keys::set(next)) {
+            send_error(seq, static_cast<uint8_t>(landlink::proto::ErrorCode::STORAGE_FAIL));
+            return true;
+        }
+        send_admin_cfg_result(seq);
+        return true;
+    }
 
     default:
         LL_LOG_W(kTag, "unhandled op=0x%02x", static_cast<unsigned>(op));

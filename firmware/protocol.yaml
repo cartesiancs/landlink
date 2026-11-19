@@ -6,7 +6,7 @@
 
 version: 1
 firmware_name: "landlink"
-proto_version: 9
+proto_version: 11
 
 ble:
   # 128-bit custom UUIDs (8-4-4-4-12). Base encodes "LL-landlink-1" in ASCII
@@ -22,6 +22,16 @@ ble:
     # CMD/TLV framing: [offset u32 LE][crc32 u32 LE][data]. crc32 is
     # CRC-32/ISO-HDLC (zlib) over data only.
     OTA:   { uuid: "4c4c0006-6c61-6e64-6c69-6e6b2d310001", props: [write_no_response] }
+    # Device log stream (proto 11+). While a central has notifications on,
+    # each firmware log line is one notification: UTF-8 "[<L>][<tag>] <msg>"
+    # (L is I, W or E), no trailing newline, cut to ATT MTU - 3 bytes (at most
+    # 244) on a UTF-8 boundary. The first line after subscribing reports the
+    # firmware, proto, MTU and free heap. Lossy by design: lines are dropped
+    # during OTA, for 1.5 s after OTA or BULK traffic, when the BLE buffer
+    # pool runs low, above 50 lines/s, and when two tasks log at once. A
+    # "[W][log] dropped <n> lines" line reports the gap. Older firmware has
+    # the characteristic but never notifies it. USB serial LOG frames
+    # (channel 0x06) are unchanged and not gated.
     LOG:   { uuid: "4c4c0007-6c61-6e64-6c69-6e6b2d310001", props: [notify] }
     # Bulk media data. Raw binary frames, not CMD/TLV framing:
     #   upload   (C->F, write_no_response): [0x01][xfer_id u32 LE][offset u32 LE][data]
@@ -222,6 +232,44 @@ opcodes:
   REBOOT:                { code: 0x52, dir: C_TO_F }
   REBOOT_RESULT:         { code: 0x53, dir: F_TO_C }
 
+  # Remote admin over LoRa (proto 10+). Meshtastic-compatible: AdminMessage
+  # protobufs ride Data.portnum ADMIN_APP (6), PKI-encrypted unicast, so a
+  # Landlink node can administer, and be administered by, stock Meshtastic
+  # nodes (firmware >= 2.5). The host builds and parses the AdminMessage bytes;
+  # as a controller the device only tunnels them.
+  #
+  # ADMIN_SEND: NODE_DST + ADMIN_PAYLOAD (encoded AdminMessage, <=200 B),
+  # optional PUBKEY_X25519 = the target's public key (recorded into the peer
+  # key cache before sending). Always PKI: when the target key is unknown the
+  # device answers ERROR(PEER_UNREACHABLE) and never falls back to the channel
+  # PSK. Sent with Data.want_response=1 and no want_ack; the host retries.
+  # Answered with ADMIN_SEND_RESULT (ACK_PKT_ID = the packet id) on the same
+  # seq.
+  ADMIN_SEND:            { code: 0x54, dir: C_TO_F }
+  ADMIN_SEND_RESULT:     { code: 0x55, dir: F_TO_C }
+  # ADMIN_RECV (seq 0): the answer to one of our ADMIN_SENDs (matched by
+  # request_id within 300 s; unsolicited answers are dropped). NODE_ID =
+  # sender, ACK_PKT_ID = the request's packet id, then either ADMIN_PAYLOAD
+  # (an AdminMessage response) or ROUTING_ERROR (Meshtastic Routing.Error;
+  # 0 = plain ACK for a setter).
+  ADMIN_RECV:            { code: 0x56, dir: F_TO_C }
+  # Local admin settings of this device as a TARGET. RESULT carries
+  # PUBKEY_X25519 (this device's own public key: the admin key to install on
+  # the nodes it should manage), ADMIN_KEYS, ADMIN_MANAGED, ADMIN_REVERT_SECS.
+  # SET takes ADMIN_KEYS (replaces the whole list) and/or ADMIN_MANAGED.
+  # Managed mode needs at least one admin key (BAD_ARG otherwise). While
+  # managed, every local setter (this one included) answers ERROR(MANAGED);
+  # holding the button for 10 s (factory reset) is the way out.
+  ADMIN_CFG_GET:         { code: 0x57, dir: C_TO_F }
+  ADMIN_CFG_SET:         { code: 0x58, dir: C_TO_F }
+  ADMIN_CFG_RESULT:      { code: 0x59, dir: F_TO_C }
+  # ADMIN_AUDIT (seq 0): a remote admin changed or ran something here.
+  # NODE_ID = the admin, ADMIN_VARIANT = AdminMessage field number,
+  # ADMIN_RESULT = Meshtastic Routing.Error it was answered with (0 = ok).
+  # Settings that changed are also re-sent as their usual *_RESULT EVT with
+  # seq 0 so a locally connected host stays in sync.
+  ADMIN_AUDIT:           { code: 0x5A, dir: F_TO_C }
+
   # OTA (proto 3+). BLE only; refused over serial and the relay.
   # Signed message: "LLOTA1" || sha256(image) || u8 len || OTA_TARGET || u8 len || OTA_VERSION,
   # Ed25519 with the key embedded from firmware/keys/ota_pubkey.bin. The
@@ -403,6 +451,14 @@ tlv_tags:
   REMOTE_ACCOUNT_ECDH_PUB: { tag: 0xD6, type: bytes, desc: "Account ECDH P-256 public key (raw uncompressed, 65 B) for E2E key agreement" }
   REMOTE_DEVICE_ECDH_PUB: { tag: 0xD7, type: bytes, desc: "Device ECDH P-256 public key (raw uncompressed, 65 B) for E2E key agreement" }
 
+  # Remote admin over LoRa (proto 10+)
+  ADMIN_PAYLOAD:         { tag: 0xD8, type: bytes, desc: "Encoded Meshtastic AdminMessage, <=200 B" }
+  ADMIN_KEYS:            { tag: 0xD9, type: bytes, desc: "0..3 admin X25519 public keys concatenated (0, 32, 64 or 96 B)" }
+  ADMIN_MANAGED:         { tag: 0xDA, type: u8,    desc: "1 = managed mode: local setters refused, admin only over LoRa" }
+  ADMIN_REVERT_SECS:     { tag: 0xDB, type: u16,   desc: "Seconds until a remote radio change reverts unless confirmed; 0 = none pending" }
+  ADMIN_VARIANT:         { tag: 0xDC, type: u16,   desc: "AdminMessage oneof field number" }
+  ADMIN_RESULT:          { tag: 0xDD, type: u8,    desc: "Meshtastic Routing.Error a remote admin request was answered with (0 = ok)" }
+
   # Errors
   ERR_CODE:              { tag: 0xF0, type: u8 }
   ERR_CONTEXT:           { tag: 0xF1, type: utf8 }
@@ -501,4 +557,5 @@ errors:
   PEER_UNREACHABLE:      0x0B
   PEER_BUSY:             0x0C
   WRONG_TARGET:          0x0D
+  MANAGED:               0x0E
   INTERNAL:              0xFF

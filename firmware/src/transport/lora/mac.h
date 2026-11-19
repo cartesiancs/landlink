@@ -38,6 +38,10 @@ struct TxRequest {
     bool     is_rebroadcast  = false;
     int8_t   rx_snr_db_x10   = 0;   // only valid when is_rebroadcast
     uint32_t not_before_ms   = 0;   // 0 = no app-level deferral
+    // Remote-admin replies only: sent even while the node mode forbids
+    // transmitting (receive-only), so an admin can still reach, and undo,
+    // a receive-only node. Nothing else may set it.
+    bool     bypass_node_mode = false;
 };
 
 namespace mac {

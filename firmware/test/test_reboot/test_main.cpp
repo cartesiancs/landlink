@@ -72,6 +72,19 @@ void test_busy_wins_over_other_errors() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::BAD_STATE), verdict(req));
 }
 
+// Remote admin (proto 10): the session passkey replaces both the local
+// transport rule and the NODE_ID token, but a busy device still says BUSY.
+void test_remote_admin_origin() {
+    rb::Request req;
+    req.remote_admin = true;  // not local, no NODE_ID
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::OK), verdict(req));
+    req.ota_active = true;
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::BUSY), verdict(req));
+    req.ota_active = false;
+    req.busy       = true;
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::BUSY), verdict(req));
+}
+
 void test_read_node_id() {
     const uint8_t le[4] = { 0xD4, 0xC3, 0xB2, 0xA1 };
     uint32_t id = 0;
@@ -92,6 +105,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_relay_is_bad_state);
     RUN_TEST(test_ota_or_pending_is_busy);
     RUN_TEST(test_busy_wins_over_other_errors);
+    RUN_TEST(test_remote_admin_origin);
     RUN_TEST(test_read_node_id);
     return UNITY_END();
 }

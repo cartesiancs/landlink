@@ -27,9 +27,11 @@ namespace landlink::features::factory_reset {
 //   ll.wmesh   Wi-Fi mesh switch and channel
 //   ll.pki_ks  cached peer public keys
 //   ll.remote  relay device identity, ECDH keys, relay URL and account bind
+//   ll.admin   remote-admin keys, managed flag, pending radio revert
 inline constexpr const char* kNamespaces[] = {
     "ll.id",   "ll.radio", "ll.ch",     "ll.net",
     "ll.wifi", "ll.wmesh", "ll.pki_ks", "ll.remote",
+    "ll.admin",
 };
 inline constexpr size_t kNamespaceCount = sizeof(kNamespaces) / sizeof(kNamespaces[0]);
 
@@ -42,6 +44,10 @@ struct Request {
     uint32_t node_id         = 0;
     uint32_t own_node_id     = 0;
     bool     local_transport = false;  // arrived over BLE or USB serial
+    // Authenticated remote admin (proto 10): a PKI AdminMessage from an
+    // admin key carrying a current session passkey. The passkey stands in
+    // for both the local-transport rule and the NODE_ID confirm token.
+    bool     remote_admin    = false;
     bool     ota_active      = false;
     bool     reset_pending   = false;
 };
@@ -52,6 +58,7 @@ struct Request {
 inline landlink::proto::ErrorCode check_request(const Request& req) {
     using landlink::proto::ErrorCode;
     if (req.reset_pending || req.ota_active) return ErrorCode::BUSY;
+    if (req.remote_admin) return ErrorCode::OK;
     if (!req.local_transport) return ErrorCode::BAD_STATE;
     if (!req.node_id_present || req.node_id != req.own_node_id) {
         return ErrorCode::BAD_ARG;

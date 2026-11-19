@@ -14,6 +14,7 @@
 #include <Arduino.h>
 
 #include "app/fsm/fsm.h"
+#include "app/services/admin_service.h"
 #include "app/services/cmd_dispatch.h"
 #include "shared/config/node_mode.h"
 #include "app/services/tasks.h"
@@ -41,6 +42,7 @@
 #include "shared/protocol/tlv_tags.h"
 #include "shared/util/log.h"
 #include "shared/util/tlv.h"
+#include "shared/util/x25519.h"
 #include "transport/ble/gatt_server.h"
 #include "transport/lora/mac.h"
 #include "transport/lora/priority.h"
@@ -159,8 +161,17 @@ void emit_peer_found(const landlink::mesh::meshtastic::Header& h,
 void meshtastic_payload_sink(uint8_t channel_index,
                              const landlink::mesh::meshtastic::Header& h,
                              const landlink::mesh::meshtastic::DataMessage& data,
-                             bool pki_encrypted) {
+                             const landlink::mesh::meshtastic::RxContext& ctx) {
     using namespace landlink::mesh::meshtastic;
+    const bool pki_encrypted = ctx.pki_encrypted;
+    // A transmit-only node listens to frames addressed to it only for remote
+    // admin: AdminMessages and the replies to our own admin requests.
+    if (landlink::mesh::protocol::current_rx_admin_only()) {
+        const bool admin_reply =
+            data.portnum == kPortnumRoutingApp && data.has_request_id &&
+            landlink::app::services::admin::is_pending_request(data.request_id);
+        if (data.portnum != kPortnumAdminApp && !admin_reply) return;
+    }
     LL_LOG_I(kTag, "mt rx: ch=%u src=%08x dst=%08x pkt_id=%u portnum=%u want_ack=%d pki=%d len=%u",
              static_cast<unsigned>(channel_index),
              static_cast<unsigned>(h.src),
@@ -179,6 +190,9 @@ void meshtastic_payload_sink(uint8_t channel_index,
             h.src, h.dst, h.pkt_id, h.want_ack,
             data.payload, data.payload_len,
             pki_encrypted, meta);
+    } else if (data.portnum == kPortnumAdminApp) {
+        // Remote admin (proto 10): handled on the admin task.
+        landlink::app::services::admin::on_admin_packet(channel_index, h, data, ctx);
     } else if (data.portnum == kPortnumRoutingApp && data.has_request_id) {
         // Routing payload with a request_id answers one of our packets.
         // error_reason NONE (absent or 0) is an ACK; anything else is a NAK
@@ -187,6 +201,11 @@ void meshtastic_payload_sink(uint8_t channel_index,
         if (!decode_routing_error(data.payload, data.payload_len, error_reason)) {
             LL_LOG_W(kTag, "mt rx: malformed Routing payload, ref=%u",
                      static_cast<unsigned>(data.request_id));
+            return;
+        }
+        // Answers to our remote-admin requests go to ADMIN_RECV, not chat.
+        if (landlink::app::services::admin::on_routing_reply(
+                h.src, data.request_id, error_reason)) {
             return;
         }
         landlink::features::mesh_chat::on_meshtastic_routing(
@@ -242,6 +261,9 @@ void meshtastic_payload_sink(uint8_t channel_index,
 void setup() {
     landlink::log::init();
     delay(50);
+    if (!landlink::util::x25519::install_mbedtls_allocator()) {
+        LL_LOG_W(kTag, "mbedtls allocator not installed; PKI stays on internal RAM");
+    }
     LL_LOG_I(kTag, "Landlink Module I fw=%s hw=%s",
              landlink::build::kFirmwareVersion,
              landlink::build::kHardwareRev);
@@ -345,6 +367,10 @@ void setup() {
     // immediately after reboot, before peers re-broadcast their NodeInfo
     // (15 min interval at default settings).
     landlink::features::pki_keystore::init();
+
+    // Remote admin (proto 10): admin keys, pending radio revert, router and
+    // key-cache hooks. After the router, pki_identity and pki_keystore.
+    landlink::app::services::admin::init(node_id);
 
     // Wi-Fi manager: STA mode + auto-connect from saved credentials. Must run
     // before spawn_tasks() (it touches WiFi.* on this thread; afterwards only

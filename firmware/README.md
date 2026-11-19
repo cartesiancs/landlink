@@ -98,6 +98,46 @@ Wi-Fi is not affected: provisioning (`WIFI_SCAN`, `WIFI_CONNECT`,
 `WIFI_GET_STATUS`), auto-connect from saved credentials, and reconnect backoff
 all keep working. Build with `-DLL_REMOTE_RELAY=1` to bring the relay back.
 
+## Remote admin over LoRa (proto 10)
+
+Meshtastic-compatible: `AdminMessage` protobufs on Data.portnum `ADMIN_APP`
+(6), PKI-encrypted unicast. A Landlink can administer, and be administered
+by, stock Meshtastic nodes (firmware 2.5+). The legacy "admin" channel is not
+supported.
+
+- **Admin keys.** Up to three X25519 public keys of CONTROLLER nodes
+  (`ADMIN_CFG_GET` / `ADMIN_CFG_SET`, NVS namespace `ll.admin`, cleared by a
+  factory reset). `ADMIN_CFG_RESULT` also carries this node's own public key:
+  the admin key to install on the nodes it should manage.
+- **Authorization.** PKI, unicast to us, decrypted with an admin key, and for
+  anything but the ten getters a session passkey (8 bytes, from
+  `esp_fill_random`, reissued after 150 s, valid 300 s). Refusals answer
+  Routing errors 33 / 37 / 36. When a PKI frame does not open with the
+  sender's cached key, the admin keys are tried (at most 10 frames a minute),
+  and admin keys are pinned in the peer key cache.
+- **What a target supports.** `get/set_owner`, `get/set_channel`,
+  `get/set_config` for device (role), position (fixed position), LoRa
+  (region, modem preset, `tx_enabled`, `config_ok_to_mqtt` = map sharing) and
+  security (admin keys, managed), `get_config(SESSIONKEY)`,
+  `get_device_metadata`, `set/remove_fixed_position`,
+  `begin/commit_edit_settings`, `reboot_seconds`, `factory_reset_*`.
+  Everything else answers `BAD_REQUEST` (32). The private key is never sent.
+- **Radio safety.** A remote region / preset change applies once the reply
+  has left the MAC queue, then reverts after 600 s unless an authenticated
+  admin packet arrives on the new settings (survives a reboot). A local
+  region / preset change cancels it. Inside begin/commit both are applied
+  together at commit.
+- **Node modes.** A transmit-only node still handles PKI frames addressed to
+  it, and a receive-only node still sends admin replies, so an admin can undo
+  either mode.
+- **Managed mode.** Local setters answer `ERROR(MANAGED)`. Holding the button
+  10 s (factory reset) is the way out.
+- **Controller.** `ADMIN_SEND` tunnels a host-built AdminMessage (PKI only)
+  and `ADMIN_RECV` hands back the answer; unsolicited answers are dropped.
+
+Code: `src/app/services/admin_service.cpp`, `admin_handlers.cpp`,
+`src/features/remote_admin/`, `src/mesh/meshtastic/admin_pb.*`.
+
 ## Wi-Fi mesh (ESP-NOW)
 
 Nearby Landlinks can exchange chat text and media over Wi-Fi instead of LoRa.

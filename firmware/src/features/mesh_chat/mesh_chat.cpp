@@ -107,13 +107,13 @@ bool send_chat_meshtastic(uint8_t channel_index,
     // so the worst case is a missing ACK for those peers — UX gracefully
     // degrades.
     const bool want_ack = true;
-    // try_pki=true: chat text is the canonical PKI-eligible portnum. The
+    // PkiMode::Prefer: chat text is the canonical PKI-eligible portnum. The
     // router auto-falls-back to channel PSK when the recipient is broadcast
     // or their public_key is not yet cached, matching upstream firmware.
     const size_t frame_len = mesh::protocol::meshtastic_router().originate_data(
         channel_index, dst, want_ack, pb_buf, pb_len,
         frame, sizeof(frame), &assigned,
-        /*try_pki=*/true);
+        mesh::meshtastic::PkiMode::Prefer);
     if (frame_len == 0) {
         LL_LOG_W(kTag, "send_chat[mt] originate failed");
         return false;

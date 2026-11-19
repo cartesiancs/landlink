@@ -2,92 +2,23 @@
 
 #include <cstring>
 
+#include "pb_util.h"
+
 namespace landlink::mesh::meshtastic {
 
 namespace {
 
-constexpr uint8_t kWireVarint   = 0;
-constexpr uint8_t kWireFixed64  = 1;
-constexpr uint8_t kWireLenDelim = 2;
-constexpr uint8_t kWireFixed32  = 5;
-
-bool put_varint(uint8_t* out, size_t out_cap, size_t& off, uint64_t v) {
-    while (v >= 0x80) {
-        if (off >= out_cap) return false;
-        out[off++] = static_cast<uint8_t>(v | 0x80);
-        v >>= 7;
-    }
-    if (off >= out_cap) return false;
-    out[off++] = static_cast<uint8_t>(v);
-    return true;
-}
-
-bool put_key(uint8_t* out, size_t out_cap, size_t& off,
-             uint32_t field, uint8_t wire) {
-    return put_varint(out, out_cap, off,
-                      (static_cast<uint64_t>(field) << 3) | wire);
-}
-
-bool read_varint(const uint8_t* buf, size_t buf_len, size_t& off, uint64_t& v) {
-    v = 0;
-    unsigned shift = 0;
-    while (off < buf_len) {
-        const uint8_t b = buf[off++];
-        v |= static_cast<uint64_t>(b & 0x7f) << shift;
-        if ((b & 0x80) == 0) return true;
-        shift += 7;
-        if (shift >= 64) return false;
-    }
-    return false;
-}
-
-bool read_fixed32(const uint8_t* buf, size_t buf_len, size_t& off, uint32_t& v) {
-    if (off + 4 > buf_len) return false;
-    v = static_cast<uint32_t>(buf[off])
-      | (static_cast<uint32_t>(buf[off + 1]) << 8)
-      | (static_cast<uint32_t>(buf[off + 2]) << 16)
-      | (static_cast<uint32_t>(buf[off + 3]) << 24);
-    off += 4;
-    return true;
-}
-
-bool skip_field(const uint8_t* buf, size_t buf_len, size_t& off, uint8_t wire) {
-    switch (wire) {
-    case kWireVarint: {
-        uint64_t tmp;
-        return read_varint(buf, buf_len, off, tmp);
-    }
-    case kWireFixed64:
-        if (off + 8 > buf_len) return false;
-        off += 8;
-        return true;
-    case kWireLenDelim: {
-        uint64_t len;
-        if (!read_varint(buf, buf_len, off, len)) return false;
-        if (off + len > buf_len) return false;
-        off += len;
-        return true;
-    }
-    case kWireFixed32:
-        if (off + 4 > buf_len) return false;
-        off += 4;
-        return true;
-    default:
-        return false;
-    }
-}
+using pb::kWireFixed32;
+using pb::kWireLenDelim;
+using pb::kWireVarint;
+using pb::put_fixed32;
+using pb::put_key;
+using pb::put_varint;
+using pb::read_fixed32;
+using pb::read_varint;
+using pb::skip_field;
 
 } // namespace
-
-bool put_fixed32(uint8_t* out, size_t out_cap, size_t& off, uint32_t v) {
-    if (off + 4 > out_cap) return false;
-    out[off + 0] = static_cast<uint8_t>(v & 0xff);
-    out[off + 1] = static_cast<uint8_t>((v >> 8) & 0xff);
-    out[off + 2] = static_cast<uint8_t>((v >> 16) & 0xff);
-    out[off + 3] = static_cast<uint8_t>((v >> 24) & 0xff);
-    off += 4;
-    return true;
-}
 
 size_t encode_data(uint32_t portnum,
                    const uint8_t* payload, size_t payload_len,
@@ -153,36 +84,62 @@ size_t encode_data_with_request_id(uint32_t portnum,
     return off;
 }
 
-namespace {
-// proto3 varint of a signed int32: ZigZag is only for sint32/sint64. The
-// "int32" wire type uses straight 2's-complement varint, which expands a
-// negative number to a full 10-byte varint. Implemented as cast-to-u64.
-bool put_varint_i32(uint8_t* out, size_t out_cap, size_t& off, int32_t v) {
-    return put_varint(out, out_cap, off, static_cast<uint64_t>(static_cast<int64_t>(v)));
+size_t encode_data_opts(uint32_t portnum,
+                        const uint8_t* payload, size_t payload_len,
+                        const DataOptions& opts,
+                        uint8_t* out, size_t out_cap) {
+    size_t off = 0;
+    // Fields in ascending number order, as upstream nanopb writes them.
+    if (!put_key(out, out_cap, off, 1, kWireVarint)) return 0;
+    if (!put_varint(out, out_cap, off, portnum))    return 0;
+    if (payload != nullptr && payload_len > 0) {
+        if (!pb::put_bytes_field(out, out_cap, off, 2, payload, payload_len)) return 0;
+    }
+    if (opts.want_response) {
+        if (!pb::put_varint_field(out, out_cap, off, 3, 1)) return 0;
+    }
+    if (opts.has_request_id) {
+        if (!put_key(out, out_cap, off, 6, kWireFixed32))    return 0;
+        if (!put_fixed32(out, out_cap, off, opts.request_id)) return 0;
+    }
+    if (opts.reply_id != 0) {
+        if (!put_key(out, out_cap, off, 7, kWireFixed32))  return 0;
+        if (!put_fixed32(out, out_cap, off, opts.reply_id)) return 0;
+    }
+    if (opts.emoji != 0) {
+        if (!put_key(out, out_cap, off, 8, kWireFixed32)) return 0;
+        if (!put_fixed32(out, out_cap, off, opts.emoji))  return 0;
+    }
+    if (opts.bitfield != 0) {
+        if (!pb::put_varint_field(out, out_cap, off, 9, opts.bitfield)) return 0;
+    }
+    return off;
 }
 
+size_t encode_routing_error(uint32_t error_reason, uint8_t* out, size_t out_cap) {
+    // Routing { error_reason = 3 }. NONE (0) is the proto3 default and is
+    // omitted, which yields the empty payload upstream sends for a plain ACK.
+    size_t off = 0;
+    if (error_reason != 0) {
+        if (!pb::put_varint_field(out, out_cap, off, 3, error_reason)) return 0;
+    }
+    return off;
+}
+
+namespace {
+using pb::put_varint_i32;
+
+// Empty or null values are omitted (proto3 default), unlike pb::put_*_field.
 bool put_string_field(uint8_t* out, size_t out_cap, size_t& off,
                       uint32_t field, const char* s) {
-    if (s == nullptr) return true;
-    const size_t n = std::strlen(s);
-    if (n == 0) return true;
-    if (!put_key(out, out_cap, off, field, kWireLenDelim)) return false;
-    if (!put_varint(out, out_cap, off, n))                  return false;
-    if (off + n > out_cap)                                  return false;
-    std::memcpy(out + off, s, n);
-    off += n;
-    return true;
+    if (s == nullptr || s[0] == '\0') return true;
+    return pb::put_string_field(out, out_cap, off, field, s);
 }
 
 bool put_bytes_field(uint8_t* out, size_t out_cap, size_t& off,
                      uint32_t field, const uint8_t* data, size_t len) {
     if (data == nullptr || len == 0) return true;
-    if (!put_key(out, out_cap, off, field, kWireLenDelim)) return false;
-    if (!put_varint(out, out_cap, off, len))                return false;
-    if (off + len > out_cap)                                return false;
-    std::memcpy(out + off, data, len);
-    off += len;
-    return true;
+    return pb::put_bytes_field(out, out_cap, off, field, data, len);
 }
 } // namespace
 

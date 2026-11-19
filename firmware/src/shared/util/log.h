@@ -1,7 +1,9 @@
 #pragma once
 
 // Minimal logger. Prints plain text on Serial, or LOG frames while a USB
-// serial host session is open (transport/serial/serial_link).
+// serial host session is open (transport/serial/serial_link). Also mirrors
+// each line to the BLE LOG characteristic while a central has its
+// notifications on (proto 11+, transport/ble/gatt_server).
 //
 // Native test builds (LL_NATIVE_TEST) compile this header with no Arduino
 // dependency: every LL_LOG_* call becomes a no-op so the unit tests can
@@ -29,6 +31,12 @@ bool is_active();
 void write_logf(char level, const char* tag, const char* fmt, ...);
 } // namespace landlink::transport::serial_link
 
+// Same reason: gatt_server.cpp logs through this header too.
+namespace landlink::transport::ble {
+bool log_subscribed();
+void write_logf(char level, const char* tag, const char* fmt, ...);
+} // namespace landlink::transport::ble
+
 namespace landlink::log {
 
 inline void init() {
@@ -46,8 +54,12 @@ inline void init() {
 
 // While a serial host session is open, raw text on the port would corrupt the
 // binary framing, so each line goes out as one LOG frame instead.
+// The BLE copy is in addition to the serial output, not instead of it.
 template <typename... Args>
 inline void line(char level, const char* tag, const char* fmt, Args... args) {
+    if (::landlink::transport::ble::log_subscribed()) {
+        ::landlink::transport::ble::write_logf(level, tag, fmt, args...);
+    }
     if (::landlink::transport::serial_link::is_active()) {
         ::landlink::transport::serial_link::write_logf(level, tag, fmt, args...);
         return;

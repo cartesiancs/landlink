@@ -28,6 +28,7 @@ inline constexpr uint32_t kPortnumTextMessageApp = 1;
 inline constexpr uint32_t kPortnumPositionApp    = 3;
 inline constexpr uint32_t kPortnumNodeInfoApp    = 4;
 inline constexpr uint32_t kPortnumRoutingApp     = 5;
+inline constexpr uint32_t kPortnumAdminApp       = 6;
 inline constexpr uint32_t kPortnumTelemetryApp   = 67;
 
 // Data.bitfield bit 0 (upstream BITFIELD_OK_TO_MQTT_MASK): the originator
@@ -72,6 +73,30 @@ size_t encode_data_with_request_id(uint32_t portnum,
                                    uint32_t request_id,
                                    const uint8_t* payload, size_t payload_len,
                                    uint8_t* out, size_t out_cap);
+
+// Optional Data fields for encode_data_opts(). Zero / false values are
+// omitted from the wire (proto3 defaults).
+struct DataOptions {
+    bool     want_response  = false;  // field 3
+    bool     has_request_id = false;  // field 6, written even when 0
+    uint32_t request_id     = 0;
+    uint32_t reply_id       = 0;      // field 7
+    uint32_t emoji          = 0;      // field 8
+    uint32_t bitfield       = 0;      // field 9
+};
+
+// General Data encoder: portnum + payload plus any of the optional fields.
+// Returns bytes written, or 0 on overflow.
+size_t encode_data_opts(uint32_t portnum,
+                        const uint8_t* payload, size_t payload_len,
+                        const DataOptions& opts,
+                        uint8_t* out, size_t out_cap);
+
+// Encode a Meshtastic `Routing` protobuf carrying only error_reason (field 3).
+// error_reason 0 (NONE, a plain ACK) encodes to zero bytes, matching
+// upstream. Returns bytes written (0 is valid for NONE); on overflow returns
+// 0 as well, which only happens with out_cap < 6.
+size_t encode_routing_error(uint32_t error_reason, uint8_t* out, size_t out_cap);
 
 // Returns true on a well-formed message. Unknown fields are skipped.
 // `out.payload` points into `buf` — the caller must keep `buf` alive while

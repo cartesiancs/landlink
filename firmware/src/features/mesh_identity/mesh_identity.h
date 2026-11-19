@@ -41,6 +41,11 @@ bool set_owner(const uint8_t* long_name, size_t long_len,
 void get_owner(char* long_out, size_t long_cap,
                char* short_out, size_t short_cap);
 
+// Encodes this node's Meshtastic `User` (id, names, macaddr, hw_model,
+// public_key), exactly as NodeInfo carries it. Remote admin answers
+// get_owner_request with it. Returns bytes written, 0 on failure.
+size_t encode_self_user(uint8_t* out, size_t out_cap);
+
 // Where Position broadcasts take their location from: the GPS fix, or a
 // user-set fixed position (shared/config/position_source.h). Loaded from NVS
 // in init(). set_position_source() rejects an inconsistent value (Fixed

@@ -22,24 +22,27 @@ using landlink::proto::Region;
 struct RegionDef {
     Region                 region;
     const char*            meshtastic_name;  // upstream RegionCode name
+    // Upstream Config.LoRaConfig.RegionCode value (config.proto). NOT the
+    // Landlink REGION code: remote admin speaks this one over the air.
+    uint8_t                meshtastic_code;
     slot_math::RegionGrid  grid;
     int8_t                 power_limit_dbm;  // upstream powerLimit
 };
 
 inline constexpr RegionDef kRegions[] = {
-    {Region::KR923,  "KR",     {920.0f, 923.0f, 0.0f},  23},
-    {Region::EU868,  "EU_868", {869.4f, 869.65f, 0.0f}, 27},
-    {Region::US915,  "US",     {902.0f, 928.0f, 0.0f},  30},
-    {Region::JP920,  "JP",     {920.5f, 923.5f, 0.0f},  13},
-    {Region::ANZ915, "ANZ",    {915.0f, 928.0f, 0.0f},  30},
-    {Region::TW920,  "TW",     {920.0f, 925.0f, 0.0f},  27},
-    {Region::IN865,  "IN",     {865.0f, 867.0f, 0.0f},  30},
-    {Region::TH920,  "TH",     {920.0f, 925.0f, 0.0f},  27},
-    {Region::SG923,  "SG_923", {917.0f, 925.0f, 0.0f},  20},
-    {Region::BR902,  "BR_902", {902.0f, 907.5f, 0.0f},  30},
-    {Region::RU868,  "RU",     {868.7f, 869.2f, 0.0f},  20},
-    {Region::NZ865,  "NZ_865", {864.0f, 868.0f, 0.0f},  36},
-    {Region::PH915,  "PH_915", {915.0f, 918.0f, 0.0f},  24},
+    {Region::KR923,  "KR",      7, {920.0f, 923.0f, 0.0f}, 23},
+    {Region::EU868,  "EU_868",  3, {869.4f, 869.65f, 0.0f}, 27},
+    {Region::US915,  "US",      1, {902.0f, 928.0f, 0.0f}, 30},
+    {Region::JP920,  "JP",      5, {920.5f, 923.5f, 0.0f}, 13},
+    {Region::ANZ915, "ANZ",     6, {915.0f, 928.0f, 0.0f}, 30},
+    {Region::TW920,  "TW",      8, {920.0f, 925.0f, 0.0f}, 27},
+    {Region::IN865,  "IN",     10, {865.0f, 867.0f, 0.0f}, 30},
+    {Region::TH920,  "TH",     12, {920.0f, 925.0f, 0.0f}, 27},
+    {Region::SG923,  "SG_923", 18, {917.0f, 925.0f, 0.0f}, 20},
+    {Region::BR902,  "BR_902", 26, {902.0f, 907.5f, 0.0f}, 30},
+    {Region::RU868,  "RU",      9, {868.7f, 869.2f, 0.0f}, 20},
+    {Region::NZ865,  "NZ_865", 11, {864.0f, 868.0f, 0.0f}, 36},
+    {Region::PH915,  "PH_915", 21, {915.0f, 918.0f, 0.0f}, 24},
 };
 
 // Antenna power every board transmits at when the region allows it.
@@ -49,6 +52,15 @@ inline constexpr int8_t kMaxTxPowerDbm = 22;
 inline const RegionDef* find(uint8_t raw) {
     for (const RegionDef& def : kRegions) {
         if (static_cast<uint8_t>(def.region) == raw) return &def;
+    }
+    return nullptr;
+}
+
+// The region for an upstream Meshtastic RegionCode, or nullptr when Landlink
+// does not support that band (UNSET, 433 MHz, 2.4 GHz, ...).
+inline const RegionDef* find_by_meshtastic_code(uint32_t code) {
+    for (const RegionDef& def : kRegions) {
+        if (def.meshtastic_code == code) return &def;
     }
     return nullptr;
 }

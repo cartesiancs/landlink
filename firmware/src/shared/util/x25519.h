@@ -13,6 +13,13 @@
 
 namespace landlink::util::x25519 {
 
+// Routes mbedtls allocations to internal RAM first and PSRAM second. The
+// Arduino build pins mbedtls to internal RAM, which Wi-Fi, BLE and task
+// stacks exhaust on classic ESP32 boards; X25519 then failed with
+// MBEDTLS_ERR_MPI_ALLOC_FAILED. No effect on boards without PSRAM. Call once
+// in setup(), before any task uses mbedtls.
+bool install_mbedtls_allocator();
+
 // Lazily initializes the shared CTR-DRBG. Returns false only if mbedtls
 // entropy seeding fails (very rare; treat as hardware fault).
 bool init_rng();

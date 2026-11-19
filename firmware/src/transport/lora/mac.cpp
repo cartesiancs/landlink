@@ -246,8 +246,8 @@ Role role() { return s_role; }
 bool enqueue(const TxRequest& req) {
     if (req.len == 0 || req.len > sizeof(req.bytes)) return false;
     // Receive-only nodes never transmit: chat, ACKs, beacons and relays all
-    // funnel through here.
-    if (!node_mode::can_transmit()) return false;
+    // funnel through here. Remote-admin replies are the one exception.
+    if (!node_mode::can_transmit() && !req.bypass_node_mode) return false;
     if (!queue_take_mtx(pdMS_TO_TICKS(50))) return false;
     bool ok = false;
     if (s_queue_len < kQueueDepth) {
@@ -293,14 +293,26 @@ void tick() {
     if (!s_preset_ready) return;
     if (!node_mode::can_transmit()) {
         // Switched to receive-only: drop anything queued before the switch so
-        // it never goes out. transmit_sync() runs inside tick(), so no TX is
-        // in flight between ticks.
+        // it never goes out, except remote-admin replies (bypass_node_mode).
+        // transmit_sync() runs inside tick(), so no TX is in flight between
+        // ticks.
+        bool keep_any = false;
         if (s_queue_len > 0 && queue_take_mtx(pdMS_TO_TICKS(5))) {
-            s_queue_len = 0;
+            size_t i = 0;
+            while (i < s_queue_len) {
+                if (s_queue[i].req.bypass_node_mode) {
+                    ++i;
+                } else {
+                    erase_at(i);
+                }
+            }
+            keep_any = s_queue_len > 0;
             queue_give_mtx();
         }
-        s_state = State::Idle;
-        return;
+        if (!keep_any) {
+            s_state = State::Idle;
+            return;
+        }
     }
     const uint32_t now = millis();
 

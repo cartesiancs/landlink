@@ -96,10 +96,24 @@ void test_read_node_id() {
     TEST_ASSERT_FALSE(fr::read_node_id(nullptr, 4, id));
 }
 
+// Remote admin (proto 10): the session passkey replaces both the local
+// transport rule and the NODE_ID token, but a busy device still says BUSY.
+void test_remote_admin_origin() {
+    fr::Request req;
+    req.remote_admin = true;  // not local, no NODE_ID
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::OK), static_cast<uint8_t>(fr::check_request(req)));
+    req.ota_active = true;
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::BUSY), static_cast<uint8_t>(fr::check_request(req)));
+    req.ota_active    = false;
+    req.reset_pending = true;
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(ErrorCode::BUSY), static_cast<uint8_t>(fr::check_request(req)));
+}
+
 void test_namespaces_cover_every_store() {
     const char* expected[] = {
         "ll.id", "ll.radio", "ll.ch", "ll.net",
         "ll.wifi", "ll.wmesh", "ll.pki_ks", "ll.remote",
+        "ll.admin",
     };
     for (const char* ns : expected) {
         TEST_ASSERT_TRUE_MESSAGE(has_namespace(ns), ns);
@@ -125,6 +139,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_ota_or_pending_is_busy);
     RUN_TEST(test_busy_wins_over_other_errors);
     RUN_TEST(test_read_node_id);
+    RUN_TEST(test_remote_admin_origin);
     RUN_TEST(test_namespaces_cover_every_store);
     RUN_TEST(test_namespaces_are_unique);
     return UNITY_END();

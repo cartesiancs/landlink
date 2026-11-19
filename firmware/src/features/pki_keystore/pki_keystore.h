@@ -24,6 +24,12 @@ constexpr size_t kCapacity = 32;
 // before any record()/lookup() is expected to surface persisted entries.
 void init();
 
+// Keys for which the predicate returns true are PINNED: record() never
+// replaces such a stored key with a different one (it returns false). Remote
+// admin pins its admin keys so a forged NodeInfo cannot displace them.
+using PinPredicate = bool (*)(const uint8_t pub[kKeyLen]);
+void set_pin_predicate(PinPredicate pred);
+
 // Stores (or refreshes) a peer's public_key. node_id 0 is rejected.
 // Returns false on invalid input (zero node, wrong length). Marks the cache
 // dirty; the next flush_pending() call within the flush interval will write

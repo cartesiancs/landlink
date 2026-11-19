@@ -3,8 +3,10 @@
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <esp_heap_caps.h>
 
 #include "app/fsm/fsm.h"
+#include "app/services/admin_service.h"
 #include "app/services/wmesh_service.h"
 #include "features/factory_reset/factory_reset.h"
 #include "features/mesh_chat/mesh_chat.h"
@@ -47,7 +49,9 @@ TaskHandle_t s_mesh_identity_task = nullptr;
         // A requested factory reset or reboot runs here and never returns.
         features::factory_reset::run_pending();
         features::reboot::run_pending();
-        vTaskDelay(pdMS_TO_TICKS(20));
+        // Remote admin work shares this task (and its 8 KB stack); the queue
+        // wait doubles as the loop's 20 ms delay.
+        admin::poll(20);
     }
 }
 
@@ -78,7 +82,20 @@ TaskHandle_t s_mesh_identity_task = nullptr;
 }
 
 [[noreturn]] void telemetry_task(void*) {
+    uint32_t last_mem_log = 0;
     for (;;) {
+        // Internal RAM is the scarce pool on classic ESP32 boards (Wi-Fi,
+        // BLE, task stacks and mbedtls all draw on it; PSRAM can't serve
+        // them). Logged every 30 s so exhaustion shows up in the host log.
+        const uint32_t now = millis();
+        if (now - last_mem_log >= 30000 || last_mem_log == 0) {
+            last_mem_log = now;
+            constexpr uint32_t kInternal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+            LL_LOG_I("mem", "internal free=%u min=%u largest=%u",
+                     static_cast<unsigned>(heap_caps_get_free_size(kInternal)),
+                     static_cast<unsigned>(heap_caps_get_minimum_free_size(kInternal)),
+                     static_cast<unsigned>(heap_caps_get_largest_free_block(kInternal)));
+        }
         (void)features::telemetry::push();
         // Persist any dirty pki_keystore entries to NVS. The 3s cadence is
         // well above pki_keystore's 1s debounce so each NodeInfo burst flushes
@@ -172,10 +189,21 @@ TaskHandle_t s_mesh_identity_task = nullptr;
     for (;;) {
         if (transport::lora::poll_rx(buf, sizeof(buf), rep)) {
             // Transmit-only nodes drop everything they hear: no app delivery,
-            // no ACK replies, no peer events, no relay.
+            // no ACK replies, no peer events, no relay. The one exception is
+            // a PKI frame addressed to this node, handled only for remote
+            // admin so an admin can still reach (and undo) the mode.
+            bool admin_only = false;
             if (!node_mode::can_receive()) {
-                vTaskDelay(pdMS_TO_TICKS(5));
-                continue;
+                mesh::meshtastic::Header hdr;
+                const bool pki_to_us =
+                    mesh::meshtastic::unpack_header(buf, rep.len, hdr) &&
+                    hdr.channel == 0 &&
+                    hdr.dst == mesh::protocol::meshtastic_router().self_id();
+                if (!pki_to_us) {
+                    vTaskDelay(pdMS_TO_TICKS(5));
+                    continue;
+                }
+                admin_only = true;
             }
             uint8_t fwd[mesh::meshtastic::kMaxFrame];
             size_t  fwd_len = 0;
@@ -183,7 +211,7 @@ TaskHandle_t s_mesh_identity_task = nullptr;
             metrics.rssi_dbm   = rep.rssi_dbm;
             metrics.snr_db_x10 = rep.snr_db_x10;
             mesh::protocol::on_rx(buf, rep.len, fwd, sizeof(fwd), fwd_len,
-                                  &metrics);
+                                  &metrics, admin_only);
             if (fwd_len > 0 && node_mode::can_relay()) {
                 // Forward path: tell the MAC this is a rebroadcast so the
                 // SNR-weighted backoff applies. Lower-SNR receivers (poor

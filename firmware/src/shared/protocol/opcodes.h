@@ -8,7 +8,7 @@
 
 namespace landlink::proto {
 
-inline constexpr uint8_t kProtoVersion = 9;
+inline constexpr uint8_t kProtoVersion = 11;
 
 
 enum class Opcode : uint8_t {
@@ -75,6 +75,13 @@ enum class Opcode : uint8_t {
     FACTORY_RESET_RESULT = 0x51,
     REBOOT = 0x52,
     REBOOT_RESULT = 0x53,
+    ADMIN_SEND = 0x54,
+    ADMIN_SEND_RESULT = 0x55,
+    ADMIN_RECV = 0x56,
+    ADMIN_CFG_GET = 0x57,
+    ADMIN_CFG_SET = 0x58,
+    ADMIN_CFG_RESULT = 0x59,
+    ADMIN_AUDIT = 0x5a,
     OTA_BEGIN = 0x60,
     OTA_CHUNK = 0x61,
     OTA_COMMIT = 0x62,
@@ -187,6 +194,7 @@ enum class ErrorCode : uint8_t {
     PEER_UNREACHABLE = 0x0b,
     PEER_BUSY = 0x0c,
     WRONG_TARGET = 0x0d,
+    MANAGED = 0x0e,
     INTERNAL = 0xff,
 };
 

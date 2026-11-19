@@ -103,6 +103,12 @@ enum class TlvTag : uint8_t {
     REMOTE_ENROLL_SIG = 0xd5,  // Device ECDSA P-256 signature (raw r||s, 64 B) over the enrollment binding
     REMOTE_ACCOUNT_ECDH_PUB = 0xd6,  // Account ECDH P-256 public key (raw uncompressed, 65 B) for E2E key agreement
     REMOTE_DEVICE_ECDH_PUB = 0xd7,  // Device ECDH P-256 public key (raw uncompressed, 65 B) for E2E key agreement
+    ADMIN_PAYLOAD = 0xd8,  // Encoded Meshtastic AdminMessage, <=200 B
+    ADMIN_KEYS = 0xd9,  // 0..3 admin X25519 public keys concatenated (0, 32, 64 or 96 B)
+    ADMIN_MANAGED = 0xda,  // 1 = managed mode: local setters refused, admin only over LoRa
+    ADMIN_REVERT_SECS = 0xdb,  // Seconds until a remote radio change reverts unless confirmed; 0 = none pending
+    ADMIN_VARIANT = 0xdc,  // AdminMessage oneof field number
+    ADMIN_RESULT = 0xdd,  // Meshtastic Routing.Error a remote admin request was answered with (0 = ok)
     ERR_CODE = 0xf0,
     ERR_CONTEXT = 0xf1,
 };

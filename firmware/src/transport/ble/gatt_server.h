@@ -146,4 +146,15 @@ void disconnect();
 // queued before the client is ready and subsequently dropped.
 bool evt_subscribed();
 
+// True while a central has LOG notifications on (proto 11+). Lock free and
+// cheap: shared/util/log.h checks it before every line.
+bool log_subscribed();
+
+// Send one "[<level>][<tag>] <message>" line on the LOG characteristic.
+// Lossy by design (see log_gate.h): the line is dropped when nobody is
+// subscribed, during OTA or right after OTA or BULK traffic, when the mbuf
+// pool runs low, above the rate limit, from an ISR, or when another task is
+// sending a line at the same moment. Never blocks and never logs.
+void write_logf(char level, const char* tag, const char* fmt, ...);
+
 } // namespace landlink::transport::ble

@@ -29,15 +29,22 @@ struct RxMetrics {
 
 // RX entry point, called by lora_rx_task with each polled frame. `metrics`
 // (nullable) describes that frame and stays readable through
-// current_rx_metrics() while the router dispatches it.
+// current_rx_metrics() while the router dispatches it. `admin_only` marks a
+// frame a transmit-only node handles solely for remote admin (see
+// current_rx_admin_only()).
 void on_rx(const uint8_t* frame, size_t frame_len,
            uint8_t* forward_out, size_t forward_cap, size_t& forward_len,
-           const RxMetrics* metrics = nullptr);
+           const RxMetrics* metrics = nullptr,
+           bool admin_only = false);
 
 // The metrics of the frame on_rx is handling right now, for sinks that run
 // inside it (they are called synchronously on the rx task). nullptr outside
 // an on_rx call or when the caller had none.
 const RxMetrics* current_rx_metrics();
+
+// True while on_rx handles a frame a transmit-only node only listens to for
+// remote admin: sinks must ignore everything but remote-admin traffic.
+bool current_rx_admin_only();
 
 // Accessor for the Meshtastic router (so features can call originate()).
 meshtastic::MeshtasticRouter& meshtastic_router();

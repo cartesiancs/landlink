@@ -1,5 +1,7 @@
 #include "features/pki_keystore/pki_keystore.h"
 
+#include <freertos/FreeRTOS.h>
+
 #include <cstring>
 
 #include "hal/storage/storage.h"
@@ -29,6 +31,11 @@ uint32_t s_seq     = 0;
 bool     s_dirty   = false;
 uint32_t s_last_flush_ms = 0;
 bool     s_loaded  = false;
+PinPredicate s_pin_pred = nullptr;
+// Guards the entry table. Writers: lora_rx (NodeInfo, PKI fallback), the
+// BLE / serial command task (ADMIN_SEND). Readers: every task that
+// originates PKI frames. Critical sections only cover RAM copies.
+portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 Entry* find(uint32_t node_id) {
     for (size_t i = 0; i < s_count; ++i) {
@@ -101,16 +108,21 @@ bool deserialize(const uint8_t* buf, size_t len) {
 
 bool flush_now() {
     uint8_t buf[kBlobMax];
+    portENTER_CRITICAL(&s_mux);
     const size_t n = serialize(buf, sizeof(buf));
+    // Cleared optimistically; a record() landing during the NVS write sets
+    // it again, and a failed write sets it back below.
+    if (n > 0) s_dirty = false;
+    portEXIT_CRITICAL(&s_mux);
     if (n == 0) return false;
     const bool ok = hal::storage::set_blob(kNvsNs, kNvsKey, buf, n);
     if (ok) {
-        s_dirty = false;
-        LL_LOG_I(kTag, "flush count=%u bytes=%u",
-                 static_cast<unsigned>(s_count),
-                 static_cast<unsigned>(n));
+        LL_LOG_I(kTag, "flush bytes=%u", static_cast<unsigned>(n));
     } else {
-        LL_LOG_W(kTag, "flush failed count=%u", static_cast<unsigned>(s_count));
+        portENTER_CRITICAL(&s_mux);
+        s_dirty = true;
+        portEXIT_CRITICAL(&s_mux);
+        LL_LOG_W(kTag, "flush failed bytes=%u", static_cast<unsigned>(n));
     }
     return ok;
 }
@@ -136,57 +148,85 @@ void init() {
     LL_LOG_I(kTag, "init: loaded %u peers", static_cast<unsigned>(s_count));
 }
 
+void set_pin_predicate(PinPredicate pred) { s_pin_pred = pred; }
+
 bool record(uint32_t node_id, const uint8_t pub[kKeyLen]) {
-    if (node_id == 0) return false;
+    if (node_id == 0 || pub == nullptr) return false;
+    uint8_t old[kKeyLen];
+    bool    exists = false;
+    portENTER_CRITICAL(&s_mux);
     Entry* slot = find(node_id);
     if (slot != nullptr) {
+        exists = true;
         // Skip work + NVS churn when the same key arrives again.
         slot->last_seen_seq = ++s_seq;
-        if (std::memcmp(slot->pub, pub, kKeyLen) == 0) return true;
-        std::memcpy(slot->pub, pub, kKeyLen);
-        s_dirty = true;
-        return true;
+        if (std::memcmp(slot->pub, pub, kKeyLen) == 0) {
+            portEXIT_CRITICAL(&s_mux);
+            return true;
+        }
+        std::memcpy(old, slot->pub, kKeyLen);
     }
-    if (s_count < kCapacity) {
-        slot = &s_entries[s_count++];
-    } else {
-        slot = &s_entries[lru_index()];
+    portEXIT_CRITICAL(&s_mux);
+
+    // A pinned key (a remote-admin key) is never replaced by a different one:
+    // a forged NodeInfo claiming the admin's node id must not lock the admin
+    // out. The predicate takes its own lock, so it runs outside ours.
+    if (exists && s_pin_pred != nullptr && s_pin_pred(old)) {
+        LL_LOG_W(kTag, "record: keeping pinned key for %08x",
+                 static_cast<unsigned>(node_id));
+        return false;
     }
-    slot->node_id = node_id;
+
+    portENTER_CRITICAL(&s_mux);
+    slot = find(node_id);
+    if (slot == nullptr) {
+        slot = s_count < kCapacity ? &s_entries[s_count++] : &s_entries[lru_index()];
+        slot->node_id = node_id;
+    }
     std::memcpy(slot->pub, pub, kKeyLen);
     slot->last_seen_seq = ++s_seq;
     s_dirty = true;
+    portEXIT_CRITICAL(&s_mux);
     return true;
 }
 
 bool lookup(uint32_t node_id, uint8_t out[kKeyLen]) {
     if (node_id == 0) return false;
+    portENTER_CRITICAL(&s_mux);
     Entry* slot = find(node_id);
-    if (slot == nullptr) return false;
-    std::memcpy(out, slot->pub, kKeyLen);
-    slot->last_seen_seq = ++s_seq;  // refresh LRU on read too
-    return true;
+    if (slot != nullptr) {
+        std::memcpy(out, slot->pub, kKeyLen);
+        slot->last_seen_seq = ++s_seq;  // refresh LRU on read too
+    }
+    portEXIT_CRITICAL(&s_mux);
+    return slot != nullptr;
 }
 
 bool forget(uint32_t node_id) {
+    bool removed = false;
+    portENTER_CRITICAL(&s_mux);
     for (size_t i = 0; i < s_count; ++i) {
         if (s_entries[i].node_id != node_id) continue;
         if (i + 1 < s_count) s_entries[i] = s_entries[s_count - 1];
         --s_count;
-        std::memset(&s_entries[s_count], 0, sizeof(Entry));
+        s_entries[s_count] = Entry{};
         s_dirty = true;
-        return true;
+        removed = true;
+        break;
     }
-    return false;
+    portEXIT_CRITICAL(&s_mux);
+    return removed;
 }
 
 void clear() {
+    portENTER_CRITICAL(&s_mux);
     for (size_t i = 0; i < s_count; ++i) {
-        std::memset(&s_entries[i], 0, sizeof(Entry));
+        s_entries[i] = Entry{};
     }
     s_count = 0;
     s_seq = 0;
     s_dirty = false;
+    portEXIT_CRITICAL(&s_mux);
     // Drop the persisted blob too so a reboot doesn't resurrect cleared keys.
     hal::storage::erase_namespace(kNvsNs);
     LL_LOG_I(kTag, "cleared");
@@ -195,7 +235,10 @@ void clear() {
 size_t size() { return s_count; }
 
 bool flush_pending(uint32_t now_ms) {
-    if (!s_dirty) return false;
+    portENTER_CRITICAL(&s_mux);
+    const bool dirty = s_dirty;
+    portEXIT_CRITICAL(&s_mux);
+    if (!dirty) return false;
     if (s_last_flush_ms != 0 &&
         static_cast<uint32_t>(now_ms - s_last_flush_ms) < kFlushIntervalMs) {
         return false;
