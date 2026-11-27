@@ -178,8 +178,11 @@ on the device and replayed on reconnect, like upstream Meshtastic's phone
 queue.
 
 - **What is queued.** `MESH_RECV` chat text and `MESH_RECV` ACK/NAK, over
-  LoRa and the Wi-Fi mesh. Peer sightings (`LORA_PEER_FOUND`) are not; media
-  already waits in flash and is offered again by `MEDIA_LIST_PENDING`.
+  LoRa and the Wi-Fi mesh. Peer sightings (`LORA_PEER_FOUND`) are not; the
+  device instead remembers when it last heard each of its 32 most recent
+  peers and replays that, with `RX_AGE_MS`, when a host sends
+  `LORA_PEERS_GET` (proto 12). Media already waits in flash and is offered
+  again by `MEDIA_LIST_PENDING`.
 - **When it is sent.** Every queued event goes through the queue, connected
   or not. The `evt_flush` task sends it in arrival order as soon as a host
   listens: a BLE central subscribed to EVT (after a 250 ms settle), a USB

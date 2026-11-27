@@ -14,7 +14,7 @@ enum class TlvTag : uint8_t {
     NODE_DST = 0x05,  // Destination u32 in MESH_RECV; 0xFFFFFFFF means broadcast.
     MESH_ID = 0x03,  // Mesh group id
     TIMESTAMP_MS = 0x04,  // Unix time ms (best-effort)
-    RX_AGE_MS = 0x06,  // ms between the device receiving a MESH_RECV and emitting it; large when it was held for a disconnected host
+    RX_AGE_MS = 0x06,  // ms between the device receiving a MESH_RECV, or last hearing a replayed LORA_PEER_FOUND peer, and emitting it; large when it was held for a disconnected host
     CHAT_TEXT = 0x10,  // UTF-8 chat text, <=200 B
     CHAT_REPLY_TO = 0x11,  // Meshtastic Data.reply_id: pkt_id this chat replies or reacts to. LoRa only.
     CHAT_PKI_ENCRYPTED = 0x12,  // 1 if the originating LoRa frame was Meshtastic PKI-encrypted (DM)

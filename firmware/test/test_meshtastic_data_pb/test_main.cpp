@@ -433,6 +433,54 @@ void test_position_zero_precision_is_omitted() {
     TEST_ASSERT_EQUAL_MEMORY(plain, with_zero, n1);
 }
 
+// Our own Telemetry broadcast decodes back through the receive path.
+void test_telemetry_encode_roundtrip() {
+    DeviceMetricsMessage m;
+    m.battery_level = 87;       m.has_battery_level = true;
+    m.voltage = 4.05f;          m.has_voltage = true;
+    m.channel_utilization = 12.5f; m.has_channel_utilization = true;
+    m.uptime_seconds = 86461;   m.has_uptime_seconds = true;
+    uint8_t buf[48];
+    const size_t n = encode_telemetry_device_metrics(1764230400u, m, buf, sizeof(buf));
+    TEST_ASSERT_GREATER_THAN_size_t(0, n);
+    // time (fixed32, field 1) leads, then device_metrics (field 2).
+    TEST_ASSERT_EQUAL_HEX8(0x0D, buf[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x12, buf[5]);
+
+    DeviceMetricsMessage out;
+    TEST_ASSERT_TRUE(decode_telemetry_device_metrics(buf, n, out));
+    TEST_ASSERT_TRUE(out.has_battery_level);
+    TEST_ASSERT_EQUAL_UINT32(87, out.battery_level);
+    TEST_ASSERT_TRUE(out.has_voltage);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 4.05f, out.voltage);
+    TEST_ASSERT_TRUE(out.has_channel_utilization);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 12.5f, out.channel_utilization);
+    TEST_ASSERT_FALSE(out.has_air_util_tx);
+    TEST_ASSERT_TRUE(out.has_uptime_seconds);
+    TEST_ASSERT_EQUAL_UINT32(86461, out.uptime_seconds);
+}
+
+// Without a clock the time field is left out, and the variant still marks
+// the packet as device metrics.
+void test_telemetry_encode_without_time_or_fields() {
+    DeviceMetricsMessage m;
+    uint8_t buf[16];
+    const size_t n = encode_telemetry_device_metrics(0, m, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_size_t(2, n);
+    TEST_ASSERT_EQUAL_HEX8(0x12, buf[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, buf[1]);
+    DeviceMetricsMessage out;
+    TEST_ASSERT_TRUE(decode_telemetry_device_metrics(buf, n, out));
+    TEST_ASSERT_FALSE(out.has_battery_level);
+}
+
+void test_telemetry_encode_overflow_returns_zero() {
+    DeviceMetricsMessage m;
+    m.battery_level = 50; m.has_battery_level = true;
+    uint8_t buf[6];
+    TEST_ASSERT_EQUAL_size_t(0, encode_telemetry_device_metrics(1u, m, buf, sizeof(buf)));
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_encode_reply_and_emoji);
@@ -467,5 +515,8 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_encode_bitfield_overflow_returns_zero);
     RUN_TEST(test_position_precision_bits_appended);
     RUN_TEST(test_position_zero_precision_is_omitted);
+    RUN_TEST(test_telemetry_encode_roundtrip);
+    RUN_TEST(test_telemetry_encode_without_time_or_fields);
+    RUN_TEST(test_telemetry_encode_overflow_returns_zero);
     return UNITY_END();
 }

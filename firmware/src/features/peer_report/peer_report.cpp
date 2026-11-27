@@ -102,6 +102,9 @@ size_t build_peer_found_tlvs(const PeerReport& report,
         b.put_u8(TlvTag::HOPS_AWAY, report.hops_away);
     }
     b.put_u8(TlvTag::VIA_MQTT, report.via_mqtt ? 1 : 0);
+    if (report.has_rx_age) {
+        b.put_u32(TlvTag::RX_AGE_MS, report.rx_age_ms);
+    }
 
     return b.size();
 }

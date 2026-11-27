@@ -6,7 +6,9 @@
 #include <cstring>
 
 #include "features/pki_identity/pki_identity.h"
+#include "features/mesh_identity/beacon_schedule.h"
 #include "hal/gps/gps.h"
+#include "hal/pmu/pmu.h"
 #include "hal/storage/storage.h"
 #include "mesh/meshtastic/data_pb.h"
 #include "mesh/meshtastic/frame.h"
@@ -370,6 +372,81 @@ bool send_position() {
              static_cast<unsigned>(pos.loc_source),
              static_cast<unsigned>(precision_bits),
              static_cast<unsigned>(epoch_s),
+             static_cast<unsigned>(frame_len),
+             ok ? 1 : 0);
+    return ok;
+}
+
+bool send_telemetry() {
+    if (s_self_id == 0) return false;
+
+    using mesh::meshtastic::kBroadcastAddr;
+    using mesh::meshtastic::kMaxFrame;
+    using mesh::meshtastic::kMaxPayload;
+    using mesh::meshtastic::kPortnumTelemetryApp;
+
+    mesh::meshtastic::DeviceMetricsMessage m;
+    const bool battery = hal::pmu::is_battery_present();
+    const uint16_t mv  = hal::pmu::battery_mv();
+    // A battery that reads 0 mV is unknown, not empty: leave it out.
+    if (!battery || mv > 0) {
+        m.battery_level     = battery_level_for(mv, battery);
+        m.has_battery_level = true;
+    }
+    if (battery && mv > 0) {
+        m.voltage     = static_cast<float>(mv) / 1000.0f;
+        m.has_voltage = true;
+    }
+    m.channel_utilization =
+        landlink::transport::lora::mac::channel_util_percent();
+    m.has_channel_utilization = true;
+    m.uptime_seconds     = static_cast<uint32_t>(millis() / 1000UL);
+    m.has_uptime_seconds = true;
+
+    // Telemetry.time from the GPS clock when there is one, as upstream does
+    // from its RTC; 0 leaves the field out.
+    const uint32_t epoch_s =
+        static_cast<uint32_t>(hal::gps::latest().epoch_ms / 1000ULL);
+
+    uint8_t tel_buf[48];
+    const size_t tel_len = mesh::meshtastic::encode_telemetry_device_metrics(
+        epoch_s, m, tel_buf, sizeof(tel_buf));
+    if (tel_len == 0) {
+        LL_LOG_W(kTag, "telemetry: encode failed");
+        return false;
+    }
+
+    uint8_t data_buf[64];
+    const size_t data_len = mesh::meshtastic::encode_data(
+        kPortnumTelemetryApp, tel_buf, tel_len, data_buf, sizeof(data_buf));
+    if (data_len == 0 || data_len > kMaxPayload) {
+        LL_LOG_W(kTag, "telemetry: encode_data failed (tel_len=%u)",
+                 static_cast<unsigned>(tel_len));
+        return false;
+    }
+
+    uint8_t frame[kMaxFrame];
+    uint32_t assigned = 0;
+    // Primary channel, like NodeInfo and Position.
+    const size_t frame_len = mesh::protocol::meshtastic_router().originate_data(
+        /*channel_index=*/0,
+        kBroadcastAddr, /*want_ack=*/false,
+        data_buf, data_len, frame, sizeof(frame), &assigned);
+    if (frame_len == 0) {
+        LL_LOG_W(kTag, "telemetry: originate_data failed");
+        return false;
+    }
+    // Periodic beacon: Background, same as NodeInfo and Position.
+    landlink::transport::lora::TxRequest req{};
+    std::memcpy(req.bytes, frame, frame_len);
+    req.len      = frame_len;
+    req.priority = landlink::transport::lora::Priority::Background;
+    const bool ok = landlink::transport::lora::mac::enqueue(req);
+    LL_LOG_I(kTag, "telemetry tx pkt_id=%u batt=%u mv=%u util=%u frame=%u q=%d",
+             static_cast<unsigned>(assigned),
+             static_cast<unsigned>(m.battery_level),
+             static_cast<unsigned>(mv),
+             static_cast<unsigned>(m.channel_utilization + 0.5f),
              static_cast<unsigned>(frame_len),
              ok ? 1 : 0);
     return ok;

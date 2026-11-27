@@ -23,6 +23,7 @@
 #include "features/mesh_identity/mesh_identity.h"
 #include "features/ota/ota.h"
 #include "features/peer_report/peer_report.h"
+#include "features/peer_seen/peer_seen.h"
 #include "features/pki_identity/pki_identity.h"
 #include "features/pki_keystore/pki_keystore.h"
 #include "features/wifi_onboarding/wifi_onboarding.h"
@@ -149,6 +150,18 @@ void emit_peer_found(const landlink::mesh::meshtastic::Header& h,
         report.hops_away = static_cast<uint8_t>(h.hop_start - h.hop_limit);
     }
     report.via_mqtt = h.via_mqtt;
+    // Remembered even with no host connected, so one that connects later can
+    // ask when each peer was last heard (LORA_PEERS_GET).
+    landlink::features::peer_seen::Sighting seen;
+    seen.node_id    = h.src;
+    seen.heard_s    = landlink::features::peer_seen::now_s();
+    seen.has_rx     = report.has_rx;
+    seen.rssi_dbm   = report.rssi_dbm;
+    seen.snr_db_x10 = report.snr_db_x10;
+    seen.has_hops   = report.has_hops;
+    seen.hops_away  = report.hops_away;
+    seen.via_mqtt   = report.via_mqtt;
+    landlink::features::peer_seen::record(seen);
     uint8_t buf[landlink::features::peer_report::kMaxPeerFoundLen + 16];
     const size_t n = landlink::features::peer_report::build_peer_found_tlvs(
         report, buf, sizeof(buf));
@@ -365,8 +378,11 @@ void setup() {
     }
     // Restore the peer pubkey LRU from NVS so PKI DMs are possible
     // immediately after reboot, before peers re-broadcast their NodeInfo
-    // (15 min interval at default settings).
+    // (every 15 min).
     landlink::features::pki_keystore::init();
+    // Recently heard peers (LORA_PEERS_GET). Before spawn_tasks(): the LoRa RX
+    // task records into it.
+    landlink::features::peer_seen::init();
 
     // Remote admin (proto 10): admin keys, pending radio revert, router and
     // key-cache hooks. After the router, pki_identity and pki_keystore.

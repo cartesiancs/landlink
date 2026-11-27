@@ -186,6 +186,16 @@ struct DeviceMetricsMessage {
     bool     has_uptime_seconds      = false;
 };
 
+// Encode a Telemetry protobuf carrying the device_metrics variant, as a
+// TELEMETRY_APP Data.payload:
+//   time           = 1 fixed32 (epoch seconds), written only when non-zero
+//   device_metrics = 2 DeviceMetrics, each field written only when its has_
+//                    flag is set
+// Returns bytes written, or 0 on overflow.
+size_t encode_telemetry_device_metrics(uint32_t time_s,
+                                       const DeviceMetricsMessage& metrics,
+                                       uint8_t* out, size_t out_cap);
+
 // Decode the device_metrics variant (field 2) of a Telemetry protobuf carried
 // in a TELEMETRY_APP Data.payload. Returns false on malformed input and when
 // the Telemetry carries another variant (environment metrics etc) instead.

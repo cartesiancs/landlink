@@ -329,6 +329,60 @@ bool decode_device_metrics(const uint8_t* buf, size_t buf_len,
 
 } // namespace
 
+namespace {
+
+uint32_t float_bits(float f) {
+    uint32_t bits;
+    std::memcpy(&bits, &f, sizeof(bits));
+    return bits;
+}
+
+bool put_float_field(uint8_t* out, size_t out_cap, size_t& off,
+                     uint32_t field, float value) {
+    return put_key(out, out_cap, off, field, kWireFixed32) &&
+           put_fixed32(out, out_cap, off, float_bits(value));
+}
+
+} // namespace
+
+size_t encode_telemetry_device_metrics(uint32_t time_s,
+                                       const DeviceMetricsMessage& m,
+                                       uint8_t* out, size_t out_cap) {
+    // DeviceMetrics first, into a scratch buffer, so its length prefix is
+    // known. Five fields fit in 1+5 + 1+4 + 1+4 + 1+4 + 1+5 = 27 bytes.
+    uint8_t dm[32];
+    size_t dm_len = 0;
+    if (m.has_battery_level &&
+        !pb::put_varint_field(dm, sizeof(dm), dm_len, 1, m.battery_level)) {
+        return 0;
+    }
+    if (m.has_voltage &&
+        !put_float_field(dm, sizeof(dm), dm_len, 2, m.voltage)) {
+        return 0;
+    }
+    if (m.has_channel_utilization &&
+        !put_float_field(dm, sizeof(dm), dm_len, 3, m.channel_utilization)) {
+        return 0;
+    }
+    if (m.has_air_util_tx &&
+        !put_float_field(dm, sizeof(dm), dm_len, 4, m.air_util_tx)) {
+        return 0;
+    }
+    if (m.has_uptime_seconds &&
+        !pb::put_varint_field(dm, sizeof(dm), dm_len, 5, m.uptime_seconds)) {
+        return 0;
+    }
+
+    size_t off = 0;
+    if (time_s != 0) {
+        if (!put_key(out, out_cap, off, 1, kWireFixed32)) return 0;
+        if (!put_fixed32(out, out_cap, off, time_s))      return 0;
+    }
+    // Field 2 is written even when empty: it is what marks the variant.
+    if (!pb::put_bytes_field(out, out_cap, off, 2, dm, dm_len)) return 0;
+    return off;
+}
+
 bool decode_telemetry_device_metrics(const uint8_t* buf, size_t buf_len,
                                      DeviceMetricsMessage& out) {
     out = DeviceMetricsMessage{};

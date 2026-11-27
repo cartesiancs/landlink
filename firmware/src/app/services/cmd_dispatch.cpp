@@ -679,6 +679,12 @@ bool handle_cmd(Opcode op, uint8_t seq,
         hal::storage::erase_namespace("ll.net");
         return true;
 
+    case Opcode::LORA_PEERS_GET:
+        // Answered with one unsolicited LORA_PEER_FOUND (RX_AGE_MS) per peer
+        // heard in the last two hours, sent from the telemetry task.
+        request_peer_replay();
+        return true;
+
     case Opcode::CHANNEL_LIST: {
         // Stream one EVT per occupied slot. Mirrors the WIFI_SCAN_RESULT
         // pattern so we never need fragmentation.

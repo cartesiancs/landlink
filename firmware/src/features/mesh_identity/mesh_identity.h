@@ -77,4 +77,12 @@ bool send_nodeinfo_to(uint32_t dest);
 // truncated to the chosen precision. Nothing else this node sends does.
 bool send_position();
 
+// Build + queue a Meshtastic Telemetry broadcast with this node's device
+// metrics (battery level and voltage, channel utilization, uptime), the
+// packet stock Meshtastic nodes send every 30 min. Landlink sends one every
+// 15 min in the beacon rotation (beacon_schedule.h), which is also what lets
+// other Landlink apps tell this node is still on. Returns false on
+// encode/queue failure.
+bool send_telemetry();
+
 } // namespace landlink::features::mesh_identity

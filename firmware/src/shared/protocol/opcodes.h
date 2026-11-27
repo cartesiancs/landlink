@@ -8,7 +8,7 @@
 
 namespace landlink::proto {
 
-inline constexpr uint8_t kProtoVersion = 11;
+inline constexpr uint8_t kProtoVersion = 12;
 
 
 enum class Opcode : uint8_t {
@@ -33,6 +33,7 @@ enum class Opcode : uint8_t {
     OWNER_SET = 0x1d,
     OWNER_RESULT = 0x1e,
     LORA_PEER_FOUND = 0x21,
+    LORA_PEERS_GET = 0x2e,
     WMESH_SET = 0x24,
     WMESH_GET_STATUS = 0x25,
     WMESH_STATUS = 0x26,

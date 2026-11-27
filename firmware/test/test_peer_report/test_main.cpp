@@ -315,9 +315,34 @@ void test_worst_case_fits() {
     PeerReport r = report_for(0x01020304u);
     r.user = &u; r.position = &p; r.metrics = &m;
     r.has_rx = true; r.has_hops = true;
+    r.has_rx_age = true; r.rx_age_ms = 0xFFFFFFFFu;
     uint8_t buf[kMaxPeerFoundLen];
     const size_t n = build_peer_found_tlvs(r, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_size_t(kMaxPeerFoundLen, n);
+}
+
+// A replayed sighting carries RX_AGE_MS (u32 LE); a live one never does.
+void test_rx_age_only_on_replay() {
+    uint8_t buf[64];
+    landlink::Tlv t;
+    PeerReport live = report_for(0x0A0B0C0Du);
+    size_t n = build_peer_found_tlvs(live, buf, sizeof(buf));
+    TEST_ASSERT_FALSE(find_tlv(buf, n, TlvTag::RX_AGE_MS, t));
+
+    PeerReport replay = report_for(0x0A0B0C0Du);
+    replay.has_rx = true;
+    replay.rssi_dbm = -101;
+    replay.snr_db_x10 = -42;
+    replay.has_rx_age = true;
+    replay.rx_age_ms = 4u * 60u * 1000u + 7u;
+    n = build_peer_found_tlvs(replay, buf, sizeof(buf));
+    TEST_ASSERT_TRUE(find_tlv(buf, n, TlvTag::RX_AGE_MS, t));
+    TEST_ASSERT_EQUAL_UINT8(4, t.len);
+    TEST_ASSERT_EQUAL_UINT32(4u * 60u * 1000u + 7u, read_u32_le(t.data));
+    TEST_ASSERT_TRUE(find_tlv(buf, n, TlvTag::RSSI_DBM, t));
+    TEST_ASSERT_EQUAL_INT8(-101, static_cast<int8_t>(t.data[0]));
+    TEST_ASSERT_TRUE(find_tlv(buf, n, TlvTag::NODE_ID, t));
+    TEST_ASSERT_EQUAL_UINT32(0x0A0B0C0Du, read_u32_le(t.data));
 }
 
 // Too small a buffer for even NODE_ID: returns 0 rather than a partial TLV.
@@ -342,5 +367,6 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_rssi_clamped);
     RUN_TEST(test_worst_case_fits);
     RUN_TEST(test_buffer_too_small_returns_zero);
+    RUN_TEST(test_rx_age_only_on_replay);
     return UNITY_END();
 }

@@ -25,6 +25,11 @@ struct PeerReport {
     bool    has_hops   = false;
     uint8_t hops_away  = 0;
     bool    via_mqtt   = false;
+
+    // Set only on a replayed sighting (features/peer_seen): how long ago the
+    // frame was heard. A live report leaves it out.
+    bool     has_rx_age = false;
+    uint32_t rx_age_ms  = 0;
 };
 
 // Longest emission: NODE_ID, position, every User and DeviceMetrics field and
@@ -38,7 +43,8 @@ inline constexpr size_t kMaxPeerFoundLen =
     + (2 + 1) + (2 + 2)              // BATTERY_PCT, BATTERY_MV
     + (2 + 2) + (2 + 2) + (2 + 4)    // CHANNEL_UTIL_E1, AIR_UTIL_TX_E1, UPTIME_S
     + (2 + 1) + (2 + 1)              // RSSI_DBM, SNR_DB_E1
-    + (2 + 1) + (2 + 1);             // HOPS_AWAY, VIA_MQTT
+    + (2 + 1) + (2 + 1)              // HOPS_AWAY, VIA_MQTT
+    + (2 + 4);                       // RX_AGE_MS
 
 // Build the LORA_PEER_FOUND TLV payload the host uses to populate its node
 // list, node details and map. Always starts with NODE_ID (4 LE bytes); every
@@ -51,6 +57,7 @@ inline constexpr size_t kMaxPeerFoundLen =
 //             AIR_UTIL_TX_E1 (u16 LE, percent * 10), UPTIME_S (u32 LE)
 //   link:     RSSI_DBM (i8), SNR_DB_E1 (i8, dB * 10), HOPS_AWAY (u8),
 //             VIA_MQTT (u8, 0 or 1)
+//   replay:   RX_AGE_MS (u32 LE), only when has_rx_age
 // Returns the number of bytes written into `out`, or 0 when not even NODE_ID
 // fits.
 //

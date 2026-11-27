@@ -6,7 +6,7 @@
 
 version: 1
 firmware_name: "landlink"
-proto_version: 11
+proto_version: 12
 
 ble:
   # 128-bit custom UUIDs (8-4-4-4-12). Base encodes "LL-landlink-1" in ASCII
@@ -133,10 +133,18 @@ opcodes:
   OWNER_RESULT:          { code: 0x1E, dir: F_TO_C }
 
   # Peer awareness. LORA_PEER_FOUND is pushed unsolicited whenever the firmware
-  # hears a Meshtastic NodeInfo (identity) or Position (GPS) from a mesh peer,
-  # so the host can populate its node list + map. (0x20/0x22/0x23 retired: the
-  # Landlink BEACON discovery poll and X25519 pairing handshake are gone.)
-  LORA_PEER_FOUND:       { code: 0x21, dir: F_TO_C }
+  # hears a Meshtastic NodeInfo (identity), Position (GPS) or Telemetry (device
+  # metrics) from a mesh peer, so the host can populate its node list + map.
+  # (0x20/0x22/0x23 retired: the Landlink BEACON discovery poll and X25519
+  # pairing handshake are gone.)
+  LORA_PEER_FOUND:       { code: 0x21, dir: F_TO_C, note: "Live sightings are not queued for a disconnected host. A sighting replayed for LORA_PEERS_GET carries only NODE_ID, the link TLVs and RX_AGE_MS." }
+  # Proto 12+. Ask when each peer was last heard: the firmware remembers its
+  # 32 most recent peers (even with no host connected) and answers with one
+  # unsolicited LORA_PEER_FOUND per peer heard in the last 2 h, each with
+  # RX_AGE_MS, paced ~20 ms apart. No other reply. Since proto 12 a Landlink
+  # also transmits one beacon every 5 min (Telemetry, Position, NodeInfo in
+  # turn), so a peer silent for two slots is no longer around.
+  LORA_PEERS_GET:        { code: 0x2E, dir: C_TO_F }
 
   # Wi-Fi mesh (ESP-NOW). A per-device toggle: while enabled the radio leaves
   # any home AP, parks on a fixed channel and exchanges text and media with
@@ -330,7 +338,7 @@ tlv_tags:
   NODE_DST:              { tag: 0x05, type: u32,  desc: "Destination u32 in MESH_RECV; 0xFFFFFFFF means broadcast." }
   MESH_ID:               { tag: 0x03, type: u16,  desc: "Mesh group id" }
   TIMESTAMP_MS:          { tag: 0x04, type: u64,  desc: "Unix time ms (best-effort)" }
-  RX_AGE_MS:             { tag: 0x06, type: u32,  desc: "ms between the device receiving a MESH_RECV and emitting it; large when it was held for a disconnected host" }
+  RX_AGE_MS:             { tag: 0x06, type: u32,  desc: "ms between the device receiving a MESH_RECV, or last hearing a replayed LORA_PEER_FOUND peer, and emitting it; large when it was held for a disconnected host" }
 
   # Chat
   CHAT_TEXT:             { tag: 0x10, type: utf8, desc: "UTF-8 chat text, <=200 B" }
